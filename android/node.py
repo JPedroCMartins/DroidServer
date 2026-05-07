@@ -38,12 +38,11 @@ class WorkerManager:
     def criar(alias, imagem):
         print(f"[*] Deploy: Criando '{alias}' ({imagem})...")
         
-        # 1. Captura o $PREFIX dinamicamente do Termux
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
         servico_dir = os.path.join(prefix, "var", "service", alias)
         arquivo_run = os.path.join(servico_dir, "run")
 
-        # 2. Prepara o script bash com o alias injetado dinamicamente
+        # Script bash com a busca otimizada para o diretório /app
         conteudo_run = f"""
             #!/data/data/com.termux/files/usr/bin/sh
 
@@ -52,12 +51,13 @@ class WorkerManager:
             DISTRO_ALIAS="{alias}"
             TARGET_FILE="run_server.sh"
 
-            echo "Iniciando serviço: Procurando por $TARGET_FILE em $DISTRO_ALIAS..."
+            echo "Iniciando serviço: Procurando por $TARGET_FILE em $DISTRO_ALIAS (Diretório: /app)..."
 
-            SCRIPT_PATH=$(proot-distro login "$DISTRO_ALIAS" -- find / -type f -name "$TARGET_FILE" 2>/dev/null | head -n 1)
+            # Busca restrita apenas à pasta /app para garantir uma inicialização rápida
+            SCRIPT_PATH=$(proot-distro login "$DISTRO_ALIAS" -- find /app -type f -name "$TARGET_FILE" 2>/dev/null | head -n 1)
 
             if [ -z "$SCRIPT_PATH" ]; then
-                echo "Erro Crítico: O arquivo '$TARGET_FILE' não foi encontrado no sistema '$DISTRO_ALIAS'."
+                echo "Erro Crítico: O arquivo '$TARGET_FILE' não foi encontrado na pasta /app do sistema '$DISTRO_ALIAS'."
                 sleep 5
                 exit 1
             fi
@@ -67,19 +67,15 @@ class WorkerManager:
         """
 
         try:
-            # Instala o proot-distro
             subprocess.run(["proot-distro", "install", imagem, "--override-alias", alias], check=True)
             print(f"[+] Container '{alias}' criado com sucesso!")
             
-            # Cria o diretório do serviço (equivalente a mkdir -p)
             os.makedirs(servico_dir, exist_ok=True)
             
-            # Cria e escreve o script dentro do arquivo 'run'
             with open(arquivo_run, "w") as f:
                 f.write(conteudo_run)
             print(f"[+] Arquivo 'run' configurado no sv: {arquivo_run}")
             
-            # Aplica o 'chmod +x' utilizando a biblioteca stat do Python
             st = os.stat(arquivo_run)
             os.chmod(arquivo_run, st.st_mode | stat.S_IEXEC)
             print("[+] Permissão de execução concedida ao processo.")
