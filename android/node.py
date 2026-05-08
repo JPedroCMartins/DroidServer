@@ -42,27 +42,29 @@ class WorkerManager:
         servico_dir = os.path.join(prefix, "var", "service", alias)
         arquivo_run = os.path.join(servico_dir, "run")
 
-        # Script bash com a busca otimizada para o diretório /app
-        conteudo_run = f"""
-            #!/data/data/com.termux/files/usr/bin/sh
+        # Adicionamos o source profile e o redirecionamento para o log
+        conteudo_run = f"""#!/data/data/com.termux/files/usr/bin/sh
 
-            exec 2>&1
+            # 1. Carrega o ambiente completo do Termux (Essencial para o proot funcionar via sv)
+            source {prefix}/etc/profile
+
+            # 2. Redireciona a saída de erro e sucesso para um log dentro da pasta do serviço
+            exec > "{servico_dir}/servico.log" 2>&1
 
             DISTRO_ALIAS="{alias}"
             TARGET_FILE="run_server.sh"
 
-            echo "Iniciando serviço: Procurando por $TARGET_FILE em $DISTRO_ALIAS (Diretório: /app)..."
+            echo "[$(date)] Iniciando serviço: Procurando por $TARGET_FILE em $DISTRO_ALIAS..."
 
-            # Busca restrita apenas à pasta /app para garantir uma inicialização rápida
             SCRIPT_PATH=$(proot-distro login "$DISTRO_ALIAS" -- find /app -type f -name "$TARGET_FILE" 2>/dev/null | head -n 1)
 
             if [ -z "$SCRIPT_PATH" ]; then
-                echo "Erro Crítico: O arquivo '$TARGET_FILE' não foi encontrado na pasta /app do sistema '$DISTRO_ALIAS'."
+                echo "Erro Crítico: '$TARGET_FILE' não encontrado."
                 sleep 5
                 exit 1
             fi
 
-            echo "Arquivo encontrado em: $SCRIPT_PATH. Executando..."
+            echo "[$(date)] Executando: $SCRIPT_PATH..."
             exec proot-distro login "$DISTRO_ALIAS" -- "$SCRIPT_PATH"
         """
 
@@ -81,9 +83,9 @@ class WorkerManager:
             print("[+] Permissão de execução concedida ao processo.")
             
         except subprocess.CalledProcessError:
-            print(f"[-] Erro ao criar o container '{alias}' no proot-distro.")
+            print(f"[-] Erro ao criar o container '{alias}'.")
         except Exception as e:
-            print(f"[-] Erro inesperado ao configurar os arquivos do serviço: {e}")
+            print(f"[-] Erro inesperado: {e}")
 
     @staticmethod
     def deletar(alias):
