@@ -39,48 +39,45 @@ class WorkerManager:
         print(f"[*] Deploy: Criando '{alias}' ({imagem})...")
         
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
-        servico_dir = os.path.join(prefix, "var", "service", alias)
-        arquivo_run = os.path.join(servico_dir, "run")
+        
+        # Onde o arquivo de configuração do serviço vai ficar
+        conf_dir = os.path.join(prefix, "etc", "supervisor", "conf.d")
+        arquivo_conf = os.path.join(conf_dir, f"{alias}.conf")
+        
+        # Onde os logs serão salvos (organizados por nome do container)
+        log_out = os.path.join(prefix, "var", "log", f"supervisor_{alias}_out.log")
+        log_err = os.path.join(prefix, "var", "log", f"supervisor_{alias}_err.log")
 
-        # Adicionamos o source profile e o redirecionamento para o log
-        conteudo_run = f"""#!/data/data/com.termux/files/usr/bin/sh
-
-            # 1. Carrega o ambiente completo do Termux (Essencial para o proot funcionar via sv)
-            source {prefix}/etc/profile
-
-            # 2. Redireciona a saída de erro e sucesso para um log dentro da pasta do serviço
-            exec > "{servico_dir}/servico.log" 2>&1
-
-            DISTRO_ALIAS="{alias}"
-            TARGET_FILE="run_server.sh"
-
-            echo "[$(date)] Iniciando serviço: Procurando por $TARGET_FILE em $DISTRO_ALIAS..."
-
-            SCRIPT_PATH=$(proot-distro login "$DISTRO_ALIAS" -- find /app -type f -name "$TARGET_FILE" 2>/dev/null | head -n 1)
-
-            if [ -z "$SCRIPT_PATH" ]; then
-                echo "Erro Crítico: '$TARGET_FILE' não encontrado."
-                sleep 5
-                exit 1
-            fi
-
-            echo "[$(date)] Executando: $SCRIPT_PATH..."
-            exec proot-distro login "$DISTRO_ALIAS" -- "$SCRIPT_PATH"
+        # Configuração no estilo "systemctl"
+        conteudo_conf = f"""[program:{alias}]
+            command=proot-distro login {alias} -- /app/run_server.sh
+            autostart=true
+            autorestart=true
+            startsecs=5
+            stderr_logfile={log_err}
+            stdout_logfile={log_out}
         """
 
         try:
+            # 1. Instala o proot-distro
             subprocess.run(["proot-distro", "install", imagem, "--override-alias", alias], check=True)
             print(f"[+] Container '{alias}' criado com sucesso!")
             
-            os.makedirs(servico_dir, exist_ok=True)
+            # 2. Garante que as pastas de configuração e logs existam
+            os.makedirs(conf_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(log_out), exist_ok=True)
             
-            with open(arquivo_run, "w") as f:
-                f.write(conteudo_run)
-            print(f"[+] Arquivo 'run' configurado no sv: {arquivo_run}")
+            # 3. Cria o arquivo de configuração do Supervisor
+            with open(arquivo_conf, "w") as f:
+                f.write(conteudo_conf)
+            print(f"[+] Arquivo de configuração criado: {arquivo_conf}")
             
-            st = os.stat(arquivo_run)
-            os.chmod(arquivo_run, st.st_mode | stat.S_IEXEC)
-            print("[+] Permissão de execução concedida ao processo.")
+            # 4. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
+            # O 'reread' lê os arquivos novos, e o 'update' inicia os serviços pendentes
+            subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
+            subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
+            
+            print(f"[+] Serviço '{alias}' registrado e iniciado no Supervisor.")
             
         except subprocess.CalledProcessError:
             print(f"[-] Erro ao criar o container '{alias}'.")
