@@ -86,12 +86,44 @@ class WorkerManager:
 
     @staticmethod
     def deletar(alias):
-        print(f"[*] Deletando worker '{alias}'...")
+        print(f"[*] Deploy: Deletando '{alias}'...")
+        
+        prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
+        
+        # Onde o arquivo de configuração e os logs estão localizados
+        conf_dir = os.path.join(prefix, "etc", "supervisor", "conf.d")
+        arquivo_conf = os.path.join(conf_dir, f"{alias}.conf")
+        log_out = os.path.join(prefix, "var", "log", f"supervisor_{alias}_out.log")
+        log_err = os.path.join(prefix, "var", "log", f"supervisor_{alias}_err.log")
+
         try:
+            # 1. Para o serviço no Supervisor (se estiver rodando) para evitar processos zumbis
+            subprocess.run(["supervisorctl", "stop", alias], check=False, capture_output=True)
+            
+            # 2. Remove o arquivo de configuração do Supervisor
+            if os.path.exists(arquivo_conf):
+                os.remove(arquivo_conf)
+                print(f"[+] Arquivo de configuração removido: {arquivo_conf}")
+            
+            # 3. Atualiza o Supervisor para remover o serviço da memória
+            subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
+            subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
+            
+            # 4. Remove o container proot-distro
             subprocess.run(["proot-distro", "remove", alias], check=True)
-            print(f"[+] Worker '{alias}' deletado com sucesso!")
+            print(f"[+] Container '{alias}' deletado com sucesso!")
+            
+            # 5. Remove os arquivos de log associados
+            if os.path.exists(log_out):
+                os.remove(log_out)
+            if os.path.exists(log_err):
+                os.remove(log_err)
+            print(f"[+] Arquivos de log removidos.")
+
         except subprocess.CalledProcessError:
-            print(f"[-] Erro ao deletar '{alias}'.")
+            print(f"[-] Erro de processo ao tentar deletar '{alias}'.")
+        except Exception as e:
+            print(f"[-] Erro inesperado ao deletar: {e}")
 
 class TerminalManager:
     """Gerencia as sessões ativas do terminal via PTY e processos em background."""
