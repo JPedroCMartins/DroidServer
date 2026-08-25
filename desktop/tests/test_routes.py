@@ -1,6 +1,8 @@
+import logging
 import os
 import sys
 from datetime import datetime, timedelta
+from logging.handlers import RotatingFileHandler
 
 import pytest
 
@@ -36,6 +38,12 @@ def test_dashboard(client):
     resp = client.get("/")
     assert resp.status_code == 200
     assert b"DroidServer" in resp.data
+
+
+def test_create_app_configura_logging_em_arquivo(app_instance):
+    handlers = [h for h in app_instance.logger.handlers if isinstance(h, RotatingFileHandler)]
+    assert handlers, "create_app deve registrar um RotatingFileHandler"
+    assert app_instance.logger.level <= logging.INFO
 
 
 def test_api_nodes_vazio(client):

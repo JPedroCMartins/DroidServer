@@ -7,6 +7,7 @@ import socket
 import subprocess
 import threading
 import time
+from logging.handlers import RotatingFileHandler
 
 import requests
 import socketio
@@ -18,6 +19,36 @@ log = logging.getLogger("node")
 DEFAULT_HOST_IP = "192.168.1.10"
 DEFAULT_HOST_PORT = 5050
 POLL_INTERVAL = 10
+
+
+def _configurar_logging():
+    """Configura o logging do agente: console + arquivo rotativo.
+
+    Arquivo padrão: ~/.config/droidserver/logs/node.log (ou DROID_LOG_FILE).
+    """
+    log_file = os.getenv("DROID_LOG_FILE") or os.path.join(
+        os.path.expanduser("~"), ".config", "droidserver", "logs", "node.log"
+    )
+    raiz = logging.getLogger("node")
+    raiz.setLevel(logging.INFO)
+
+    if not any(isinstance(h, logging.Handler) for h in raiz.handlers):
+        fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+        console = logging.StreamHandler()
+        console.setFormatter(fmt)
+        raiz.addHandler(console)
+
+        try:
+            os.makedirs(os.path.dirname(log_file), exist_ok=True)
+            fh = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8")
+            fh.setFormatter(fmt)
+            raiz.addHandler(fh)
+        except OSError as e:
+            log.warning("Não foi possível criar o arquivo de log '%s': %s", log_file, e)
+            log_file = None
+
+    return log_file
 
 
 class Config:
@@ -329,7 +360,9 @@ class NodeAgent:
         try:
             resposta = requests.post(self.config.http_url, json=payload, timeout=5)
             if resposta.status_code == 200:
-                return resposta.json().get("tarefas", [])
+                tarefas = resposta.json().get("tarefas", [])
+                log.info("Sync OK com host (cpu=%s%%, %d tarefa(s))", payload.get("cpu"), len(tarefas))
+                return tarefas
             log.warning("[-] Host respondeu com status %s.", resposta.status_code)
         except requests.exceptions.RequestException as e:
             log.warning("[-] Erro ao sincronizar com o host: %s", e)
@@ -373,8 +406,6 @@ class NodeAgent:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    )
+    log_file = _configurar_logging()
+    log.info("[*] Node Agent iniciando. Log de arquivo: %s", log_file or "desativado")
     NodeAgent().iniciar()

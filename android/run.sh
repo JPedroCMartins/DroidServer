@@ -21,5 +21,6 @@ if [ -z "${DROID_HOST_IP:-}" ]; then
 fi
 
 echo "[*] Iniciando Node Agent -> host: $DROID_HOST_IP:$DROID_HOST_PORT"
+echo "[*] Log do agente: $HOME/.config/droidserver/logs/node.log"
 cd "$DIR"
 exec python3 node.py

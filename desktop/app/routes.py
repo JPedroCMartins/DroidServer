@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import datetime, timedelta
 
@@ -5,6 +6,8 @@ from flask import current_app as app
 from flask import render_template, request, jsonify, redirect, url_for
 from flask_socketio import emit
 from . import socketio
+
+logger = logging.getLogger("droidserver.routes")
 
 nodes_conectados = {}
 
@@ -69,6 +72,7 @@ def delete_worker(ip, alias):
             "alias": alias
         }
         nodes_conectados[ip]["tarefas_pendentes"].append(nova_tarefa)
+        logger.info("Tarefa enfileirada: deletar worker '%s' do node %s", alias, ip)
     return redirect(url_for('node_detail', ip=ip))
 
 
@@ -84,6 +88,7 @@ def deploy_worker():
             "alias": alias
         }
         nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
+        logger.info("Tarefa enfileirada: criar worker '%s' no node %s", alias, ip_alvo)
 
         if alias not in nodes_conectados[ip_alvo]["workers"]:
             nodes_conectados[ip_alvo]["workers"].append(alias)
@@ -118,6 +123,7 @@ def node_sync():
             "cpu": dados.get("cpu"),
             "mem": dados.get("mem"),
         }
+        logger.info("Novo node registrado: %s (workers=%s)", ip_node, dados.get("workers", []))
     else:
         nodes_conectados[ip_node]["status"] = dados.get("status", "Online")
         nodes_conectados[ip_node]["last_seen_ts"] = agora
@@ -130,12 +136,15 @@ def node_sync():
     tarefas_para_enviar = nodes_conectados[ip_node]["tarefas_pendentes"]
     nodes_conectados[ip_node]["tarefas_pendentes"] = []
 
+    if tarefas_para_enviar:
+        logger.info("Enviadas %d tarefa(s) para o node %s", len(tarefas_para_enviar), ip_node)
+
     return jsonify({"status": "ok", "tarefas": tarefas_para_enviar}), 200
 
 
 @socketio.on('connect')
 def handle_connect():
-    print("[*] Nova conexão WebSocket estabelecida.")
+    logger.info("[*] Nova conexão WebSocket estabelecida.")
 
 
 @socketio.on('terminal_input')
@@ -144,6 +153,7 @@ def handle_terminal_input(data):
     comando = data.get('input')
     alias = data.get('alias')
 
+    logger.info("terminal_input: node=%s worker=%s", ip_alvo, alias)
     evento_alvo = f"cmd_to_{ip_alvo}_{alias}"
     socketio.emit(evento_alvo, {'input': comando})
 
@@ -158,6 +168,7 @@ def handle_terminal_resize(data):
     if not all([ip_alvo, alias, cols, rows]):
         return
 
+    logger.info("terminal_resize: node=%s worker=%s %sx%s", ip_alvo, alias, cols, rows)
     evento_alvo = f"resize_to_{ip_alvo}_{alias}"
     socketio.emit(evento_alvo, {'cols': cols, 'rows': rows})
 

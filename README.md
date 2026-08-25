@@ -106,6 +106,18 @@ python3 node.py                       # dentro da pasta android/
 
 Sem `DROID_API_TOKEN`, o host funciona aberto como antes. Com o token definido, apenas nodes que enviam o mesmo `DROID_TOKEN` são registrados.
 
+## Logs
+
+Tudo o que acontece é gravado em arquivo (com rotação) para análise futura:
+
+| Componente   | Local                                                                |
+|--------------|----------------------------------------------------------------------|
+| Setup        | `~/.config/droidserver/logs/setup-<data>.log` (um por execução)      |
+| Agente (node)| `~/.config/droidserver/logs/node.log` (ou `DROID_LOG_FILE`)          |
+| Host Flask   | `desktop/logs/droidserver.log` (ou `DROID_LOG_DIR`)                  |
+
+O host grava acessos HTTP (Werkzeug), eventos do Socket.IO, sincronizações de nodes e tarefas enfileiradas. O agente grava conectividade (polling), tarefas e erros do PTY.
+
 ## Testes
 
 Os dois lados do projeto têm suíte de testes com `pytest`:
