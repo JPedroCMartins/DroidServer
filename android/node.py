@@ -37,6 +37,15 @@ class Config:
 class WorkerManager:
     """Classe utilitária para gerenciar as instâncias do proot-distro no sistema."""
 
+    # Script padrão executado pelo Supervisor dentro de cada worker.
+    # Substitua /app/run_server.sh dentro do container pelo seu aplicativo.
+    _SCRIPT_PADRAO = """#!/bin/sh
+# DroidServer - script padrao do worker.
+# Substitua este arquivo pelo seu aplicativo que deve rodar no container.
+echo "[DroidServer] Worker iniciado em $(date)"
+while true; do sleep 30; done
+"""
+
     @staticmethod
     def get_installed_workers():
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
@@ -92,10 +101,31 @@ class WorkerManager:
 
             log.info("[+] Serviço '%s' registrado e iniciado no Supervisor.", alias)
 
+            # 5. Garante que /app/run_server.sh exista dentro do container
+            WorkerManager._injetar_run_server(alias)
+
         except subprocess.CalledProcessError:
             log.error("[-] Erro ao criar o container '%s'.", alias)
         except Exception as e:
             log.error("[-] Erro inesperado: %s", e)
+
+    @staticmethod
+    def _injetar_run_server(alias):
+        """Cria /app/run_server.sh dentro do container (via stdin do proot-distro)."""
+        try:
+            proc = subprocess.Popen(
+                ["proot-distro", "login", alias, "--", "sh", "-c",
+                 "cat > /app/run_server.sh && chmod +x /app/run_server.sh"],
+                stdin=subprocess.PIPE,
+            )
+            proc.communicate(WorkerManager._SCRIPT_PADRAO.encode(), timeout=120)
+            if proc.returncode == 0:
+                log.info("[+] /app/run_server.sh criado no container '%s'.", alias)
+            else:
+                log.warning("[-] proot-distro retornou %s ao criar run_server.sh do '%s'.",
+                            proc.returncode, alias)
+        except Exception as e:
+            log.warning("[-] Não foi possível criar /app/run_server.sh do '%s': %s", alias, e)
 
     @staticmethod
     def deletar(alias):

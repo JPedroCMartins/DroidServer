@@ -23,7 +23,7 @@ Orquestração de cluster a partir de dispositivos Android (Termux). Um servidor
 
 ### Fluxo de deploy de um worker
 
-O host enfileira a tarefa `criar_worker` → o node executa `proot-distro install` com o alias escolhido → gera um arquivo `.conf` em `$PREFIX/etc/supervisor/conf.d/` → o **Supervisor** inicia e mantém o container rodando (`proot-distro login <alias> -- /app/run_server.sh`).
+O host enfileira a tarefa `criar_worker` → o node executa `proot-distro install` com o alias escolhido → gera um arquivo `.conf` em `$PREFIX/etc/supervisor/conf.d/` → o **Supervisor** inicia e mantém o container rodando (`proot-distro login <alias> -- /app/run_server.sh`). O agente também cria um `run_server.sh` padrão dentro de cada container — substitua pelo seu aplicativo.
 
 ## Estrutura do projeto
 
@@ -31,6 +31,8 @@ O host enfileira a tarefa `criar_worker` → o node executa `proot-distro instal
 DroidServer/
 ├── android/                  # Agente que roda no dispositivo Android (Termux)
 │   ├── node.py               # NodeAgent: polling, WebSocket, workers e PTY
+│   ├── setup.sh              # Script de primeiro uso (instala e configura tudo)
+│   ├── run.sh                # Inicia o agente carregando a configuração salva
 │   ├── pyproject.toml        # Dependências (python-socketio, requests)
 │   └── uv.lock
 └── desktop/                  # Servidor host (controlador do cluster)
@@ -69,24 +71,27 @@ O host fica disponível em `http://0.0.0.0:5050`.
 
 ### 2. Node Android (Termux)
 
+No celular, com o [Termux](https://termux.dev/) instalado, copie o repositório para o aparelho (ex.: `git clone` ou via adb) e rode o script de **primeiro uso** — ele instala tudo e configura a conexão:
+
 ```bash
-bash android_setup.sh                          # instala dependências Python
-pkg install proot-distro supervisor -y
-uv sync                                        # dentro da pasta android/
+bash android/setup.sh
 ```
 
-Configure a conexão do host no agente via variáveis de ambiente (não é mais preciso editar o código):
+O script instala os pacotes (`git`, `python`, `proot-distro`, `supervisor`), as dependências do agente, garante que o **Supervisor** leia os arquivos de serviço em `$PREFIX/etc/supervisor/conf.d/`, inicia o `supervisord` e salva a configuração em `~/.config/droidserver/env`.
+
+Inicie o agente com o wrapper (já carrega IP/porta/token salvos):
+
+```bash
+bash android/run.sh
+```
+
+Ou configure manualmente via variáveis de ambiente:
 
 ```bash
 export DROID_HOST_IP="192.168.1.10"   # IP do desktop na rede
 export DROID_HOST_PORT="5050"         # porta do host (opcional)
 export DROID_TOKEN=""                 # token opcional, exigido se o host tiver DROID_API_TOKEN
-```
-
-Em seguida, rode o agente:
-
-```bash
-uv run python node.py
+python3 node.py                       # dentro da pasta android/
 ```
 
 ## Variáveis de ambiente

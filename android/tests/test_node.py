@@ -51,7 +51,24 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
         comandos.append(cmd)
         return None
 
+    class FakePopen:
+        instances = []
+
+        def __init__(self, cmd, stdin=None):
+            self.cmd = cmd
+            self.stdin = stdin
+            FakePopen.instances.append(self)
+
+        def communicate(self, data, timeout=None):
+            self.data = data
+            return (None, None)
+
+        @property
+        def returncode(self):
+            return 0
+
     monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr("subprocess.Popen", FakePopen)
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
     WorkerManager.criar("worker_bd", "alpine")
@@ -64,6 +81,11 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     conteudo = conf.read_text()
     assert "[program:worker_bd]" in conteudo
     assert "command=proot-distro login worker_bd -- /app/run_server.sh" in conteudo
+
+    assert len(FakePopen.instances) == 1
+    assert "worker_bd" in FakePopen.instances[0].cmd
+    assert b"DroidServer" in FakePopen.instances[0].data
+    assert b"sleep 30" in FakePopen.instances[0].data
 
 
 def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
