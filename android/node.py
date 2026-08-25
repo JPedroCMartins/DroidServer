@@ -93,8 +93,11 @@ while true; do sleep 30; done
     @staticmethod
     def _existe(alias):
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
-        rootfs = os.path.join(prefix, 'var/lib/proot-distro/installed-rootfs', alias)
-        return os.path.isdir(rootfs)
+        base = os.path.join(prefix, 'var/lib/proot-distro')
+        return (
+            os.path.isdir(os.path.join(base, 'installed-rootfs', alias))
+            or os.path.isdir(os.path.join(base, 'containers', alias))
+        )
 
     @staticmethod
     def _supervisor_conf():
@@ -103,14 +106,25 @@ while true; do sleep 30; done
 
     @staticmethod
     def get_installed_workers():
+        """Lista os containers instalados no proot-distro.
+
+        Suporta os dois layouts de armazenamento: o antigo
+        (var/lib/proot-distro/installed-rootfs) e o novo
+        (var/lib/proot-distro/containers), usado por versões recentes.
+        """
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
-        rootfs_dir = os.path.join(prefix, 'var/lib/proot-distro/installed-rootfs')
-        if not os.path.exists(rootfs_dir):
-            return []
-        try:
-            return os.listdir(rootfs_dir)
-        except OSError:
-            return []
+        base = os.path.join(prefix, 'var/lib/proot-distro')
+
+        nomes = set()
+        for sub in ('installed-rootfs', 'containers'):
+            diretorio = os.path.join(base, sub)
+            if not os.path.isdir(diretorio):
+                continue
+            try:
+                nomes.update(os.listdir(diretorio))
+            except OSError:
+                pass
+        return sorted(nomes)
 
     @staticmethod
     def get_workers_status():

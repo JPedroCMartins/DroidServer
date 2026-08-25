@@ -360,6 +360,27 @@ def test_system_monitor_linha_curta(monkeypatch, tmp_path):
     assert amostra["cpu"] == 75.0
 
 
+def test_cpu_via_top_fallback(monkeypatch):
+    class ProcFake:
+        returncode = 0
+        stdout = (
+            "Tasks: 8 total,   1 running\n"
+            "800%cpu   100%user   0%nice   0%sys 700%idle   0%iow\n"
+        )
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: ProcFake())
+    # (800 - 700) / 800 = 12.5%
+    assert sysinfo._cpu_via_top() == 12.5
+
+
+def test_cpu_via_top_falha_retorna_none(monkeypatch):
+    def falha(*a, **k):
+        raise OSError("sem top")
+
+    monkeypatch.setattr("subprocess.run", falha)
+    assert sysinfo._cpu_via_top() is None
+
+
 # ---------- NodeAgent ----------
 
 def test_poll_once_retorna_tarefas(monkeypatch):

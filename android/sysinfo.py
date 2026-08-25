@@ -2,9 +2,13 @@
 
 Funciona em Termux/Android: /proc/stat e /proc/meminfo refletem o uso do
 dispositivo inteiro, do ponto de vista do kernel Linux.
+
+Em dispositivos com SELinux restritivo, /proc/stat pode ser bloqueado — nesse
+caso usamos o `top` do busybox como fallback.
 """
 
 import logging
+import subprocess
 import time
 
 log = logging.getLogger("sysinfo")
@@ -65,6 +69,28 @@ def _read_mem():
     return total, available
 
 
+def _cpu_via_top():
+    """Fallback: usa `top -b -n 1` quando /proc/stat está bloqueado (SELinux)."""
+    try:
+        proc = subprocess.run(["top", "-b", "-n", "1"], capture_output=True, text=True, timeout=5)
+    except Exception as e:
+        log.warning("Falha ao executar top para CPU: %s", e)
+        return None
+    if proc.returncode != 0:
+        return None
+    for linha in proc.stdout.splitlines():
+        if "%cpu" in linha and "%idle" in linha:
+            try:
+                partes = linha.split()
+                total = float(next(p for p in partes if p.endswith("%cpu")).replace("%cpu", ""))
+                idle = float(next(p for p in partes if p.endswith("%idle")).replace("%idle", ""))
+            except (StopIteration, ValueError):
+                return None
+            if total > 0:
+                return round(max(0.0, min(100.0, 100.0 * (total - idle) / total)), 1)
+    return None
+
+
 class SystemMonitor:
     """Calcula uso de CPU (% desde a última leitura) e memória do dispositivo."""
 
@@ -84,7 +110,10 @@ class SystemMonitor:
             else:
                 log.warning("Sem delta de CPU entre amostras (atual=%s, prev=%s)", atual, self._prev_cpu)
         elif atual is None:
-            log.warning("CPU indisponível nesta amostra (%s ilegível ou mal formatado)", STAT_FILE)
+            # /proc/stat bloqueado (SELinux) -> tenta o top do busybox
+            cpu = _cpu_via_top()
+            if cpu is None:
+                log.warning("CPU indisponível (%s ilegível e top sem resultado)", STAT_FILE)
         self._prev_cpu = atual
         self._prev_ts = time.monotonic()
 
