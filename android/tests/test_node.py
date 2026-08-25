@@ -110,6 +110,26 @@ def test_worker_criar_rejeita_container_existente(monkeypatch, tmp_path):
     assert "já existe" in msg.lower()
 
 
+def test_worker_criar_captura_erro_do_install(monkeypatch, tmp_path):
+    class RunResult:
+        def __init__(self, rc=0, out="", err=""):
+            self.returncode = rc
+            self.stdout = out
+            self.stderr = err
+
+    def fake_run(cmd, **kw):
+        if "install" in cmd:
+            return RunResult(1, "", "erro do proot-distro: [Errno 11] resource busy")
+        return RunResult()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    ok, msg = WorkerManager.criar("worker_bd", "alpine")
+    assert ok is False
+    assert "erro do proot-distro" in msg
+
+
 def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
     comandos = []
 

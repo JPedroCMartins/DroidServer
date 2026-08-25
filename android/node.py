@@ -48,6 +48,8 @@ def _configurar_logging():
             os.makedirs(os.path.dirname(log_file), exist_ok=True)
             fh = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=5, encoding="utf-8")
             fh.setFormatter(fmt)
+            # DEBUG no arquivo para capturar os diagnósticos de sysinfo (CPU/mem)
+            fh.setLevel(logging.DEBUG)
             raiz.addHandler(fh)
         except OSError as e:
             log.warning("Não foi possível criar o arquivo de log '%s': %s", log_file, e)
@@ -162,8 +164,19 @@ while true; do sleep 30; done
         """
 
         try:
+            # 0. Para o serviço antes de mexer no container (evita lock do proot-distro
+            #    se o supervisor estiver reiniciando o serviço antigo)
+            subprocess.run(["supervisorctl", "stop", alias], check=False, capture_output=True)
+
             # 1. Instala o proot-distro
-            subprocess.run(["proot-distro", "install", imagem, "--override-alias", alias], check=True)
+            proc = subprocess.run(
+                ["proot-distro", "install", imagem, "--override-alias", alias],
+                capture_output=True, text=True, timeout=600,
+            )
+            if proc.returncode != 0:
+                erro = (proc.stderr or proc.stdout).strip()[:300]
+                log.error("[-] Erro ao instalar '%s': %s", alias, erro)
+                return False, f"Falha ao instalar '{alias}': {erro}"
             log.info("[+] Container '%s' criado com sucesso!", alias)
 
             # 2. Garante que as pastas de configuração e logs existam

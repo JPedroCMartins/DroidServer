@@ -19,23 +19,23 @@ def _read_cpu():
         with open(STAT_FILE) as f:
             line = f.readline()
     except OSError as e:
-        log.debug("Falha ao ler %s: %s", STAT_FILE, e)
+        log.warning("Falha ao ler %s: %s", STAT_FILE, e)
         return None
 
     parts = line.split()
     if not parts or parts[0] != 'cpu':
-        log.debug("Linha inesperada em %s: %r", STAT_FILE, line[:100])
+        log.warning("Linha inesperada em %s: %r", STAT_FILE, line[:100])
         return None
 
     try:
         values = [int(v) for v in parts[1:9]]
     except ValueError as e:
-        log.debug("Coluna não numérica em %s: %r (%s)", STAT_FILE, line[:100], e)
+        log.warning("Coluna não numérica em %s: %r (%s)", STAT_FILE, line[:100], e)
         return None
 
     # Tolera linhas curtas (alguns kernels expõem só user/nice/system/idle)
     if len(values) < 4:
-        log.debug("Poucas colunas em %s: %r", STAT_FILE, line[:100])
+        log.warning("Poucas colunas em %s (linha: %r)", STAT_FILE, line[:100])
         return None
 
     # formato: user nice system idle iowait irq softirq steal
@@ -49,7 +49,7 @@ def _read_mem():
         with open(MEMINFO_FILE) as f:
             lines = f.readlines()
     except OSError as e:
-        log.debug("Falha ao ler %s: %s", MEMINFO_FILE, e)
+        log.warning("Falha ao ler %s: %s", MEMINFO_FILE, e)
         return None, None
 
     fields = {}
@@ -82,9 +82,9 @@ class SystemMonitor:
             if d_total > 0:
                 cpu = round(100.0 * (d_total - d_idle) / d_total, 1)
             else:
-                log.debug("Sem delta de CPU entre amostras (atual=%s, prev=%s)", atual, self._prev_cpu)
+                log.warning("Sem delta de CPU entre amostras (atual=%s, prev=%s)", atual, self._prev_cpu)
         elif atual is None:
-            log.debug("CPU indisponível nesta amostra (%s ilegível ou mal formatado)", STAT_FILE)
+            log.warning("CPU indisponível nesta amostra (%s ilegível ou mal formatado)", STAT_FILE)
         self._prev_cpu = atual
         self._prev_ts = time.monotonic()
 
