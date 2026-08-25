@@ -62,11 +62,11 @@ echo
 
 # --- 1. pacotes base ------------------------------------------------------------
 info "Atualizando listas e pacotes do Termux..."
-pkg update -y >/dev/null 2>&1 && ok "pkg update concluído" || warn "pkg update falhou (seguindo mesmo assim)"
-pkg upgrade -y >/dev/null 2>&1 && ok "pkg upgrade concluído" || warn "pkg upgrade falhou (seguindo mesmo assim)"
+if pkg update -y; then ok "pkg update concluído"; else warn "pkg update falhou (seguindo mesmo assim)"; fi
+if pkg upgrade -y; then ok "pkg upgrade concluído"; else warn "pkg upgrade falhou (seguindo mesmo assim)"; fi
 
 install_pkg() {
-    if pkg install -y "$1" >/dev/null 2>&1; then
+    if pkg install -y "$1"; then
         ok "pacote '$1' instalado"
         return 0
     fi
@@ -98,7 +98,7 @@ ensure_supervisor() {
     fi
 
     info "Instalando Supervisor (tentativa 1: pip — mais confiável no Termux)..."
-    if "$PY" -m pip install --break-system-packages -q supervisor; then
+    if "$PY" -m pip install --break-system-packages supervisor; then
         if installed supervisord; then
             ok "Supervisor instalado via pip"
             return 0
@@ -106,7 +106,7 @@ ensure_supervisor() {
     fi
 
     info "Instalando Supervisor (tentativa 2: pacote do Termux)..."
-    if pkg install -y supervisor >/dev/null 2>&1; then
+    if pkg install -y supervisor; then
         if installed supervisord; then
             ok "Supervisor instalado via pkg"
             return 0
@@ -182,21 +182,26 @@ if supervisorctl -c "$SUP_CONF" status >/dev/null 2>&1; then
     ok "Supervisor já está rodando"
 else
     info "Iniciando supervisord em background..."
-    if supervisord -c "$SUP_CONF" >/dev/null 2>&1; then
-        sleep 3
+    supervisord -c "$SUP_CONF"
+    printf '%s[*]%s Aguardando o supervisor responder' "$c_info" "$c_res"
+    for _ in $(seq 1 10); do
         if supervisorctl -c "$SUP_CONF" status >/dev/null 2>&1; then
+            printf '\n'
             ok "supervisord iniciado"
-        else
-            warn "supervisord executou mas não respondeu. Veja: $PREFIX/var/log/supervisor/supervisord.log"
+            break
         fi
-    else
-        warn "Falha ao iniciar supervisord. Veja: $PREFIX/var/log/supervisor/supervisord.log"
+        printf '.'
+        sleep 1
+    done
+    if ! supervisorctl -c "$SUP_CONF" status >/dev/null 2>&1; then
+        printf '\n'
+        warn "supervisord não respondeu. Veja: $PREFIX/var/log/supervisor/supervisord.log"
     fi
 fi
 
 # --- 5. dependências do agente --------------------------------------------------------
 info "Instalando dependências do agente (python-socketio, requests)..."
-if "$PY" -m pip install --break-system-packages -q python-socketio requests; then
+if "$PY" -m pip install --break-system-packages python-socketio requests; then
     ok "Dependências do agente instaladas"
 else
     warn "Falha ao instalar as dependências do agente. Rode manualmente:"
