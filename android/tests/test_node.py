@@ -1,0 +1,324 @@
+import os
+import struct
+import threading
+
+import pytest
+import requests
+from requests.exceptions import ConnectionError
+
+from node import Config, NodeAgent, TerminalManager, WorkerManager
+
+
+# ---------- Config ----------
+
+def test_config_usa_variaveis_de_ambiente(monkeypatch):
+    monkeypatch.setenv("DROID_HOST_IP", "10.0.0.9")
+    monkeypatch.setenv("DROID_HOST_PORT", "7070")
+    monkeypatch.setenv("DROID_TOKEN", "abc")
+
+    c = Config()
+    assert c.host_ip == "10.0.0.9"
+    assert c.port == 7070
+    assert c.token == "abc"
+    assert c.http_url == "http://10.0.0.9:7070/api/node_sync"
+    assert c.ws_url == "http://10.0.0.9:7070"
+
+
+def test_config_usa_padroes(monkeypatch):
+    monkeypatch.delenv("DROID_HOST_IP", raising=False)
+    monkeypatch.delenv("DROID_HOST_PORT", raising=False)
+    monkeypatch.delenv("DROID_TOKEN", raising=False)
+
+    c = Config()
+    assert c.host_ip == "192.168.1.10"
+    assert c.port == 5050
+    assert c.token == ""
+
+
+def test_config_aceita_override_direto():
+    c = Config(host_ip="1.2.3.4", port=9999, token="x")
+    assert c.host_ip == "1.2.3.4"
+    assert c.port == 9999
+    assert c.token == "x"
+
+
+# ---------- WorkerManager ----------
+
+def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
+    comandos = []
+
+    def fake_run(cmd, **kw):
+        comandos.append(cmd)
+        return None
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    WorkerManager.criar("worker_bd", "alpine")
+
+    assert any("proot-distro" in c and "install" in c and "worker_bd" in c for c in comandos)
+    assert any("supervisorctl" in c and "reread" in c for c in comandos)
+
+    conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
+    assert conf.exists()
+    conteudo = conf.read_text()
+    assert "[program:worker_bd]" in conteudo
+    assert "command=proot-distro login worker_bd -- /app/run_server.sh" in conteudo
+
+
+def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
+    comandos = []
+
+    def fake_run(cmd, **kw):
+        comandos.append(cmd)
+        return None
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text("[program:worker_bd]\n")
+
+    WorkerManager.deletar("worker_bd")
+
+    assert not conf.exists()
+    assert any("supervisorctl" in c and "stop" in c and "worker_bd" in c for c in comandos)
+    assert any("proot-distro" in c and "remove" in c and "worker_bd" in c for c in comandos)
+
+
+def test_worker_deletar_ignora_falha_do_install(monkeypatch, tmp_path):
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    WorkerManager.deletar("inexistente")
+    # Não deve levantar exceção mesmo sem configuração/logs no sistema
+
+
+def test_get_installed_workers_sem_pasta(monkeypatch, tmp_path):
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    assert WorkerManager.get_installed_workers() == []
+
+
+def test_get_installed_workers_lista_rootfs(monkeypatch, tmp_path):
+    rootfs = tmp_path / "var/lib/proot-distro/installed-rootfs"
+    (rootfs / "alpine_bd").mkdir(parents=True)
+    (rootfs / "web1").mkdir(parents=True)
+
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    assert sorted(WorkerManager.get_installed_workers()) == ["alpine_bd", "web1"]
+
+
+# ---------- TerminalManager ----------
+
+def test_iniciar_pty_pai_registra_fd(monkeypatch):
+    monkeypatch.setattr("pty.fork", lambda: (1234, 9))
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)
+
+    agente = NodeAgent()
+    agente.terminal.iniciar_pty("w1")
+
+    assert agente.terminal.ativos["w1"] == 9
+
+
+def test_iniciar_pty_filho_executa_proot(monkeypatch):
+    executados = {}
+
+    def fake_fork():
+        return (0, 0)
+
+    def fake_execvp(nome, args):
+        executados["nome"] = nome
+        executados["args"] = args
+        raise SystemExit(0)
+
+    monkeypatch.setattr("pty.fork", fake_fork)
+    monkeypatch.setattr("os.execvp", fake_execvp)
+    monkeypatch.setenv("TERM", "")
+
+    agente = NodeAgent()
+    with pytest.raises(SystemExit):
+        agente.terminal.iniciar_pty("w1")
+
+    assert executados["nome"] == "proot-distro"
+    assert executados["args"] == ["proot-distro", "login", "w1"]
+    assert os.environ.get("TERM") == "xterm-256color"
+
+
+def test_iniciar_pty_nao_duplica(monkeypatch):
+    monkeypatch.setattr("pty.fork", lambda: (1, 9))
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = 7
+    agente.terminal.iniciar_pty("w1")
+
+    assert agente.terminal.ativos["w1"] == 7  # mantém o original
+
+
+def test_escrever_comando_escreve_no_pty(monkeypatch):
+    escritas = []
+    monkeypatch.setattr("os.write", lambda fd, data: escritas.append((fd, data)))
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = 42
+    agente.terminal.escrever_comando("w1", "ls\n")
+
+    assert escritas == [(42, b"ls\n")]
+
+
+def test_redimensionar_pty(monkeypatch):
+    ioctls = []
+
+    def fake_ioctl(fd, req, arg):
+        ioctls.append((fd, req, arg))
+
+    monkeypatch.setattr("fcntl.ioctl", fake_ioctl)
+
+    import termios
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = 7
+    agente.terminal.redimensionar("w1", 120, 30)
+
+    assert len(ioctls) == 1
+    assert ioctls[0][0] == 7
+    assert ioctls[0][1] == termios.TIOCSWINSZ
+    assert ioctls[0][2] == struct.pack("HHHH", 30, 120, 0, 0)
+
+
+def test_redimensionar_sem_sessao_nao_falha():
+    agente = NodeAgent()
+    agente.terminal.redimensionar("w1", 80, 24)  # não deve levantar
+
+
+# ---------- NodeAgent ----------
+
+def test_poll_once_retorna_tarefas(monkeypatch):
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"status": "ok", "tarefas": [{"acao": "criar_worker", "alias": "w1"}]}
+
+    chamadas = {}
+
+    def fake_post(url, json=None, timeout=None):
+        chamadas["url"] = url
+        chamadas["payload"] = json
+        return RespostaFake()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    agente = NodeAgent()
+    tarefas = agente._poll_once()
+
+    assert tarefas == [{"acao": "criar_worker", "alias": "w1"}]
+    assert chamadas["url"] == agente.config.http_url
+    assert chamadas["payload"]["ip"] == agente.meu_ip
+    assert "workers" in chamadas["payload"]
+
+
+def test_poll_once_envia_token_quando_configurado(monkeypatch):
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"status": "ok", "tarefas": []}
+
+    payload = {}
+
+    def fake_post(url, json=None, timeout=None):
+        payload.update(json)
+        return RespostaFake()
+
+    monkeypatch.setattr("requests.post", fake_post)
+    monkeypatch.setenv("DROID_TOKEN", "segredo")
+
+    agente = NodeAgent()
+    agente._poll_once()
+
+    assert payload["token"] == "segredo"
+
+
+def test_poll_once_erro_de_rede_retorna_vazio(monkeypatch):
+    def fake_post(*a, **k):
+        raise ConnectionError("sem rede")
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    agente = NodeAgent()
+    assert agente._poll_once() == []
+
+
+def test_poll_once_status_nao_200_retorna_vazio(monkeypatch):
+    class RespostaFake:
+        status_code = 401
+
+        def json(self):
+            return {"erro": "Não autorizado"}
+
+    monkeypatch.setattr("requests.post", lambda *a, **k: RespostaFake())
+
+    agente = NodeAgent()
+    assert agente._poll_once() == []
+
+
+def test_executar_tarefa_criar_worker(monkeypatch):
+    chamadas = {}
+
+    def fake_criar(alias, imagem):
+        chamadas["alias"] = alias
+        chamadas["imagem"] = imagem
+
+    monkeypatch.setattr(WorkerManager, "criar", staticmethod(fake_criar))
+
+    agente = NodeAgent()
+    agente._executar_tarefa({"acao": "criar_worker", "alias": "w1", "imagem": "alpine"})
+
+    assert chamadas == {"alias": "w1", "imagem": "alpine"}
+
+
+def test_executar_tarefa_deletar_worker(monkeypatch):
+    chamadas = []
+
+    def fake_deletar(alias):
+        chamadas.append(alias)
+
+    monkeypatch.setattr(WorkerManager, "deletar", staticmethod(fake_deletar))
+
+    agente = NodeAgent()
+    agente._executar_tarefa({"acao": "deletar_worker", "alias": "w1"})
+
+    assert chamadas == ["w1"]
+
+
+def test_executar_tarefa_desconhecida_nao_falha():
+    agente = NodeAgent()
+    agente._executar_tarefa({"acao": "apagar_tudo"})  # não deve levantar
+
+
+def test_conectar_ws_retenta_apos_falha(monkeypatch):
+    agente = NodeAgent()
+    agente.sio.connected = False
+
+    tentativas = [Exception("boom")]
+
+    def fake_connect(url):
+        if tentativas:
+            raise tentativas.pop(0)
+
+    monkeypatch.setattr(agente.sio, "connect", fake_connect)
+
+    assert agente._conectar_ws() is False
+    assert agente._conectar_ws() is True
+
+
+def test_conectar_ws_ja_conectado_nao_refaz(monkeypatch):
+    agente = NodeAgent()
+    agente.sio.connected = True
+
+    def fake_connect(url):
+        raise AssertionError("não deveria reconectar")
+
+    monkeypatch.setattr(agente.sio, "connect", fake_connect)
+
+    assert agente._conectar_ws() is True

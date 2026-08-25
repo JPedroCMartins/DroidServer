@@ -2,71 +2,149 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Terminal: {{ alias }}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal {{ alias }} — DroidServer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-    
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-
-    <style>
-        body { background-color: #1e1e1e; color: white; }
-        #terminal-container { height: 70vh; width: 100%; padding: 10px; background: #000; }
-    </style>
 </head>
 <body>
-    <div class="container mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h3>Terminal Web <span class="fs-5 text-warning">(Alpine: {{ alias }})</span></h3>
-            <a href="/node/{{ ip }}" class="btn btn-outline-light btn-sm">Encerrar Sessão</a>
-        </div>
-        
-        <div id="terminal-container"></div>
-        <p class="text-white-50 mt-2 small">Node: {{ ip }} | Status: <span id="status" class="text-warning">Conectando...</span></p>
+    <div class="layout term-page">
+        <aside class="sidebar" style="height:100vh; position:sticky; top:0;">
+            <div class="brand">
+                <div class="brand-icon">DS</div>
+                <div class="brand-text">
+                    <strong>DroidServer</strong>
+                    <span>Cluster</span>
+                </div>
+            </div>
+
+            <nav class="nav">
+                <span class="nav-label">Menu</span>
+                <a href="/" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                    Dashboard
+                </a>
+                <a href="/node/{{ ip }}" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    Node {{ ip }}
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="legend">
+                    <span class="status-dot online"></span>
+                    Sessão ao vivo
+                </div>
+            </div>
+        </aside>
+
+        <main class="main" style="display:flex; flex-direction:column; min-height:100vh;">
+            <header class="topbar" style="margin-bottom:18px;">
+                <div>
+                    <h1 style="display:flex; align-items:center; gap:10px;">
+                        Terminal
+                        <span class="chip">{{ alias }}</span>
+                    </h1>
+                    <p class="subtitle">Sessão interativa no container via WebSocket.</p>
+                </div>
+                <div class="topbar-actions">
+                    <span class="term-status">
+                        <span class="status-dot idle" id="statusDot"></span>
+                        <span id="status" style="color:#fbbf24;">Conectando...</span>
+                    </span>
+                    <a href="/node/{{ ip }}" class="btn btn-ghost btn-sm">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+                        Encerrar sessão
+                    </a>
+                </div>
+            </header>
+
+            <div class="term-body" style="flex:1; min-height:0; padding:0;">
+                <div class="term-shell" style="height:calc(100vh - 200px); min-height:420px;"></div>
+            </div>
+        </main>
     </div>
 
     <script>
-        // Inicializa o Terminal na tela
-        const term = new Terminal({
-            cursorBlink: true,
-            theme: { background: '#000000' }
-        });
-        const fitAddon = new FitAddon.FitAddon();
-        term.loadAddon(fitAddon);
-        term.open(document.getElementById('terminal-container'));
-        fitAddon.fit();
-
-        term.write('Iniciando conexão com o servidor Host...\r\n');
-
-        // Conecta ao Flask via WebSocket
-        const socket = io();
-
         const ipNode = "{{ ip }}";
         const aliasWorker = "{{ alias }}";
 
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
+            theme: {
+                background: '#050a15',
+                foreground: '#e2e8f0',
+                cursor: '#67e8f9',
+                cursorAccent: '#050a15',
+                selectionBackground: 'rgba(99,102,241,0.35)',
+                black: '#050a15',
+                red: '#f87171',
+                green: '#34d399',
+                yellow: '#fbbf24',
+                blue: '#818cf8',
+                magenta: '#c084fc',
+                cyan: '#67e8f9',
+                white: '#e2e8f0',
+                brightBlack: '#64748b',
+                brightRed: '#fb7185',
+                brightGreen: '#6ee7b7',
+                brightYellow: '#fcd34d',
+                brightBlue: '#a5b4fc',
+                brightMagenta: '#d8b4fe',
+                brightCyan: '#a5f3fc',
+                brightWhite: '#f8fafc'
+            }
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.querySelector('.term-shell'));
+        fitAddon.fit();
+
+        term.write('\x1b[38;5;111mDroidServer\x1b[0m — Iniciando conexão com o host...\r\n\r\n');
+
+        const socket = io();
+
         socket.on('connect', () => {
             document.getElementById('status').innerText = 'Conectado ao Host. Aguardando Node...';
-            document.getElementById('status').className = 'text-success';
+            document.getElementById('status').style.color = '#34d399';
+            document.getElementById('statusDot').className = 'status-dot online';
+            sendResize();
         });
 
-        // 1. Quando o usuário digita algo no navegador, manda pro Flask
+        socket.on('disconnect', () => {
+            document.getElementById('status').innerText = 'Conexão perdida';
+            document.getElementById('status').style.color = '#f87171';
+            document.getElementById('statusDot').className = 'status-dot offline';
+        });
+
         term.onData(data => {
-            socket.emit('terminal_input', {
-                ip: ipNode,
-                alias: aliasWorker,
-                input: data
-            });
+            socket.emit('terminal_input', { ip: ipNode, alias: aliasWorker, input: data });
         });
 
-        // 2. Quando o Flask recebe a resposta do celular, escreve no terminal web
         socket.on(`output_for_${ipNode}_${aliasWorker}`, (data) => {
             term.write(data.output);
         });
 
-        // Redimensiona o terminal se a janela mudar de tamanho
-        window.addEventListener('resize', () => { fitAddon.fit(); });
+        // Mantém o PTY no node sincronizado com o tamanho da janela do navegador
+        function sendResize() {
+            socket.emit('terminal_resize', {
+                ip: ipNode,
+                alias: aliasWorker,
+                cols: term.cols,
+                rows: term.rows
+            });
+        }
+
+        window.addEventListener('resize', () => { fitAddon.fit(); sendResize(); });
     </script>
 </body>
 </html>

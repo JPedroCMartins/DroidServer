@@ -1,49 +1,63 @@
-import stat
-import time
-import socket
-import subprocess
+import logging
 import os
 import pty
+import queue
 import select
+import socket
+import subprocess
 import threading
+import time
+
 import requests
 import socketio
 
-HOST_IP = "192.168.1.10"
-HOST_PORT = 5050
+log = logging.getLogger("node")
+
+DEFAULT_HOST_IP = "192.168.1.10"
+DEFAULT_HOST_PORT = 5050
+POLL_INTERVAL = 10
+
 
 class Config:
-    """Armazena as configurações globais de conexão do agente."""
-    def __init__(self, host_ip=HOST_IP, port=HOST_PORT):
-        self.host_ip = host_ip
-        self.port = port
+    """Configurações de conexão do agente, lidas de variáveis de ambiente.
+
+    DROID_HOST_IP   -> IP do servidor host
+    DROID_HOST_PORT -> porta do servidor host
+    DROID_TOKEN     -> token opcional, exigido pelo host se DROID_API_TOKEN estiver definido
+    """
+
+    def __init__(self, host_ip=None, port=None, token=None):
+        self.host_ip = host_ip or os.getenv("DROID_HOST_IP", DEFAULT_HOST_IP)
+        self.port = int(port or os.getenv("DROID_HOST_PORT", DEFAULT_HOST_PORT))
+        self.token = token if token is not None else os.getenv("DROID_TOKEN", "")
         self.http_url = f"http://{self.host_ip}:{self.port}/api/node_sync"
         self.ws_url = f"http://{self.host_ip}:{self.port}"
 
+
 class WorkerManager:
     """Classe utilitária para gerenciar as instâncias do proot-distro no sistema."""
-    
+
     @staticmethod
     def get_installed_workers():
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
         rootfs_dir = os.path.join(prefix, 'var/lib/proot-distro/installed-rootfs')
-        if not os.path.exists(rootfs_dir): 
+        if not os.path.exists(rootfs_dir):
             return []
         try:
             return os.listdir(rootfs_dir)
-        except Exception:
+        except OSError:
             return []
 
     @staticmethod
     def criar(alias, imagem):
-        print(f"[*] Deploy: Criando '{alias}' ({imagem})...")
-        
+        log.info("[Deploy] Criando '%s' (%s)...", alias, imagem)
+
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
-        
+
         # Onde o arquivo de configuração do serviço vai ficar
         conf_dir = os.path.join(prefix, "etc", "supervisor", "conf.d")
         arquivo_conf = os.path.join(conf_dir, f"{alias}.conf")
-        
+
         # Onde os logs serão salvos (organizados por nome do container)
         log_out = os.path.join(prefix, "var", "log", f"supervisor_{alias}_out.log")
         log_err = os.path.join(prefix, "var", "log", f"supervisor_{alias}_err.log")
@@ -61,36 +75,34 @@ class WorkerManager:
         try:
             # 1. Instala o proot-distro
             subprocess.run(["proot-distro", "install", imagem, "--override-alias", alias], check=True)
-            print(f"[+] Container '{alias}' criado com sucesso!")
-            
+            log.info("[+] Container '%s' criado com sucesso!", alias)
+
             # 2. Garante que as pastas de configuração e logs existam
             os.makedirs(conf_dir, exist_ok=True)
             os.makedirs(os.path.dirname(log_out), exist_ok=True)
-            
+
             # 3. Cria o arquivo de configuração do Supervisor
             with open(arquivo_conf, "w") as f:
                 f.write(conteudo_conf)
-            print(f"[+] Arquivo de configuração criado: {arquivo_conf}")
-            
+            log.info("[+] Arquivo de configuração criado: %s", arquivo_conf)
+
             # 4. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
-            # O 'reread' lê os arquivos novos, e o 'update' inicia os serviços pendentes
             subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
             subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
-            
-            print(f"[+] Serviço '{alias}' registrado e iniciado no Supervisor.")
-            
+
+            log.info("[+] Serviço '%s' registrado e iniciado no Supervisor.", alias)
+
         except subprocess.CalledProcessError:
-            print(f"[-] Erro ao criar o container '{alias}'.")
+            log.error("[-] Erro ao criar o container '%s'.", alias)
         except Exception as e:
-            print(f"[-] Erro inesperado: {e}")
+            log.error("[-] Erro inesperado: %s", e)
 
     @staticmethod
     def deletar(alias):
-        print(f"[*] Deploy: Deletando '{alias}'...")
-        
+        log.info("[Deploy] Deletando '%s'...", alias)
+
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
-        
-        # Onde o arquivo de configuração e os logs estão localizados
+
         conf_dir = os.path.join(prefix, "etc", "supervisor", "conf.d")
         arquivo_conf = os.path.join(conf_dir, f"{alias}.conf")
         log_out = os.path.join(prefix, "var", "log", f"supervisor_{alias}_out.log")
@@ -99,35 +111,36 @@ class WorkerManager:
         try:
             # 1. Para o serviço no Supervisor (se estiver rodando) para evitar processos zumbis
             subprocess.run(["supervisorctl", "stop", alias], check=False, capture_output=True)
-            
+
             # 2. Remove o arquivo de configuração do Supervisor
             if os.path.exists(arquivo_conf):
                 os.remove(arquivo_conf)
-                print(f"[+] Arquivo de configuração removido: {arquivo_conf}")
-            
+                log.info("[+] Arquivo de configuração removido: %s", arquivo_conf)
+
             # 3. Atualiza o Supervisor para remover o serviço da memória
             subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
             subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
-            
+
             # 4. Remove o container proot-distro
             subprocess.run(["proot-distro", "remove", alias], check=True)
-            print(f"[+] Container '{alias}' deletado com sucesso!")
-            
+            log.info("[+] Container '%s' deletado com sucesso!", alias)
+
             # 5. Remove os arquivos de log associados
             if os.path.exists(log_out):
                 os.remove(log_out)
             if os.path.exists(log_err):
                 os.remove(log_err)
-            print(f"[+] Arquivos de log removidos.")
+            log.info("[+] Arquivos de log removidos.")
 
         except subprocess.CalledProcessError:
-            print(f"[-] Erro de processo ao tentar deletar '{alias}'.")
+            log.error("[-] Erro de processo ao tentar deletar '%s'.", alias)
         except Exception as e:
-            print(f"[-] Erro inesperado ao deletar: {e}")
+            log.error("[-] Erro inesperado ao deletar: %s", e)
+
 
 class TerminalManager:
     """Gerencia as sessões ativas do terminal via PTY e processos em background."""
-    
+
     def __init__(self, socket_client, local_ip):
         self.sio = socket_client
         self.local_ip = local_ip
@@ -136,12 +149,14 @@ class TerminalManager:
     def iniciar_pty(self, alias):
         """Cria um teclado/monitor virtual e roda o Alpine dentro dele."""
         if alias in self.ativos:
-            return # Terminal já está rodando
-        
-        print(f"[*] Iniciando PTY (Terminal Virtual) para: {alias}")
+            return  # Terminal já está rodando
+
+        log.info("[*] Iniciando PTY (Terminal Virtual) para: %s", alias)
         pid, master_fd = pty.fork()
-        
+
         if pid == 0:
+            # Garante que aplicativos interativos (vim, htop, nano) renderizem corretamente
+            os.environ['TERM'] = 'xterm-256color'
             os.execvp("proot-distro", ["proot-distro", "login", alias])
         else:
             self.ativos[alias] = master_fd
@@ -152,12 +167,28 @@ class TerminalManager:
         """Injeta comandos via WebSocket no PTY correspondente."""
         if alias not in self.ativos:
             self.iniciar_pty(alias)
-            time.sleep(0.5) # Aguarda inicialização
-            
+            time.sleep(0.5)  # Aguarda inicialização
+
         try:
             os.write(self.ativos[alias], comando.encode('utf-8'))
         except OSError:
-            pass # Se der erro, o PTY morreu. Ignora.
+            log.debug("PTY do '%s' não está mais disponível.", alias)
+
+    def redimensionar(self, alias, cols, rows):
+        """Ajusta o tamanho da janela (TIOCSWINSZ) do PTY para o tamanho do navegador."""
+        if alias not in self.ativos:
+            return
+        try:
+            import fcntl
+            import struct
+            import termios
+            fcntl.ioctl(
+                self.ativos[alias],
+                termios.TIOCSWINSZ,
+                struct.pack('HHHH', int(rows), int(cols), 0, 0),
+            )
+        except (OSError, ValueError):
+            log.debug("Falha ao redimensionar PTY do '%s'.", alias)
 
     def _ler_saida(self, master_fd, alias):
         """Fica lendo a tela do Alpine e enviando pro Flask (Thread)."""
@@ -169,27 +200,34 @@ class TerminalManager:
                     if not dados:
                         break
                     self.sio.emit('terminal_output', {
-                        'ip': self.local_ip, 
-                        'alias': alias, 
-                        'output': dados
+                        'ip': self.local_ip,
+                        'alias': alias,
+                        'output': dados,
                     })
                 except OSError:
                     break
-                    
-        print(f"[*] Sessão do terminal '{alias}' encerrada.")
+
+        log.info("[*] Sessão do terminal '%s' encerrada.", alias)
         if alias in self.ativos:
             del self.ativos[alias]
 
+
 class NodeAgent:
     """Classe principal que orquestra a comunicação de rede e delega tarefas."""
-    
-    def __init__(self, host_ip=HOST_IP):
-        self.config = Config(host_ip)
+
+    def __init__(self, host_ip=None, port=None):
+        self.config = Config(host_ip=host_ip, port=port)
         self.meu_ip = self._get_local_ip()
-        
+
         self.sio = socketio.Client()
         self.terminal = TerminalManager(self.sio, self.meu_ip)
-        
+
+        # Fila de tarefas processada em segundo plano: instalar um proot-distro
+        # pode demorar minutos e não pode travar o polling de sincronização.
+        self._fila_tarefas = queue.Queue()
+        self._worker_tarefas = threading.Thread(target=self._processa_fila, daemon=True)
+        self._worker_tarefas.start()
+
         self._registrar_eventos_websocket()
 
     def _get_local_ip(self):
@@ -197,7 +235,7 @@ class NodeAgent:
         try:
             s.connect(('10.255.255.255', 1))
             ip = s.getsockname()[0]
-        except Exception:
+        except OSError:
             ip = '127.0.0.1'
         finally:
             s.close()
@@ -207,57 +245,100 @@ class NodeAgent:
         """Configura os listeners do SocketIO dinamicamente."""
         @self.sio.event
         def connect():
-            print("[+] Conectado ao servidor de WebSockets do Host!")
+            log.info("[+] Conectado ao servidor de WebSockets do Host!")
+
+        @self.sio.event
+        def disconnect():
+            log.warning("[-] Conexão WebSocket encerrada. Reconectando no próximo ciclo...")
 
         @self.sio.on('*')
         def catch_all(evento, dados):
-            prefixo_evento = f"cmd_to_{self.meu_ip}_"
-            if evento.startswith(prefixo_evento):
-                alias = evento.replace(prefixo_evento, "")
+            prefixo_cmd = f"cmd_to_{self.meu_ip}_"
+            if evento.startswith(prefixo_cmd):
+                alias = evento.replace(prefixo_cmd, "")
                 comando = dados.get('input', '')
                 self.terminal.escrever_comando(alias, comando)
+                return
 
-    def _executar_tarefa(self, tarefa):
-        acao = tarefa.get("acao")
-        if acao == "criar_worker":
-            WorkerManager.criar(
-                tarefa.get("alias", "worker_padrao"), 
-                tarefa.get("imagem", "alpine")
-            )
-        elif acao == "deletar_worker":
-            alias = tarefa.get("alias")
-            if alias:
-                WorkerManager.deletar(alias)
+            prefixo_resize = f"resize_to_{self.meu_ip}_"
+            if evento.startswith(prefixo_resize):
+                alias = evento.replace(prefixo_resize, "")
+                self.terminal.redimensionar(alias, dados.get('cols'), dados.get('rows'))
 
-    def iniciar(self):
-        """Inicia o loop principal de Polling e a conexão WebSockets."""
-        print(f"[*] Node Agent Iniciado. IP: {self.meu_ip}")
-        
+    def _conectar_ws(self):
+        """Mantém a conexão WebSocket ativa; não bloqueia se já estiver conectado.
+
+        O reconnect do socketio-client só atua após uma conexão inicial bem-sucedida,
+        então tentamos novamente em cada ciclo do loop.
+        """
+        if self.sio.connected:
+            return True
         try:
             self.sio.connect(self.config.ws_url)
+            return True
         except Exception as e:
-            print(f"[-] Erro ao conectar WebSockets. O terminal web ficará indisponível: {e}")
+            log.warning("[-] WebSocket indisponível (%s). Nova tentativa no próximo ciclo.", e)
+            return False
+
+    def _poll_once(self):
+        """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
+        payload = {
+            "ip": self.meu_ip,
+            "status": "Online",
+            "workers": WorkerManager.get_installed_workers(),
+        }
+        if self.config.token:
+            payload["token"] = self.config.token
+
+        try:
+            resposta = requests.post(self.config.http_url, json=payload, timeout=5)
+            if resposta.status_code == 200:
+                return resposta.json().get("tarefas", [])
+            log.warning("[-] Host respondeu com status %s.", resposta.status_code)
+        except requests.exceptions.RequestException as e:
+            log.warning("[-] Erro ao sincronizar com o host: %s", e)
+        return []
+
+    def _processa_fila(self):
+        """Consome as tarefas da fila em background (thread daemon)."""
+        while True:
+            tarefa = self._fila_tarefas.get()
+            self._executar_tarefa(tarefa)
+
+    def _executar_tarefa(self, tarefa):
+        try:
+            acao = tarefa.get("acao")
+            if acao == "criar_worker":
+                WorkerManager.criar(
+                    tarefa.get("alias", "worker_padrao"),
+                    tarefa.get("imagem", "alpine"),
+                )
+            elif acao == "deletar_worker":
+                alias = tarefa.get("alias")
+                if alias:
+                    WorkerManager.deletar(alias)
+        except Exception as e:
+            log.error("[-] Erro ao executar tarefa %s: %s", tarefa, e)
+
+    def _loop(self):
+        """Loop principal de Polling e manutenção da conexão WebSockets."""
+        log.info("[*] Node Agent iniciado. IP: %s | Host: %s", self.meu_ip, self.config.http_url)
 
         while True:
-            payload = {
-                "ip": self.meu_ip, 
-                "status": "Online",
-                "workers": WorkerManager.get_installed_workers()
-            }
-            
-            try:
-                resposta = requests.post(self.config.http_url, json=payload, timeout=5)
-                if resposta.status_code == 200:
-                    tarefas = resposta.json().get("tarefas", [])
-                    for tarefa in tarefas:
-                        self._executar_tarefa(tarefa)
-            except requests.exceptions.RequestException:
-                pass 
-                
-            time.sleep(10)
+            self._conectar_ws()
+            tarefas = self._poll_once()
+            for tarefa in tarefas:
+                log.info("Tarefa recebida: %s", tarefa)
+                self._fila_tarefas.put(tarefa)
+            time.sleep(POLL_INTERVAL)
+
+    def iniciar(self):
+        self._loop()
 
 
 if __name__ == "__main__":
-    # Inicializa a classe principal e roda o loop do agente
-    agente = NodeAgent(host_ip=HOST_IP)
-    agente.iniciar()
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+    NodeAgent().iniciar()
