@@ -1,4 +1,5 @@
 import os
+import signal
 import struct
 import threading
 
@@ -73,7 +74,8 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     monkeypatch.setattr("subprocess.Popen", FakePopen)
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
-    WorkerManager.criar("worker_bd", "alpine")
+    ok, msg = WorkerManager.criar("worker_bd", "alpine")
+    assert ok is True
 
     assert any("proot-distro" in c and "install" in c and "worker_bd" in c for c in comandos)
     assert any("supervisorctl" in c and "reread" in c for c in comandos)
@@ -90,6 +92,23 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     assert b"sleep 30" in FakePopen.instances[0].data
 
 
+def test_worker_criar_rejeita_alias_invalido(monkeypatch, tmp_path):
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    ok, msg = WorkerManager.criar("../etc/evil", "alpine")
+    assert ok is False
+    assert "inválido" in msg.lower()
+
+
+def test_worker_criar_rejeita_container_existente(monkeypatch, tmp_path):
+    rootfs = tmp_path / "var/lib/proot-distro/installed-rootfs"
+    (rootfs / "worker_bd").mkdir(parents=True)
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    ok, msg = WorkerManager.criar("worker_bd", "alpine")
+    assert ok is False
+    assert "já existe" in msg.lower()
+
+
 def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
     comandos = []
 
@@ -103,8 +122,11 @@ def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
     conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
     conf.parent.mkdir(parents=True)
     conf.write_text("[program:worker_bd]\n")
+    rootfs = tmp_path / "var/lib/proot-distro/installed-rootfs/worker_bd"
+    rootfs.mkdir(parents=True)
 
-    WorkerManager.deletar("worker_bd")
+    ok, msg = WorkerManager.deletar("worker_bd")
+    assert ok is True
 
     assert not conf.exists()
     assert any("supervisorctl" in c and "stop" in c and "worker_bd" in c for c in comandos)
@@ -112,9 +134,11 @@ def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
 
 
 def test_worker_deletar_ignora_falha_do_install(monkeypatch, tmp_path):
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: None)
     monkeypatch.setenv("PREFIX", str(tmp_path))
-    WorkerManager.deletar("inexistente")
+    ok, msg = WorkerManager.deletar("inexistente")
     # Não deve levantar exceção mesmo sem configuração/logs no sistema
+    assert ok is True
 
 
 def test_get_installed_workers_sem_pasta(monkeypatch, tmp_path):
@@ -140,7 +164,7 @@ def test_iniciar_pty_pai_registra_fd(monkeypatch):
     agente = NodeAgent()
     agente.terminal.iniciar_pty("w1")
 
-    assert agente.terminal.ativos["w1"] == 9
+    assert agente.terminal.ativos["w1"] == (9, 1234)
 
 
 def test_iniciar_pty_filho_executa_proot(monkeypatch):
@@ -172,10 +196,10 @@ def test_iniciar_pty_nao_duplica(monkeypatch):
     monkeypatch.setattr(threading.Thread, "start", lambda self: None)
 
     agente = NodeAgent()
-    agente.terminal.ativos["w1"] = 7
+    agente.terminal.ativos["w1"] = (7, 1)
     agente.terminal.iniciar_pty("w1")
 
-    assert agente.terminal.ativos["w1"] == 7  # mantém o original
+    assert agente.terminal.ativos["w1"] == (7, 1)  # mantém o original
 
 
 def test_escrever_comando_escreve_no_pty(monkeypatch):
@@ -183,10 +207,24 @@ def test_escrever_comando_escreve_no_pty(monkeypatch):
     monkeypatch.setattr("os.write", lambda fd, data: escritas.append((fd, data)))
 
     agente = NodeAgent()
-    agente.terminal.ativos["w1"] = 42
+    agente.terminal.ativos["w1"] = (42, 1)
     agente.terminal.escrever_comando("w1", "ls\n")
 
     assert escritas == [(42, b"ls\n")]
+
+
+def test_encerrar_sessao_mata_processo(monkeypatch):
+    mortos = []
+    escritas = []
+    monkeypatch.setattr("os.kill", lambda pid, sig: mortos.append((pid, sig)))
+    monkeypatch.setattr("os.write", lambda fd, data: escritas.append(data))
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = (7, 999)
+    agente.terminal.encerrar("w1")
+
+    assert mortos == [(999, signal.SIGTERM)]
+    assert "w1" not in agente.terminal.ativos
 
 
 def test_redimensionar_pty(monkeypatch):
@@ -200,7 +238,7 @@ def test_redimensionar_pty(monkeypatch):
     import termios
 
     agente = NodeAgent()
-    agente.terminal.ativos["w1"] = 7
+    agente.terminal.ativos["w1"] = (7, 1)
     agente.terminal.redimensionar("w1", 120, 30)
 
     assert len(ioctls) == 1
@@ -364,6 +402,7 @@ def test_executar_tarefa_criar_worker(monkeypatch):
     def fake_criar(alias, imagem):
         chamadas["alias"] = alias
         chamadas["imagem"] = imagem
+        return (True, f"Container '{alias}' criado")
 
     monkeypatch.setattr(WorkerManager, "criar", staticmethod(fake_criar))
 
@@ -371,6 +410,9 @@ def test_executar_tarefa_criar_worker(monkeypatch):
     agente._executar_tarefa({"acao": "criar_worker", "alias": "w1", "imagem": "alpine"})
 
     assert chamadas == {"alias": "w1", "imagem": "alpine"}
+    assert len(agente._resultados) == 1
+    assert agente._resultados[0]["ok"] is True
+    assert agente._resultados[0]["alias"] == "w1"
 
 
 def test_executar_tarefa_deletar_worker(monkeypatch):
@@ -378,6 +420,7 @@ def test_executar_tarefa_deletar_worker(monkeypatch):
 
     def fake_deletar(alias):
         chamadas.append(alias)
+        return (True, f"Container '{alias}' deletado")
 
     monkeypatch.setattr(WorkerManager, "deletar", staticmethod(fake_deletar))
 
@@ -385,11 +428,87 @@ def test_executar_tarefa_deletar_worker(monkeypatch):
     agente._executar_tarefa({"acao": "deletar_worker", "alias": "w1"})
 
     assert chamadas == ["w1"]
+    assert agente._resultados[0]["ok"] is True
+
+
+def test_executar_tarefa_falha_registra_resultado(monkeypatch):
+    def fake_criar(alias, imagem):
+        return (False, f"Falha ao instalar '{alias}'")
+
+    monkeypatch.setattr(WorkerManager, "criar", staticmethod(fake_criar))
+
+    agente = NodeAgent()
+    agente._executar_tarefa({"acao": "criar_worker", "alias": "w1"})
+
+    assert agente._resultados[0]["ok"] is False
+    assert "Falha" in agente._resultados[0]["msg"]
+
+
+def test_poll_once_envia_e_limpa_resultados(monkeypatch):
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"status": "ok", "tarefas": []}
+
+    payload = {}
+
+    def fake_post(url, json=None, timeout=None):
+        payload.update(json)
+        return RespostaFake()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    agente = NodeAgent()
+    agente._resultados = [{"acao": "criar_worker", "alias": "w1", "ok": True, "msg": "ok", "ts": "12:00"}]
+    agente._tarefa_atual = {"acao": "criar_worker", "alias": "w1"}
+
+    agente._poll_once()
+
+    assert payload["resultados"] == [{"acao": "criar_worker", "alias": "w1", "ok": True, "msg": "ok", "ts": "12:00"}]
+    assert payload["tarefa_atual"]["alias"] == "w1"
+    # após o envio com sucesso, a lista local é limpa
+    assert agente._resultados == []
+
+
+def test_poll_once_nao_limpa_resultados_se_falhar(monkeypatch):
+    def fake_post(*a, **k):
+        raise ConnectionError("sem rede")
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    agente = NodeAgent()
+    agente._resultados = [{"acao": "criar_worker", "alias": "w1", "ok": True, "msg": "ok", "ts": "12:00"}]
+    agente._poll_once()
+
+    assert len(agente._resultados) == 1  # mantém para tentar de novo
+
+
+def test_get_workers_status_parseia_saida(monkeypatch):
+    class ProcFake:
+        returncode = 0
+        stdout = (
+            "worker_bd                         RUNNING   pid 123, uptime 0:01:00\n"
+            "web1                              FATAL     Exited too quickly\n"
+        )
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: ProcFake())
+
+    assert WorkerManager.get_workers_status() == {"worker_bd": "RUNNING", "web1": "FATAL"}
+
+
+def test_get_workers_status_erro_retorna_vazio(monkeypatch):
+    def falha(*a, **k):
+        raise OSError("sem supervisor")
+
+    monkeypatch.setattr("subprocess.run", falha)
+    assert WorkerManager.get_workers_status() == {}
 
 
 def test_executar_tarefa_desconhecida_nao_falha():
     agente = NodeAgent()
     agente._executar_tarefa({"acao": "apagar_tudo"})  # não deve levantar
+    assert agente._resultados == []
 
 
 def test_conectar_ws_retenta_apos_falha(monkeypatch):

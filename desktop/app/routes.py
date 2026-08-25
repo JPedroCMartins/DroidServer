@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 
 from flask import current_app as app
@@ -14,6 +15,11 @@ nodes_conectados = {}
 # Segundos sem contato antes de um node ser marcado como Offline.
 # O agente sincroniza a cada 10s, então 25s é tolerante a falhas pontuais.
 STALE_TIMEOUT = 25
+# Segundos offline sem tarefas pendentes antes do node ser removido do painel.
+PRUNE_TIMEOUT = 180
+
+# Alias de worker: caracteres seguros (usado em caminhos, serviços e eventos WS).
+ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _authorized(dados):
@@ -22,6 +28,25 @@ def _authorized(dados):
     if not token:
         return True
     return dados.get("token") == token
+
+
+def _alias_valido(alias):
+    return bool(alias) and bool(ALIAS_RE.fullmatch(alias))
+
+
+def _prune_nodes():
+    """Remove nodes offline há muito tempo que não tenham tarefas pendentes."""
+    agora = datetime.now()
+    for ip in list(nodes_conectados):
+        node = nodes_conectados[ip]
+        ultimo = node.get("last_seen_ts")
+        if ultimo is None:
+            continue
+        offline_muito = (agora - ultimo) > timedelta(seconds=PRUNE_TIMEOUT)
+        sem_tarefas = not node.get("tarefas_pendentes")
+        if offline_muito and sem_tarefas:
+            del nodes_conectados[ip]
+            logger.info("Node %s removido do painel (offline há %ds)", ip, int((agora - ultimo).total_seconds()))
 
 
 def _estado_publico(ip, node):
@@ -42,12 +67,14 @@ def _estado_publico(ip, node):
 
 @app.route('/')
 def dashboard():
+    _prune_nodes()
     nodes = {ip: _estado_publico(ip, node) for ip, node in nodes_conectados.items()}
     return render_template('index.html', nodes=nodes)
 
 
 @app.route('/node/<ip>')
 def node_detail(ip):
+    _prune_nodes()
     if ip not in nodes_conectados:
         return "Node não encontrado ou offline.", 404
 
@@ -59,45 +86,58 @@ def node_detail(ip):
 def worker_terminal(ip, alias):
     if ip not in nodes_conectados:
         return "Node não encontrado.", 404
+    if not _alias_valido(alias) or alias not in nodes_conectados[ip]["workers"]:
+        return "Worker não encontrado neste node.", 404
 
     return render_template('terminal.html', ip=ip, alias=alias)
 
 
 @app.route('/node/<ip>/worker/<alias>/delete')
 def delete_worker(ip, alias):
-    if ip in nodes_conectados and alias in nodes_conectados[ip]["workers"]:
-        nodes_conectados[ip]["workers"].remove(alias)
-        nova_tarefa = {
-            "acao": "deletar_worker",
-            "alias": alias
-        }
-        nodes_conectados[ip]["tarefas_pendentes"].append(nova_tarefa)
-        logger.info("Tarefa enfileirada: deletar worker '%s' do node %s", alias, ip)
+    if ip not in nodes_conectados:
+        return "Node não encontrado.", 404
+    if not _alias_valido(alias) or alias not in nodes_conectados[ip]["workers"]:
+        return "Worker não encontrado neste node.", 404
+
+    # Não remove da lista aqui: a lista é autoritativa do node (via sync).
+    nova_tarefa = {
+        "acao": "deletar_worker",
+        "alias": alias
+    }
+    nodes_conectados[ip]["tarefas_pendentes"].append(nova_tarefa)
+    logger.info("Tarefa enfileirada: deletar worker '%s' do node %s", alias, ip)
     return redirect(url_for('node_detail', ip=ip))
 
 
 @app.route('/deploy_worker', methods=['POST'])
 def deploy_worker():
     ip_alvo = request.form.get('ip')
-    alias = request.form.get('alias')
+    alias = request.form.get('alias', '').strip()
 
-    if ip_alvo in nodes_conectados and alias:
-        nova_tarefa = {
-            "acao": "criar_worker",
-            "imagem": "alpine",
-            "alias": alias
-        }
-        nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
-        logger.info("Tarefa enfileirada: criar worker '%s' no node %s", alias, ip_alvo)
+    if ip_alvo not in nodes_conectados:
+        return redirect(url_for('node_detail', ip=ip_alvo))
 
-        if alias not in nodes_conectados[ip_alvo]["workers"]:
-            nodes_conectados[ip_alvo]["workers"].append(alias)
+    if not _alias_valido(alias):
+        logger.warning("Alias inválido rejeitado no deploy: %r", alias)
+        return redirect(url_for('node_detail', ip=ip_alvo))
 
+    if alias in nodes_conectados[ip_alvo]["workers"]:
+        logger.info("Worker '%s' já existe no node %s; nada a fazer.", alias, ip_alvo)
+        return redirect(url_for('node_detail', ip=ip_alvo))
+
+    nova_tarefa = {
+        "acao": "criar_worker",
+        "imagem": "alpine",
+        "alias": alias
+    }
+    nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
+    logger.info("Tarefa enfileirada: criar worker '%s' no node %s", alias, ip_alvo)
     return redirect(url_for('node_detail', ip=ip_alvo))
 
 
 @app.route('/api/nodes', methods=['GET'])
 def api_nodes():
+    _prune_nodes()
     nodes = {ip: _estado_publico(ip, node) for ip, node in nodes_conectados.items()}
     return jsonify(nodes)
 
@@ -120,6 +160,9 @@ def node_sync():
             "last_seen": agora.strftime("%H:%M:%S"),
             "tarefas_pendentes": [],
             "workers": dados.get("workers", []),
+            "worker_status": dados.get("worker_status", {}),
+            "tarefa_atual": dados.get("tarefa_atual"),
+            "resultados": dados.get("resultados", []),
             "cpu": dados.get("cpu"),
             "mem": dados.get("mem"),
         }
@@ -130,6 +173,9 @@ def node_sync():
         nodes_conectados[ip_node]["last_seen"] = agora.strftime("%H:%M:%S")
         if "workers" in dados:
             nodes_conectados[ip_node]["workers"] = dados.get("workers", [])
+        nodes_conectados[ip_node]["worker_status"] = dados.get("worker_status", {})
+        nodes_conectados[ip_node]["tarefa_atual"] = dados.get("tarefa_atual")
+        nodes_conectados[ip_node]["resultados"] = dados.get("resultados", [])
         nodes_conectados[ip_node]["cpu"] = dados.get("cpu")
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
 
@@ -153,6 +199,9 @@ def handle_terminal_input(data):
     comando = data.get('input')
     alias = data.get('alias')
 
+    if not _alias_valido(alias):
+        return
+
     logger.info("terminal_input: node=%s worker=%s", ip_alvo, alias)
     evento_alvo = f"cmd_to_{ip_alvo}_{alias}"
     socketio.emit(evento_alvo, {'input': comando})
@@ -165,7 +214,7 @@ def handle_terminal_resize(data):
     cols = data.get('cols')
     rows = data.get('rows')
 
-    if not all([ip_alvo, alias, cols, rows]):
+    if not all([ip_alvo, alias, cols, rows]) or not _alias_valido(alias):
         return
 
     logger.info("terminal_resize: node=%s worker=%s %sx%s", ip_alvo, alias, cols, rows)
@@ -178,6 +227,9 @@ def handle_terminal_output(data):
     ip_origem = data.get('ip')
     alias = data.get('alias')
     saida = data.get('output')
+
+    if not _alias_valido(alias):
+        return
 
     evento_alvo = f"output_for_{ip_origem}_{alias}"
     socketio.emit(evento_alvo, {'output': saida})

@@ -447,6 +447,53 @@ a { color: inherit; text-decoration: none; }
 
 .worker-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
+/* ============ Pendências e resultados de tarefas ============ */
+.pending-list,
+.results-list { display: flex; flex-direction: column; gap: 8px; }
+
+.pending-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.pending-item strong { color: var(--text); }
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(34, 211, 238, 0.25);
+  border-top-color: var(--accent-2);
+  animation: girar 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+.spinner.muted { border-color: rgba(148, 163, 184, 0.2); border-top-color: var(--muted); }
+
+@keyframes girar { to { transform: rotate(360deg); } }
+
+.result-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(2, 6, 23, 0.35);
+}
+
+.result-item.ok { border-color: rgba(52, 211, 153, 0.3); }
+.result-item.ok .result-icon { color: var(--success); }
+.result-item.fail { border-color: rgba(248, 113, 113, 0.3); }
+.result-item.fail .result-icon { color: var(--danger); }
+
+.result-icon { font-weight: 800; flex-shrink: 0; line-height: 1.2; }
+.result-ts { color: var(--muted); font-size: 11px; margin-left: 6px; }
+
 /* ============ Node detail header ============ */
 .node-hero {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(34, 211, 238, 0.10)), var(--surface);

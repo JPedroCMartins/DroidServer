@@ -2,7 +2,9 @@ import logging
 import os
 import pty
 import queue
+import re
 import select
+import signal
 import socket
 import subprocess
 import threading
@@ -19,6 +21,9 @@ log = logging.getLogger("node")
 DEFAULT_HOST_IP = "192.168.1.10"
 DEFAULT_HOST_PORT = 5050
 POLL_INTERVAL = 10
+# Alias de container só pode conter caracteres seguros (usado em caminhos,
+# nomes de serviço do supervisor e nomes de eventos WebSocket).
+ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
 def _configurar_logging():
@@ -80,6 +85,21 @@ while true; do sleep 30; done
 """
 
     @staticmethod
+    def _alias_valido(alias):
+        return bool(alias) and bool(ALIAS_RE.fullmatch(alias))
+
+    @staticmethod
+    def _existe(alias):
+        prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
+        rootfs = os.path.join(prefix, 'var/lib/proot-distro/installed-rootfs', alias)
+        return os.path.isdir(rootfs)
+
+    @staticmethod
+    def _supervisor_conf():
+        prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
+        return os.path.join(prefix, 'etc', 'supervisord.conf')
+
+    @staticmethod
     def get_installed_workers():
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
         rootfs_dir = os.path.join(prefix, 'var/lib/proot-distro/installed-rootfs')
@@ -91,8 +111,35 @@ while true; do sleep 30; done
             return []
 
     @staticmethod
+    def get_workers_status():
+        """Devolve {alias: status} a partir do `supervisorctl status`."""
+        try:
+            proc = subprocess.run(
+                ["supervisorctl", "-c", WorkerManager._supervisor_conf(), "status"],
+                capture_output=True, text=True, timeout=5,
+            )
+        except Exception:
+            return {}
+        if proc.returncode != 0:
+            return {}
+
+        status = {}
+        for linha in proc.stdout.splitlines():
+            partes = linha.split(None, 2)
+            if len(partes) >= 2:
+                status[partes[0]] = partes[1]
+        return status
+
+    @staticmethod
     def criar(alias, imagem):
+        """Cria o container. Devolve (ok: bool, mensagem: str)."""
         log.info("[Deploy] Criando '%s' (%s)...", alias, imagem)
+
+        if not WorkerManager._alias_valido(alias):
+            return False, f"Alias inválido: '{alias}'"
+
+        if WorkerManager._existe(alias):
+            return False, f"Container '{alias}' já existe"
 
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 
@@ -137,10 +184,14 @@ while true; do sleep 30; done
             # 5. Garante que /app/run_server.sh exista dentro do container
             WorkerManager._injetar_run_server(alias)
 
-        except subprocess.CalledProcessError:
+            return True, f"Container '{alias}' criado com sucesso"
+
+        except subprocess.CalledProcessError as e:
             log.error("[-] Erro ao criar o container '%s'.", alias)
+            return False, f"Falha ao instalar '{alias}': {e}"
         except Exception as e:
             log.error("[-] Erro inesperado: %s", e)
+            return False, f"Erro ao criar '{alias}': {e}"
 
     @staticmethod
     def _injetar_run_server(alias):
@@ -162,7 +213,14 @@ while true; do sleep 30; done
 
     @staticmethod
     def deletar(alias):
+        """Remove o container. Devolve (ok: bool, mensagem: str).
+
+        Tolerante: cada passo só acontece se o item correspondente existir.
+        """
         log.info("[Deploy] Deletando '%s'...", alias)
+
+        if not WorkerManager._alias_valido(alias):
+            return False, f"Alias inválido: '{alias}'"
 
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 
@@ -184,9 +242,10 @@ while true; do sleep 30; done
             subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
             subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
 
-            # 4. Remove o container proot-distro
-            subprocess.run(["proot-distro", "remove", alias], check=True)
-            log.info("[+] Container '%s' deletado com sucesso!", alias)
+            # 4. Remove o container proot-distro (se existir)
+            if WorkerManager._existe(alias):
+                subprocess.run(["proot-distro", "remove", alias], check=True)
+                log.info("[+] Container '%s' deletado com sucesso!", alias)
 
             # 5. Remove os arquivos de log associados
             if os.path.exists(log_out):
@@ -195,10 +254,14 @@ while true; do sleep 30; done
                 os.remove(log_err)
             log.info("[+] Arquivos de log removidos.")
 
-        except subprocess.CalledProcessError:
+            return True, f"Container '{alias}' deletado"
+
+        except subprocess.CalledProcessError as e:
             log.error("[-] Erro de processo ao tentar deletar '%s'.", alias)
+            return False, f"Falha ao deletar '{alias}': {e}"
         except Exception as e:
             log.error("[-] Erro inesperado ao deletar: %s", e)
+            return False, f"Erro ao deletar '{alias}': {e}"
 
 
 class TerminalManager:
@@ -207,7 +270,7 @@ class TerminalManager:
     def __init__(self, socket_client, local_ip):
         self.sio = socket_client
         self.local_ip = local_ip
-        self.ativos = {}  # Formato: {"alias": master_fd}
+        self.ativos = {}  # Formato: {"alias": (master_fd, pid)}
 
     def iniciar_pty(self, alias):
         """Cria um teclado/monitor virtual e roda o Alpine dentro dele."""
@@ -222,7 +285,7 @@ class TerminalManager:
             os.environ['TERM'] = 'xterm-256color'
             os.execvp("proot-distro", ["proot-distro", "login", alias])
         else:
-            self.ativos[alias] = master_fd
+            self.ativos[alias] = (master_fd, pid)
             t = threading.Thread(target=self._ler_saida, args=(master_fd, alias), daemon=True)
             t.start()
 
@@ -233,9 +296,24 @@ class TerminalManager:
             time.sleep(0.5)  # Aguarda inicialização
 
         try:
-            os.write(self.ativos[alias], comando.encode('utf-8'))
+            os.write(self.ativos[alias][0], comando.encode('utf-8'))
         except OSError:
             log.debug("PTY do '%s' não está mais disponível.", alias)
+
+    def encerrar(self, alias):
+        """Encerra a sessão de terminal do worker (usado ao deletar o container)."""
+        if alias not in self.ativos:
+            return
+        fd, pid = self.ativos.pop(alias)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
+        try:
+            os.write(fd, b'exit\r')
+        except OSError:
+            pass
+        log.info("[*] Sessão de terminal '%s' encerrada manualmente.", alias)
 
     def redimensionar(self, alias, cols, rows):
         """Ajusta o tamanho da janela (TIOCSWINSZ) do PTY para o tamanho do navegador."""
@@ -246,7 +324,7 @@ class TerminalManager:
             import struct
             import termios
             fcntl.ioctl(
-                self.ativos[alias],
+                self.ativos[alias][0],
                 termios.TIOCSWINSZ,
                 struct.pack('HHHH', int(rows), int(cols), 0, 0),
             )
@@ -285,6 +363,11 @@ class NodeAgent:
         self.sio = socketio.Client()
         self.terminal = TerminalManager(self.sio, self.meu_ip)
         self.monitor = SystemMonitor()
+
+        # Resultado das tarefas executadas, enviado no próximo sync.
+        self._resultados = []
+        # Tarefa atualmente em execução na thread de background.
+        self._tarefa_atual = None
 
         # Fila de tarefas processada em segundo plano: instalar um proot-distro
         # pode demorar minutos e não pode travar o polling de sincronização.
@@ -350,6 +433,9 @@ class NodeAgent:
             "ip": self.meu_ip,
             "status": "Online",
             "workers": WorkerManager.get_installed_workers(),
+            "worker_status": WorkerManager.get_workers_status(),
+            "tarefa_atual": self._tarefa_atual,
+            "resultados": list(self._resultados),
         }
         uso = self.monitor.sample()
         payload["cpu"] = uso["cpu"]
@@ -360,6 +446,7 @@ class NodeAgent:
         try:
             resposta = requests.post(self.config.http_url, json=payload, timeout=5)
             if resposta.status_code == 200:
+                self._resultados.clear()
                 tarefas = resposta.json().get("tarefas", [])
                 log.info("Sync OK com host (cpu=%s%%, %d tarefa(s))", payload.get("cpu"), len(tarefas))
                 return tarefas
@@ -372,22 +459,54 @@ class NodeAgent:
         """Consome as tarefas da fila em background (thread daemon)."""
         while True:
             tarefa = self._fila_tarefas.get()
-            self._executar_tarefa(tarefa)
+            self._tarefa_atual = tarefa
+            try:
+                self._executar_tarefa(tarefa)
+            except Exception as e:
+                log.error("[-] Erro ao executar tarefa %s: %s", tarefa, e)
+            finally:
+                self._tarefa_atual = None
+
+    def _registrar_resultado(self, acao, alias, ok, msg):
+        self._resultados.append({
+            "acao": acao,
+            "alias": alias,
+            "ok": bool(ok),
+            "msg": msg,
+            "ts": time.strftime("%H:%M:%S"),
+        })
+        # Mantém apenas os últimos resultados (evita payload gigante)
+        del self._resultados[:-10]
+        if ok:
+            log.info("[+] Tarefa OK: %s", msg)
+        else:
+            log.error("[-] Tarefa FALHOU: %s", msg)
 
     def _executar_tarefa(self, tarefa):
-        try:
-            acao = tarefa.get("acao")
-            if acao == "criar_worker":
-                WorkerManager.criar(
-                    tarefa.get("alias", "worker_padrao"),
-                    tarefa.get("imagem", "alpine"),
-                )
-            elif acao == "deletar_worker":
-                alias = tarefa.get("alias")
-                if alias:
-                    WorkerManager.deletar(alias)
-        except Exception as e:
-            log.error("[-] Erro ao executar tarefa %s: %s", tarefa, e)
+        acao = tarefa.get("acao")
+        if acao == "criar_worker":
+            alias = tarefa.get("alias", "worker_padrao")
+            imagem = tarefa.get("imagem", "alpine")
+            try:
+                ok, msg = WorkerManager.criar(alias, imagem)
+            except Exception as e:
+                ok, msg = False, f"Erro inesperado ao criar '{alias}': {e}"
+            self._registrar_resultado(acao, alias, ok, msg)
+
+        elif acao == "deletar_worker":
+            alias = tarefa.get("alias")
+            if not alias:
+                self._registrar_resultado(acao, None, False, "Alias ausente na tarefa")
+                return
+            self.terminal.encerrar(alias)
+            try:
+                ok, msg = WorkerManager.deletar(alias)
+            except Exception as e:
+                ok, msg = False, f"Erro inesperado ao deletar '{alias}': {e}"
+            self._registrar_resultado(acao, alias, ok, msg)
+
+        else:
+            log.warning("Tarefa desconhecida ignorada: %s", tarefa)
 
     def _loop(self):
         """Loop principal de Polling e manutenção da conexão WebSockets."""

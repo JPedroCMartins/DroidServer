@@ -100,7 +100,7 @@
                     <input type="hidden" name="ip" value="{{ ip }}">
                     <div class="field">
                         <label for="alias">Alias do container</label>
-                        <input type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required>
+                        <input type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required pattern="[A-Za-z0-9_-]{1,64}">
                     </div>
                     <button type="submit" class="btn btn-success">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
@@ -108,6 +108,46 @@
                     </button>
                 </form>
             </div>
+
+            {% if node.tarefas_pendentes or node.tarefa_atual %}
+            <div class="form-card pending-card">
+                <h3>Em processamento</h3>
+                <p class="hint">O node processa as tarefas em segundo plano — criar um container pode levar alguns minutos.</p>
+                <div class="pending-list">
+                    {% if node.tarefa_atual %}
+                    <div class="pending-item">
+                        <span class="spinner"></span>
+                        <span>{{ 'Criando' if node.tarefa_atual.acao == 'criar_worker' else 'Deletando' }} <strong>{{ node.tarefa_atual.alias }}</strong> (executando agora)</span>
+                    </div>
+                    {% endif %}
+                    {% for t in node.tarefas_pendentes %}
+                    <div class="pending-item">
+                        <span class="spinner muted"></span>
+                        <span>{{ 'Criar' if t.acao == 'criar_worker' else 'Deletar' }} <strong>{{ t.alias }}</strong> (aguardando o node)</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if node.resultados %}
+            <div class="form-card results-card">
+                <h3>Últimas operações</h3>
+                <div class="results-list">
+                    {% for r in node.resultados %}
+                    <div class="result-item {{ 'ok' if r.ok else 'fail' }}">
+                        <span class="result-icon">{{ '✓' if r.ok else '✗' }}</span>
+                        <span>
+                            {{ 'Criação' if r.acao == 'criar_worker' else 'Deleção' }}
+                            {% if r.alias %}<strong>{{ r.alias }}</strong>{% endif %}
+                            — {{ r.msg }}
+                            {% if r.ts %}<span class="result-ts">{{ r.ts }}</span>{% endif %}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
 
             <div class="section-head">
                 <h2>Workers ativos</h2>
@@ -117,13 +157,19 @@
             <div class="worker-list">
                 {% if node.workers %}
                     {% for worker in node.workers %}
+                    {% set wstat = node.worker_status.get(worker) if node.worker_status else none %}
                     <div class="worker-card">
                         <div class="worker-info">
                             <div class="worker-avatar">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
                             </div>
                             <div>
-                                <div class="worker-name">{{ worker }}</div>
+                                <div class="worker-name">
+                                    {{ worker }}
+                                    {% if wstat == 'RUNNING' %}<span class="pill pill-online">RUNNING</span>
+                                    {% elif wstat %}<span class="pill" style="background:rgba(251,191,36,.14);color:#fbbf24;">{{ wstat }}</span>
+                                    {% else %}<span class="pill" style="background:rgba(148,163,184,.14);color:#94a3b8;">sem serviço</span>{% endif %}
+                                </div>
                                 <div class="worker-sub">Alpine · proot-distro</div>
                             </div>
                         </div>

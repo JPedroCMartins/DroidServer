@@ -25,6 +25,8 @@ Orquestração de cluster a partir de dispositivos Android (Termux). Um servidor
 
 O host enfileira a tarefa `criar_worker` → o node executa `proot-distro install` com o alias escolhido → gera um arquivo `.conf` em `$PREFIX/etc/supervisor/conf.d/` → o **Supervisor** inicia e mantém o container rodando (`proot-distro login <alias> -- /app/run_server.sh`). O agente também cria um `run_server.sh` padrão dentro de cada container — substitua pelo seu aplicativo.
 
+A lista de workers é **autoritativa do node** (o host não a edita otimistamente). O node reporta a cada sync o status dos serviços (`supervisorctl status`), a tarefa em execução e o **resultado das operações** (criado/deletado ✓ ou falhou ✗) — tudo visível no painel.
+
 ## Estrutura do projeto
 
 ```

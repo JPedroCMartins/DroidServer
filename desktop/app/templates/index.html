@@ -140,6 +140,12 @@
             const isOnline = status.toLowerCase() === 'online';
             const lastSeen = info.last_seen || '—';
 
+            const pendentes = (info.tarefas_pendentes || []).length;
+            const processando = (pendentes > 0 || info.tarefa_atual);
+            const processandoPill = processando
+                ? '<span class="pill" style="background:rgba(251,191,36,.14);color:#fbbf24;">processando</span>'
+                : '';
+
             const mem = info.mem || {};
             const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : null;
 
@@ -154,7 +160,10 @@
                         <span class="status-dot ${isOnline ? 'online' : 'offline'}"></span>
                         <span class="ip-text">${esc(ip)}</span>
                     </div>
-                    <span class="pill ${isOnline ? 'pill-online' : 'pill-offline'}">${esc(status)}</span>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        ${processandoPill}
+                        <span class="pill ${isOnline ? 'pill-online' : 'pill-offline'}">${esc(status)}</span>
+                    </div>
                 </div>
                 <div class="node-meta">
                     <div class="meta-item">
