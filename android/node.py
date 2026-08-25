@@ -164,9 +164,18 @@ while true; do sleep 30; done
         """
 
         try:
-            # 0. Para o serviço antes de mexer no container (evita lock do proot-distro
-            #    se o supervisor estiver reiniciando o serviço antigo)
+            # 0. Limpa artefatos residuais do alias: para o serviço antigo,
+            #    remove o .conf e purga o metadado do proot-distro. Isso evita
+            #    (a) lock do proot-distro segurado pelo supervisor em loop de
+            #    restart e (b) "fantasma" em installed-distros.json quando o
+            #    rootfs já não existe.
             subprocess.run(["supervisorctl", "stop", alias], check=False, capture_output=True)
+            if os.path.exists(arquivo_conf):
+                os.remove(arquivo_conf)
+                log.info("[+] Removida configuração de serviço antiga: %s", arquivo_conf)
+            subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
+            subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
+            subprocess.run(["proot-distro", "remove", alias], check=False, capture_output=True, timeout=120)
 
             # 1. Instala o proot-distro
             proc = subprocess.run(

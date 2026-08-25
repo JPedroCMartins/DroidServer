@@ -67,6 +67,9 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
 
     assert any("proot-distro" in c and "install" in c and "worker_bd" in c for c in comandos)
     assert any("supervisorctl" in c and "reread" in c for c in comandos)
+    # limpeza de artefatos residuais antes do install
+    assert any("supervisorctl" in c and "stop" in c and "worker_bd" in c for c in comandos)
+    assert any("proot-distro" in c and "remove" in c and "worker_bd" in c for c in comandos)
 
     conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
     assert conf.exists()
@@ -108,6 +111,28 @@ def test_worker_criar_rejeita_container_existente(monkeypatch, tmp_path):
     ok, msg = WorkerManager.criar("worker_bd", "alpine")
     assert ok is False
     assert "já existe" in msg.lower()
+
+
+def test_worker_criar_remove_conf_antigo(monkeypatch, tmp_path):
+    class RunResult:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    comandos = []
+    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: (comandos.append(cmd), RunResult())[1])
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
+    conf.parent.mkdir(parents=True)
+    conf.write_text("[program:worker_bd] (fantasma)\n")
+
+    ok, msg = WorkerManager.criar("worker_bd", "alpine")
+    assert ok is True
+    # o conf é reescrito no final; a limpeza do fantasma ocorreu via proot-distro remove
+    assert any("proot-distro" in c and "remove" in c and "worker_bd" in c for c in comandos)
+    conteudo = conf.read_text()
+    assert "[program:worker_bd]" in conteudo and "command=proot-distro login worker_bd" in conteudo
 
 
 def test_worker_criar_captura_erro_do_install(monkeypatch, tmp_path):
