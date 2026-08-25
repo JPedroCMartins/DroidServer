@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <div class="layout">
@@ -35,11 +36,7 @@
             <div class="sidebar-footer">
                 <div class="legend">
                     <span class="status-dot online"></span>
-                    Online
-                </div>
-                <div class="legend">
-                    <span class="status-dot offline"></span>
-                    Offline
+                    Atualização ao vivo
                 </div>
             </div>
         </aside>
@@ -48,7 +45,7 @@
             <header class="topbar">
                 <div>
                     <h1>Node <span style="color:#818cf8;">{{ ip }}</span></h1>
-                    <p class="subtitle">Gerencie os containers (workers) rodando neste dispositivo.</p>
+                    <p class="subtitle" id="heroSub">Carregando...</p>
                 </div>
                 <div class="topbar-actions">
                     <a href="/" class="btn btn-ghost btn-sm">
@@ -65,32 +62,11 @@
                     </div>
                     <div>
                         <h2>{{ ip }}</h2>
-                        <p>Último contato: {{ node.last_seen }}</p>
+                        <p id="heroLastSeen">Último contato: —</p>
                     </div>
                 </div>
-                <div class="hero-pills">
-                    <span class="pill {{ 'pill-online' if node.status == 'Online' else 'pill-offline' }}">{{ node.status }}</span>
-                    <span class="pill" style="background: rgba(148,163,184,0.14); color:#94a3b8;">{{ node.workers|length }} workers</span>
-                </div>
-                <div class="hero-metrics">
-                    <div class="metric">
-                        <div class="metric-head">
-                            <span class="metric-label">CPU</span>
-                            <span class="metric-value">{{ node.cpu ~ '%' if node.cpu is not none else '—' }}</span>
-                        </div>
-                        <div class="bar"><div class="bar-fill" style="width:{{ node.cpu if node.cpu is not none else 0 }}%"></div></div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-head">
-                            <span class="metric-label">RAM</span>
-                            <span class="metric-value">{{ node.mem.percent ~ '%' if node.mem and node.mem.percent is not none else '—' }}</span>
-                        </div>
-                        <div class="bar"><div class="bar-fill" style="width:{{ node.mem.percent if node.mem and node.mem.percent is not none else 0 }}%"></div></div>
-                        {% if node.mem and node.mem.total %}
-                        <div class="metric-sub">{{ '%.1f'|format(node.mem.usado / 1073741824) }} / {{ '%.1f'|format(node.mem.total / 1073741824) }} GB</div>
-                        {% endif %}
-                    </div>
-                </div>
+                <div class="hero-pills" id="heroPills"></div>
+                <div class="hero-metrics" id="heroMetrics"></div>
             </section>
 
             <div class="form-card">
@@ -109,91 +85,192 @@
                 </form>
             </div>
 
-            {% if node.tarefas_pendentes or node.tarefa_atual %}
+            <div id="pendingCard"></div>
+            <div id="resultsCard"></div>
+            <div id="workersSection"></div>
+        </main>
+    </div>
+
+    <script>
+        const ipNode = "{{ ip }}";
+
+        function esc(value) {
+            return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function fmtBytes(n) {
+            if (n == null) return '—';
+            const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+            return `${n.toFixed(1)} ${u[i]}`;
+        }
+
+        function metricBar(label, pct, sub) {
+            const p = (pct == null) ? 0 : Math.max(0, Math.min(100, pct));
+            const val = (pct == null) ? '—' : `${pct}%`;
+            return `
+            <div class="metric">
+                <div class="metric-head">
+                    <span class="metric-label">${label}</span>
+                    <span class="metric-value">${val}</span>
+                </div>
+                <div class="bar"><div class="bar-fill" style="width:${p}%"></div></div>
+                ${sub ? `<div class="metric-sub">${sub}</div>` : ''}
+            </div>`;
+        }
+
+        const ACCAO_CRIAR = 'criar_worker';
+
+        function renderHero(n) {
+            const online = (n.status || 'Offline').toLowerCase() === 'online';
+            document.getElementById('heroSub').innerText = online
+                ? 'Node online — atualização em tempo real.'
+                : 'Node offline — aguardando o dispositivo voltar.';
+            document.getElementById('heroLastSeen').innerText = 'Último contato: ' + (n.last_seen || '—');
+
+            document.getElementById('heroPills').innerHTML = `
+                <span class="pill ${online ? 'pill-online' : 'pill-offline'}">${esc(n.status || 'Offline')}</span>
+                <span class="pill" style="background:rgba(148,163,184,.14);color:#94a3b8;">${(n.workers || []).length} workers</span>`;
+
+            const mem = n.mem || {};
+            const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : '';
+            document.getElementById('heroMetrics').innerHTML =
+                metricBar('CPU', n.cpu) + metricBar('RAM', mem.percent, memSub);
+        }
+
+        function renderPending(n) {
+            const pendentes = n.tarefas_pendentes || [];
+            const atual = n.tarefa_atual;
+            const el = document.getElementById('pendingCard');
+            if (!pendentes.length && !atual) { el.innerHTML = ''; return; }
+
+            let items = '';
+            if (atual) {
+                items += `
+                <div class="pending-item">
+                    <span class="spinner"></span>
+                    <span>${atual.acao === ACCAO_CRIAR ? 'Criando' : 'Deletando'} <strong>${esc(atual.alias)}</strong> (executando agora)</span>
+                </div>`;
+            }
+            pendentes.forEach(t => {
+                items += `
+                <div class="pending-item">
+                    <span class="spinner muted"></span>
+                    <span>${t.acao === ACCAO_CRIAR ? 'Criar' : 'Deletar'} <strong>${esc(t.alias)}</strong> (aguardando o node)</span>
+                </div>`;
+            });
+
+            el.innerHTML = `
             <div class="form-card pending-card">
                 <h3>Em processamento</h3>
                 <p class="hint">O node processa as tarefas em segundo plano — criar um container pode levar alguns minutos.</p>
-                <div class="pending-list">
-                    {% if node.tarefa_atual %}
-                    <div class="pending-item">
-                        <span class="spinner"></span>
-                        <span>{{ 'Criando' if node.tarefa_atual.acao == 'criar_worker' else 'Deletando' }} <strong>{{ node.tarefa_atual.alias }}</strong> (executando agora)</span>
-                    </div>
-                    {% endif %}
-                    {% for t in node.tarefas_pendentes %}
-                    <div class="pending-item">
-                        <span class="spinner muted"></span>
-                        <span>{{ 'Criar' if t.acao == 'criar_worker' else 'Deletar' }} <strong>{{ t.alias }}</strong> (aguardando o node)</span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+                <div class="pending-list">${items}</div>
+            </div>`;
+        }
 
-            {% if node.resultados %}
+        function renderResults(n) {
+            const resultados = n.resultados || [];
+            const el = document.getElementById('resultsCard');
+            if (!resultados.length) { el.innerHTML = ''; return; }
+
+            const items = resultados.map(r => `
+            <div class="result-item ${r.ok ? 'ok' : 'fail'}">
+                <span class="result-icon">${r.ok ? '✓' : '✗'}</span>
+                <span>
+                    ${r.acao === ACCAO_CRIAR ? 'Criação' : 'Deleção'}
+                    ${r.alias ? `<strong>${esc(r.alias)}</strong>` : ''}
+                    — ${esc(r.msg)}
+                    ${r.ts ? `<span class="result-ts">${esc(r.ts)}</span>` : ''}
+                </span>
+            </div>`).join('');
+
+            el.innerHTML = `
             <div class="form-card results-card">
                 <h3>Últimas operações</h3>
-                <div class="results-list">
-                    {% for r in node.resultados %}
-                    <div class="result-item {{ 'ok' if r.ok else 'fail' }}">
-                        <span class="result-icon">{{ '✓' if r.ok else '✗' }}</span>
-                        <span>
-                            {{ 'Criação' if r.acao == 'criar_worker' else 'Deleção' }}
-                            {% if r.alias %}<strong>{{ r.alias }}</strong>{% endif %}
-                            — {{ r.msg }}
-                            {% if r.ts %}<span class="result-ts">{{ r.ts }}</span>{% endif %}
-                        </span>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endif %}
+                <div class="results-list">${items}</div>
+            </div>`;
+        }
 
+        function renderWorkers(n) {
+            const workers = n.workers || [];
+            const ws = n.worker_status || {};
+            const el = document.getElementById('workersSection');
+
+            const plural = workers.length === 1 ? 'worker' : 'workers';
+            const head = `
             <div class="section-head">
                 <h2>Workers ativos</h2>
-                <span class="count">{{ node.workers|length }} worker{{ 's' if node.workers|length != 1 }}</span>
-            </div>
+                <span class="count">${workers.length} ${plural}</span>
+            </div>`;
 
-            <div class="worker-list">
-                {% if node.workers %}
-                    {% for worker in node.workers %}
-                    {% set wstat = node.worker_status.get(worker) if node.worker_status else none %}
-                    <div class="worker-card">
-                        <div class="worker-info">
-                            <div class="worker-avatar">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
-                            </div>
-                            <div>
-                                <div class="worker-name">
-                                    {{ worker }}
-                                    {% if wstat == 'RUNNING' %}<span class="pill pill-online">RUNNING</span>
-                                    {% elif wstat %}<span class="pill" style="background:rgba(251,191,36,.14);color:#fbbf24;">{{ wstat }}</span>
-                                    {% else %}<span class="pill" style="background:rgba(148,163,184,.14);color:#94a3b8;">sem serviço</span>{% endif %}
-                                </div>
-                                <div class="worker-sub">Alpine · proot-distro</div>
-                            </div>
+            if (!workers.length) {
+                el.innerHTML = head + `
+                <div class="empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    <h3>Nenhum worker criado</h3>
+                    <p>Crie o primeiro container usando o formulário acima.</p>
+                </div>`;
+                return;
+            }
+
+            const cards = workers.map(w => {
+                const st = ws[w] || null;
+                const badge = st === 'RUNNING'
+                    ? '<span class="pill pill-online">RUNNING</span>'
+                    : st
+                        ? `<span class="pill" style="background:rgba(251,191,36,.14);color:#fbbf24;">${esc(st)}</span>`
+                        : '<span class="pill" style="background:rgba(148,163,184,.14);color:#94a3b8;">sem serviço</span>';
+                return `
+                <div class="worker-card">
+                    <div class="worker-info">
+                        <div class="worker-avatar">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
                         </div>
-                        <div class="worker-actions">
-                            <a href="/node/{{ ip }}/worker/{{ worker }}" class="btn btn-dark btn-sm">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m7 15 5-5 5 5"/></svg>
-                                Terminal
-                            </a>
-                            <a href="/node/{{ ip }}/worker/{{ worker }}/delete" class="btn btn-danger btn-sm" onclick="return confirm('Apagar o worker {{ worker }} deste node? Essa ação não pode ser desfeita.')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                Apagar
-                            </a>
+                        <div>
+                            <div class="worker-name">${esc(w)} ${badge}</div>
+                            <div class="worker-sub">Alpine · proot-distro</div>
                         </div>
                     </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="empty">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                        <h3>Nenhum worker criado</h3>
-                        <p>Crie o primeiro container usando o formulário acima.</p>
+                    <div class="worker-actions">
+                        <a href="/node/${esc(ipNode)}/worker/${esc(w)}" class="btn btn-dark btn-sm">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m7 15 5-5 5 5"/></svg>
+                            Terminal
+                        </a>
+                        <a href="/node/${esc(ipNode)}/worker/${esc(w)}/delete" class="btn btn-danger btn-sm" onclick="return confirm('Apagar o worker ${esc(w)} deste node? Essa ação não pode ser desfeita.')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            Apagar
+                        </a>
                     </div>
-                {% endif %}
-            </div>
-        </main>
-    </div>
+                </div>`;
+            }).join('');
+
+            el.innerHTML = head + `<div class="worker-list">${cards}</div>`;
+        }
+
+        function renderNode(n) {
+            renderHero(n);
+            renderPending(n);
+            renderResults(n);
+            renderWorkers(n);
+        }
+
+        async function carregarNode() {
+            try {
+                const res = await fetch(`/api/node/${ipNode}`);
+                if (!res.ok) return;
+                renderNode(await res.json());
+            } catch (e) { /* ignora falhas momentâneas de rede */ }
+        }
+
+        // Atualização em tempo real: o host emite 'node_updated' a cada sync
+        const socket = io();
+        socket.on('node_updated', (data) => {
+            if (data && data.ip === ipNode) carregarNode();
+        });
+
+        carregarNode();
+        setInterval(carregarNode, 10000);
+    </script>
 </body>
 </html>

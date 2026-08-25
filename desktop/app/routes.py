@@ -142,6 +142,14 @@ def api_nodes():
     return jsonify(nodes)
 
 
+@app.route('/api/node/<ip>', methods=['GET'])
+def api_node(ip):
+    _prune_nodes()
+    if ip not in nodes_conectados:
+        return jsonify({"erro": "Node não encontrado"}), 404
+    return jsonify(_estado_publico(ip, nodes_conectados[ip]))
+
+
 @app.route('/api/node_sync', methods=['POST'])
 def node_sync():
     dados = request.get_json()
@@ -178,6 +186,9 @@ def node_sync():
         nodes_conectados[ip_node]["resultados"] = dados.get("resultados", [])
         nodes_conectados[ip_node]["cpu"] = dados.get("cpu")
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
+
+    # Notifica os painéis abertos para atualizarem sem precisar recarregar a página
+    socketio.emit('node_updated', {'ip': ip_node})
 
     tarefas_para_enviar = nodes_conectados[ip_node]["tarefas_pendentes"]
     nodes_conectados[ip_node]["tarefas_pendentes"] = []

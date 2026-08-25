@@ -165,7 +165,25 @@ def test_node_detail_200(client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
     resp = client.get("/node/10.0.0.5")
     assert resp.status_code == 200
-    assert b"w1" in resp.data
+    # a listagem é carregada dinamicamente via JS (sem refresh)
+    assert b"/api/node/" in resp.data
+    assert b"node_updated" in resp.data
+
+
+def test_api_node_retorna_estado(client):
+    client.post("/api/node_sync", json={
+        "ip": "10.0.0.5", "workers": ["w1"],
+        "worker_status": {"w1": "RUNNING"},
+        "resultados": [{"acao": "criar_worker", "alias": "w1", "ok": True, "msg": "ok", "ts": "12:00"}],
+    })
+    data = client.get("/api/node/10.0.0.5").get_json()
+    assert data["workers"] == ["w1"]
+    assert data["worker_status"]["w1"] == "RUNNING"
+    assert data["resultados"][0]["ok"] is True
+
+
+def test_api_node_404_para_desconhecido(client):
+    assert client.get("/api/node/10.0.0.99").status_code == 404
 
 
 def test_worker_terminal_404_para_desconhecido(client):
