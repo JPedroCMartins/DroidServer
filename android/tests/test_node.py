@@ -7,6 +7,8 @@ import requests
 from requests.exceptions import ConnectionError
 
 from node import Config, NodeAgent, TerminalManager, WorkerManager
+import sysinfo
+from sysinfo import SystemMonitor
 
 
 # ---------- Config ----------
@@ -212,6 +214,55 @@ def test_redimensionar_sem_sessao_nao_falha():
     agente.terminal.redimensionar("w1", 80, 24)  # não deve levantar
 
 
+# ---------- SystemMonitor (CPU / memória) ----------
+
+def test_system_monitor_amostra_cpu_e_mem(monkeypatch, tmp_path):
+    stat = tmp_path / "stat"
+    # formato: cpu user nice system idle iowait irq softirq steal guest guest_nice
+    # idle+iowait = 9500, total = 11000 -> delta vs prev (10000, 9000) => cpu 50%
+    stat.write_text("cpu  100 100 300 9200 300 0 500 500 0 0\n")
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text(
+        "MemTotal:        8000000 kB\n"
+        "MemFree:         2000000 kB\n"
+        "MemAvailable:    4000000 kB\n"
+    )
+    monkeypatch.setattr(sysinfo, "STAT_FILE", str(stat))
+    monkeypatch.setattr(sysinfo, "MEMINFO_FILE", str(meminfo))
+
+    mon = SystemMonitor()
+    mon._prev_cpu = (10000, 9000)
+
+    amostra = mon.sample()
+    # cpu = 100 * (d_total - d_idle) / d_total = 100 * (1000 - 500) / 1000
+    assert amostra["cpu"] == 50.0
+    # mem: total 8GB, available 4GB -> usado 4GB (50%)
+    assert amostra["mem"]["total"] == 8000000 * 1024
+    assert amostra["mem"]["percent"] == 50.0
+
+
+def test_system_monitor_sem_arquivos_nao_falha(monkeypatch, tmp_path):
+    monkeypatch.setattr(sysinfo, "STAT_FILE", str(tmp_path / "nao_existe"))
+    monkeypatch.setattr(sysinfo, "MEMINFO_FILE", str(tmp_path / "nao_existe"))
+
+    mon = SystemMonitor()
+    mon._prev_cpu = (100, 90)
+
+    amostra = mon.sample()
+    assert amostra["cpu"] is None
+    assert amostra["mem"] is None
+
+
+def test_system_monitor_primeira_amostra_sem_delta(monkeypatch, tmp_path):
+    stat = tmp_path / "stat"
+    stat.write_text("cpu  500 300 9000 500 200 0 500 0 0 0\n")
+    monkeypatch.setattr(sysinfo, "STAT_FILE", str(stat))
+
+    mon = SystemMonitor()
+    amostra = mon.sample()
+    assert "cpu" in amostra  # cpu pode ser None, mas o formato deve existir
+
+
 # ---------- NodeAgent ----------
 
 def test_poll_once_retorna_tarefas(monkeypatch):
@@ -259,6 +310,29 @@ def test_poll_once_envia_token_quando_configurado(monkeypatch):
     agente._poll_once()
 
     assert payload["token"] == "segredo"
+
+
+def test_poll_once_inclui_cpu_e_mem(monkeypatch):
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"status": "ok", "tarefas": []}
+
+    payload = {}
+
+    def fake_post(url, json=None, timeout=None):
+        payload.update(json)
+        return RespostaFake()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    agente = NodeAgent()
+    agente.monitor.sample = lambda: {"cpu": 12.5, "mem": {"total": 8, "usado": 4, "percent": 50.0}}
+    agente._poll_once()
+
+    assert payload["cpu"] == 12.5
+    assert payload["mem"] == {"total": 8, "usado": 4, "percent": 50.0}
 
 
 def test_poll_once_erro_de_rede_retorna_vazio(monkeypatch):

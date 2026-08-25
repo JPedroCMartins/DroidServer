@@ -72,6 +72,25 @@
                     <span class="pill {{ 'pill-online' if node.status == 'Online' else 'pill-offline' }}">{{ node.status }}</span>
                     <span class="pill" style="background: rgba(148,163,184,0.14); color:#94a3b8;">{{ node.workers|length }} workers</span>
                 </div>
+                <div class="hero-metrics">
+                    <div class="metric">
+                        <div class="metric-head">
+                            <span class="metric-label">CPU</span>
+                            <span class="metric-value">{{ node.cpu ~ '%' if node.cpu is not none else '—' }}</span>
+                        </div>
+                        <div class="bar"><div class="bar-fill" style="width:{{ node.cpu if node.cpu is not none else 0 }}%"></div></div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-head">
+                            <span class="metric-label">RAM</span>
+                            <span class="metric-value">{{ node.mem.percent ~ '%' if node.mem and node.mem.percent is not none else '—' }}</span>
+                        </div>
+                        <div class="bar"><div class="bar-fill" style="width:{{ node.mem.percent if node.mem and node.mem.percent is not none else 0 }}%"></div></div>
+                        {% if node.mem and node.mem.total %}
+                        <div class="metric-sub">{{ '%.1f'|format(node.mem.usado / 1073741824) }} / {{ '%.1f'|format(node.mem.total / 1073741824) }} GB</div>
+                        {% endif %}
+                    </div>
+                </div>
             </section>
 
             <div class="form-card">

@@ -114,7 +114,9 @@ def node_sync():
             "last_seen_ts": agora,
             "last_seen": agora.strftime("%H:%M:%S"),
             "tarefas_pendentes": [],
-            "workers": dados.get("workers", [])
+            "workers": dados.get("workers", []),
+            "cpu": dados.get("cpu"),
+            "mem": dados.get("mem"),
         }
     else:
         nodes_conectados[ip_node]["status"] = dados.get("status", "Online")
@@ -122,6 +124,8 @@ def node_sync():
         nodes_conectados[ip_node]["last_seen"] = agora.strftime("%H:%M:%S")
         if "workers" in dados:
             nodes_conectados[ip_node]["workers"] = dados.get("workers", [])
+        nodes_conectados[ip_node]["cpu"] = dados.get("cpu")
+        nodes_conectados[ip_node]["mem"] = dados.get("mem")
 
     tarefas_para_enviar = nodes_conectados[ip_node]["tarefas_pendentes"]
     nodes_conectados[ip_node]["tarefas_pendentes"] = []

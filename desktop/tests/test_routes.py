@@ -47,6 +47,7 @@ def test_api_nodes_vazio(client):
 def test_node_sync_registra_node(client):
     resp = client.post("/api/node_sync", json={
         "ip": "10.0.0.5", "status": "Online", "workers": ["w1", "w2"],
+        "cpu": 37.5, "mem": {"total": 8000000000, "usado": 4000000000, "percent": 50.0},
     })
     assert resp.status_code == 200
     assert resp.get_json() == {"status": "ok", "tarefas": []}
@@ -55,6 +56,15 @@ def test_node_sync_registra_node(client):
     assert "10.0.0.5" in nodes
     assert nodes["10.0.0.5"]["workers"] == ["w1", "w2"]
     assert nodes["10.0.0.5"]["status"] == "Online"
+    assert nodes["10.0.0.5"]["cpu"] == 37.5
+    assert nodes["10.0.0.5"]["mem"]["percent"] == 50.0
+
+
+def test_node_sync_armazena_uso_sem_cpu(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": [], "mem": None})
+    nodes = client.get("/api/nodes").get_json()
+    assert nodes["10.0.0.5"]["cpu"] is None
+    assert nodes["10.0.0.5"]["mem"] is None
 
 
 def test_node_sync_exige_ip(client):

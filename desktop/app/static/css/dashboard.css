@@ -279,6 +279,26 @@ a { color: inherit; text-decoration: none; }
 
 .node-workers { display: flex; flex-wrap: wrap; gap: 8px; min-height: 24px; align-items: center; }
 
+/* ============ Métricas (CPU / RAM) ============ */
+.node-metrics { display: flex; flex-direction: column; gap: 14px; }
+
+.metric-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+
+.metric-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.9px; color: var(--muted); font-weight: 600; }
+
+.metric-value { font-size: 12px; font-weight: 700; }
+
+.metric-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+.bar { height: 6px; border-radius: 999px; background: rgba(2, 6, 23, 0.45); border: 1px solid var(--border); overflow: hidden; }
+
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.5s ease;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
@@ -460,6 +480,18 @@ a { color: inherit; text-decoration: none; }
 .hero-title p { margin: 5px 0 0; font-size: 12.5px; color: var(--muted); }
 
 .hero-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.hero-metrics {
+  width: 100%;
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.hero-metrics .metric { flex: 1; min-width: 200px; }
 
 /* ============ Empty state ============ */
 .empty {

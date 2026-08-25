@@ -18,7 +18,7 @@ Orquestração de cluster a partir de dispositivos Android (Termux). Um servidor
 
 ### Fluxo de comunicação
 
-1. **Sincronização (HTTP):** cada node faz `POST /api/node_sync` a cada 10s informando IP, status e workers instalados. O host responde com as **tarefas pendentes** (criar/deletar worker) para o node executar.
+1. **Sincronização (HTTP):** cada node faz `POST /api/node_sync` a cada 10s informando IP, status, workers instalados e o **uso de CPU/memória** do dispositivo (lido de `/proc`). O host responde com as **tarefas pendentes** (criar/deletar worker) para o node executar.
 2. **Terminal (WebSocket):** o navegador emite `terminal_input` → o host repassa como `cmd_to_<ip>_<alias>` → o node injeta o comando no PTY do container → a saída retorna como `terminal_output` → `output_for_<ip>_<alias>` → xterm.js no navegador.
 
 ### Fluxo de deploy de um worker
@@ -31,6 +31,7 @@ O host enfileira a tarefa `criar_worker` → o node executa `proot-distro instal
 DroidServer/
 ├── android/                  # Agente que roda no dispositivo Android (Termux)
 │   ├── node.py               # NodeAgent: polling, WebSocket, workers e PTY
+│   ├── sysinfo.py            # Leitura de CPU/memória do dispositivo via /proc
 │   ├── setup.sh              # Script de primeiro uso (instala e configura tudo)
 │   ├── run.sh                # Inicia o agente carregando a configuração salva
 │   ├── pyproject.toml        # Dependências (python-socketio, requests)

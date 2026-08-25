@@ -11,6 +11,8 @@ import time
 import requests
 import socketio
 
+from sysinfo import SystemMonitor
+
 log = logging.getLogger("node")
 
 DEFAULT_HOST_IP = "192.168.1.10"
@@ -251,6 +253,7 @@ class NodeAgent:
 
         self.sio = socketio.Client()
         self.terminal = TerminalManager(self.sio, self.meu_ip)
+        self.monitor = SystemMonitor()
 
         # Fila de tarefas processada em segundo plano: instalar um proot-distro
         # pode demorar minutos e não pode travar o polling de sincronização.
@@ -317,6 +320,9 @@ class NodeAgent:
             "status": "Online",
             "workers": WorkerManager.get_installed_workers(),
         }
+        uso = self.monitor.sample()
+        payload["cpu"] = uso["cpu"]
+        payload["mem"] = uso["mem"]
         if self.config.token:
             payload["token"] = self.config.token
 

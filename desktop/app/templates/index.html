@@ -112,11 +112,36 @@
             return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
+        function fmtBytes(n) {
+            if (n == null) return '—';
+            const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0;
+            while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+            return `${n.toFixed(1)} ${u[i]}`;
+        }
+
+        function metricBar(label, pct, sub) {
+            const p = (pct == null) ? 0 : Math.max(0, Math.min(100, pct));
+            const val = (pct == null) ? '—' : `${pct}%`;
+            return `
+            <div class="metric">
+                <div class="metric-head">
+                    <span class="metric-label">${label}</span>
+                    <span class="metric-value">${val}</span>
+                </div>
+                <div class="bar"><div class="bar-fill" style="width:${p}%"></div></div>
+                ${sub ? `<div class="metric-sub">${sub}</div>` : ''}
+            </div>`;
+        }
+
         function nodeCard(ip, info) {
             const workers = info.workers || [];
             const status = info.status || 'Offline';
             const isOnline = status.toLowerCase() === 'online';
             const lastSeen = info.last_seen || '—';
+
+            const mem = info.mem || {};
+            const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : null;
 
             const workerChips = workers.length
                 ? workers.map(w => `<span class="chip">${esc(w)}</span>`).join('')
@@ -140,6 +165,10 @@
                         <span class="meta-label">Workers</span>
                         <span class="meta-value">${workers.length}</span>
                     </div>
+                </div>
+                <div class="node-metrics">
+                    ${metricBar('CPU', info.cpu)}
+                    ${metricBar('RAM', mem.percent, memSub)}
                 </div>
                 <div class="node-workers">${workerChips}</div>
                 <div class="node-actions">
