@@ -477,8 +477,8 @@ class NodeAgent:
                 self._resultados.clear()
                 tarefas = resposta.json().get("tarefas", [])
                 mem_pct = payload["mem"]["percent"] if payload.get("mem") else None
-                log.info("Sync OK com host (cpu=%s%%, mem=%s%%, %d tarefa(s))",
-                         payload.get("cpu"), mem_pct, len(tarefas))
+                log.info("Sync OK com host (cpu=%s%%, mem=%s%%, workers=%s, %d tarefa(s))",
+                         payload.get("cpu"), mem_pct, payload.get("workers"), len(tarefas))
                 return tarefas
             log.warning("[-] Host respondeu com status %s.", resposta.status_code)
         except requests.exceptions.RequestException as e:
