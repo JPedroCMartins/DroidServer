@@ -4,7 +4,10 @@ Funciona em Termux/Android: /proc/stat e /proc/meminfo refletem o uso do
 dispositivo inteiro, do ponto de vista do kernel Linux.
 """
 
+import logging
 import time
+
+log = logging.getLogger("sysinfo")
 
 STAT_FILE = '/proc/stat'
 MEMINFO_FILE = '/proc/meminfo'
@@ -15,22 +18,28 @@ def _read_cpu():
     try:
         with open(STAT_FILE) as f:
             line = f.readline()
-    except OSError:
+    except OSError as e:
+        log.debug("Falha ao ler %s: %s", STAT_FILE, e)
         return None
 
     parts = line.split()
     if not parts or parts[0] != 'cpu':
+        log.debug("Linha inesperada em %s: %r", STAT_FILE, line[:100])
         return None
 
     try:
         values = [int(v) for v in parts[1:9]]
-    except ValueError:
-        return None
-    if len(values) < 5:
+    except ValueError as e:
+        log.debug("Coluna não numérica em %s: %r (%s)", STAT_FILE, line[:100], e)
         return None
 
-    # idle + iowait contam como ociosidade
-    idle = values[3] + values[4]
+    # Tolera linhas curtas (alguns kernels expõem só user/nice/system/idle)
+    if len(values) < 4:
+        log.debug("Poucas colunas em %s: %r", STAT_FILE, line[:100])
+        return None
+
+    # formato: user nice system idle iowait irq softirq steal
+    idle = values[3] + (values[4] if len(values) > 4 else 0)
     return sum(values), idle
 
 
@@ -39,7 +48,8 @@ def _read_mem():
     try:
         with open(MEMINFO_FILE) as f:
             lines = f.readlines()
-    except OSError:
+    except OSError as e:
+        log.debug("Falha ao ler %s: %s", MEMINFO_FILE, e)
         return None, None
 
     fields = {}
@@ -71,6 +81,10 @@ class SystemMonitor:
             d_idle = atual[1] - self._prev_cpu[1]
             if d_total > 0:
                 cpu = round(100.0 * (d_total - d_idle) / d_total, 1)
+            else:
+                log.debug("Sem delta de CPU entre amostras (atual=%s, prev=%s)", atual, self._prev_cpu)
+        elif atual is None:
+            log.debug("CPU indisponível nesta amostra (%s ilegível ou mal formatado)", STAT_FILE)
         self._prev_cpu = atual
         self._prev_ts = time.monotonic()
 
@@ -83,4 +97,6 @@ class SystemMonitor:
                 'usado': usado,
                 'percent': round(100.0 * usado / total, 1),
             }
+        elif total == 0:
+            log.debug("Memória indisponível (%s ilegível ou sem MemTotal)", MEMINFO_FILE)
         return {'cpu': cpu, 'mem': mem}

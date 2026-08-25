@@ -195,19 +195,25 @@ while true; do sleep 30; done
 
     @staticmethod
     def _injetar_run_server(alias):
-        """Cria /app/run_server.sh dentro do container (via stdin do proot-distro)."""
+        """Cria /app/run_server.sh dentro do container.
+
+        Usa base64 embutido no comando (sem depender de stdin do proot-distro,
+        que falha quando o processo pai não tem TTY).
+        """
         try:
-            proc = subprocess.Popen(
-                ["proot-distro", "login", alias, "--", "sh", "-c",
-                 "cat > /app/run_server.sh && chmod +x /app/run_server.sh"],
-                stdin=subprocess.PIPE,
-            )
-            proc.communicate(WorkerManager._SCRIPT_PADRAO.encode(), timeout=120)
+            import base64
+            script_b64 = base64.b64encode(WorkerManager._SCRIPT_PADRAO.encode()).decode()
+            cmd = [
+                "proot-distro", "login", alias, "--", "sh", "-c",
+                f"mkdir -p /app && echo {script_b64} | base64 -d > /app/run_server.sh"
+                " && chmod +x /app/run_server.sh",
+            ]
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if proc.returncode == 0:
                 log.info("[+] /app/run_server.sh criado no container '%s'.", alias)
             else:
-                log.warning("[-] proot-distro retornou %s ao criar run_server.sh do '%s'.",
-                            proc.returncode, alias)
+                log.warning("[-] proot-distro retornou %s ao criar run_server.sh do '%s': %s",
+                            proc.returncode, alias, proc.stderr.strip()[:200])
         except Exception as e:
             log.warning("[-] Não foi possível criar /app/run_server.sh do '%s': %s", alias, e)
 
@@ -448,7 +454,9 @@ class NodeAgent:
             if resposta.status_code == 200:
                 self._resultados.clear()
                 tarefas = resposta.json().get("tarefas", [])
-                log.info("Sync OK com host (cpu=%s%%, %d tarefa(s))", payload.get("cpu"), len(tarefas))
+                mem_pct = payload["mem"]["percent"] if payload.get("mem") else None
+                log.info("Sync OK com host (cpu=%s%%, mem=%s%%, %d tarefa(s))",
+                         payload.get("cpu"), mem_pct, len(tarefas))
                 return tarefas
             log.warning("[-] Host respondeu com status %s.", resposta.status_code)
         except requests.exceptions.RequestException as e:

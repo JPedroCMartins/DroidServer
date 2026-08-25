@@ -50,28 +50,16 @@ def test_config_aceita_override_direto():
 def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     comandos = []
 
+    class RunResult:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
     def fake_run(cmd, **kw):
         comandos.append(cmd)
-        return None
-
-    class FakePopen:
-        instances = []
-
-        def __init__(self, cmd, stdin=None):
-            self.cmd = cmd
-            self.stdin = stdin
-            FakePopen.instances.append(self)
-
-        def communicate(self, data, timeout=None):
-            self.data = data
-            return (None, None)
-
-        @property
-        def returncode(self):
-            return 0
+        return RunResult()
 
     monkeypatch.setattr("subprocess.run", fake_run)
-    monkeypatch.setattr("subprocess.Popen", FakePopen)
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
     ok, msg = WorkerManager.criar("worker_bd", "alpine")
@@ -86,10 +74,23 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     assert "[program:worker_bd]" in conteudo
     assert "command=proot-distro login worker_bd -- /app/run_server.sh" in conteudo
 
-    assert len(FakePopen.instances) == 1
-    assert "worker_bd" in FakePopen.instances[0].cmd
-    assert b"DroidServer" in FakePopen.instances[0].data
-    assert b"sleep 30" in FakePopen.instances[0].data
+    # injeção do run_server.sh acontece via base64 (sem depender de stdin)
+    import base64
+    injetor = [c for c in comandos if "run_server.sh" in " ".join(c)]
+    assert len(injetor) == 1
+    cmd_str = " ".join(injetor[0])
+    assert "base64" in cmd_str
+    script_b64 = None
+    for tok in cmd_str.split():
+        try:
+            dec = base64.b64decode(tok)
+        except Exception:
+            continue
+        if b"DroidServer" in dec:
+            script_b64 = dec
+            break
+    assert script_b64 is not None
+    assert b"sleep 30" in script_b64
 
 
 def test_worker_criar_rejeita_alias_invalido(monkeypatch, tmp_path):
@@ -299,6 +300,19 @@ def test_system_monitor_primeira_amostra_sem_delta(monkeypatch, tmp_path):
     mon = SystemMonitor()
     amostra = mon.sample()
     assert "cpu" in amostra  # cpu pode ser None, mas o formato deve existir
+
+
+def test_system_monitor_linha_curta(monkeypatch, tmp_path):
+    # alguns kernels só expõem user/nice/system/idle (4 colunas)
+    stat = tmp_path / "stat"
+    stat.write_text("cpu  1000 200 800 3000\n")
+    monkeypatch.setattr(sysinfo, "STAT_FILE", str(stat))
+
+    mon = SystemMonitor()
+    mon._prev_cpu = (1000, 2000)
+    amostra = mon.sample()
+    # atual: total=5000, idle=3000 -> d_total=4000, d_idle=1000 => 75%
+    assert amostra["cpu"] == 75.0
 
 
 # ---------- NodeAgent ----------

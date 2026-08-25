@@ -6,7 +6,8 @@ from flask import Flask
 from flask_socketio import SocketIO
 
 # Inicializamos o SocketIO globalmente
-socketio = SocketIO(cors_allowed_origins="*")
+# ping_timeout maior reduz desconexões com o long-polling do engineio no Termux
+socketio = SocketIO(cors_allowed_origins="*", ping_interval=25, ping_timeout=60)
 
 
 def _configurar_logging(app):
