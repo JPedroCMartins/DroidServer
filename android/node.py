@@ -25,6 +25,10 @@ POLL_INTERVAL = 10
 IMAGENS_PERMITIDAS = {"alpine", "debian", "archlinux"}
 # O rootfs do Debian é bem maior que o do Alpine; 20 min cobre redes lentas.
 INSTALL_TIMEOUT = 1200
+# Limites por container (aplicados com `ulimit` no serviço do Supervisor).
+# Defina como 0 para não limitar. Configuráveis por variável de ambiente.
+ULIMIT_NOFILE = int(os.getenv("DROID_ULIMIT_NOFILE", "4096"))  # arquivos abertos
+ULIMIT_NPROC = int(os.getenv("DROID_ULIMIT_NPROC", "1024"))    # processos
 # Alias de container só pode conter caracteres seguros (usado em caminhos,
 # nomes de serviço do supervisor e nomes de eventos WebSocket).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -95,6 +99,36 @@ while true; do sleep 30; done
         return bool(alias) and bool(ALIAS_RE.fullmatch(alias))
 
     @staticmethod
+    def comando_login(alias, isolado):
+        """Argumentos do `proot-distro login`, com ou sem isolamento do host."""
+        cmd = ["proot-distro", "login"]
+        if isolado:
+            # --isolated: não monta home do Termux, /sdcard nem outros diretórios do host.
+            cmd.append("--isolated")
+        cmd.append(alias)
+        return cmd
+
+    @staticmethod
+    def esta_isolado(alias):
+        """Lê o .conf do Supervisor para saber se o worker foi criado com --isolated."""
+        prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
+        arquivo = os.path.join(prefix, "etc", "supervisor", "conf.d", f"{alias}.conf")
+        try:
+            with open(arquivo) as f:
+                return "--isolated" in f.read()
+        except OSError:
+            return False
+
+    @staticmethod
+    def _prefixo_ulimit():
+        partes = []
+        if ULIMIT_NOFILE > 0:
+            partes.append(f"ulimit -n {ULIMIT_NOFILE} 2>/dev/null;")
+        if ULIMIT_NPROC > 0:
+            partes.append(f"ulimit -u {ULIMIT_NPROC} 2>/dev/null;")
+        return " ".join(partes) + (" " if partes else "")
+
+    @staticmethod
     def _existe(alias):
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
         base = os.path.join(prefix, 'var/lib/proot-distro')
@@ -151,9 +185,9 @@ while true; do sleep 30; done
         return status
 
     @staticmethod
-    def criar(alias, imagem):
+    def criar(alias, imagem, isolado=True):
         """Cria o container. Devolve (ok: bool, mensagem: str)."""
-        log.info("[Deploy] Criando '%s' (%s)...", alias, imagem)
+        log.info("[Deploy] Criando '%s' (%s, isolado=%s)...", alias, imagem, isolado)
 
         if not WorkerManager._alias_valido(alias):
             return False, f"Alias inválido: '{alias}'"
@@ -175,8 +209,10 @@ while true; do sleep 30; done
         log_err = os.path.join(prefix, "var", "log", f"supervisor_{alias}_err.log")
 
         # Configuração no estilo "systemctl"
+        login = " ".join(WorkerManager.comando_login(alias, isolado))
+        limites = WorkerManager._prefixo_ulimit()
         conteudo_conf = f"""[program:{alias}]
-            command=proot-distro login {alias} -- /app/run_server.sh
+            command=sh -c '{limites}exec {login} -- /app/run_server.sh'
             autostart=true
             autorestart=true
             startsecs=5
@@ -332,7 +368,8 @@ class TerminalManager:
         if pid == 0:
             # Garante que aplicativos interativos (vim, htop, nano) renderizem corretamente
             os.environ['TERM'] = 'xterm-256color'
-            os.execvp("proot-distro", ["proot-distro", "login", alias])
+            cmd = WorkerManager.comando_login(alias, WorkerManager.esta_isolado(alias))
+            os.execvp(cmd[0], cmd)
         else:
             self.ativos[alias] = (master_fd, pid)
             t = threading.Thread(target=self._ler_saida, args=(master_fd, alias), daemon=True)
@@ -538,8 +575,9 @@ class NodeAgent:
         if acao == "criar_worker":
             alias = tarefa.get("alias", "worker_padrao")
             imagem = tarefa.get("imagem", "alpine")
+            isolado = bool(tarefa.get("isolado", True))
             try:
-                ok, msg = WorkerManager.criar(alias, imagem)
+                ok, msg = WorkerManager.criar(alias, imagem, isolado)
             except Exception as e:
                 ok, msg = False, f"Erro inesperado ao criar '{alias}': {e}"
             self._registrar_resultado(acao, alias, ok, msg)

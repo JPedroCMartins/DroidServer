@@ -426,6 +426,10 @@
                             <label for="alias" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Alias do container</label>
                             <input class="input" type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required pattern="[A-Za-z0-9_\\-]{1,64}" autocomplete="off">
                         </div>
+                        <label class="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-950/45 border border-slate-400/15 rounded-xl cursor-pointer select-none" title="Não monta o home do Termux nem o armazenamento do aparelho dentro do container. apt/apk/pacman continuam funcionando.">
+                            <input type="checkbox" id="isolado" name="isolado" checked class="w-4 h-4 accent-indigo-500 cursor-pointer">
+                            <span class="text-[13px] font-medium">Isolar do host</span>
+                        </label>
                         <button type="submit" class="btn btn-success">${svg(ICON.plus)}Criar Container</button>
                     </form>
                 </div>
@@ -603,6 +607,7 @@
                 fd.append('ip', ip);
                 fd.append('alias', alias);
                 fd.append('imagem', $('imagem').value);
+                fd.append('isolado', $('isolado').checked ? '1' : '0');
                 try {
                     await fetch('/deploy_worker', { method: 'POST', body: fd });
                     $('alias').value = '';

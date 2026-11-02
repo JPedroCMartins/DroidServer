@@ -102,6 +102,7 @@ def deploy_worker():
     ip_alvo = request.form.get('ip')
     alias = request.form.get('alias', '').strip()
     imagem = request.form.get('imagem', 'alpine').strip().lower()
+    isolado = request.form.get('isolado', '1') == '1'
 
     if ip_alvo not in nodes_conectados:
         return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
@@ -121,10 +122,11 @@ def deploy_worker():
     nova_tarefa = {
         "acao": "criar_worker",
         "imagem": imagem,
-        "alias": alias
+        "alias": alias,
+        "isolado": isolado
     }
     nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
-    logger.info("Tarefa enfileirada: criar worker '%s' (%s) no node %s", alias, imagem, ip_alvo)
+    logger.info("Tarefa enfileirada: criar worker '%s' (%s, isolado=%s) no node %s", alias, imagem, isolado, ip_alvo)
     socketio.emit('node_updated', {'ip': ip_alvo})
     return jsonify({"ok": True})
 
