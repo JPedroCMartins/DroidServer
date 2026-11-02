@@ -4,8 +4,7 @@ import re
 from datetime import datetime, timedelta
 
 from flask import current_app as app
-from flask import render_template, request, jsonify, redirect, url_for
-from flask_socketio import emit
+from flask import render_template, request, jsonify
 from . import socketio
 
 logger = logging.getLogger("droidserver.routes")
@@ -65,39 +64,24 @@ def _estado_publico(ip, node):
     return info
 
 
+# ---------------------------------------------------------------------------
+# Páginas: o front é uma SPA (templates/index.html) que resolve a tela
+# no cliente a partir da URL e consome as rotas /api/* abaixo.
+# ---------------------------------------------------------------------------
 @app.route('/')
-def dashboard():
-    _prune_nodes()
-    nodes = {ip: _estado_publico(ip, node) for ip, node in nodes_conectados.items()}
-    return render_template('index.html', nodes=nodes)
-
-
 @app.route('/node/<ip>')
-def node_detail(ip):
-    _prune_nodes()
-    if ip not in nodes_conectados:
-        return "Node não encontrado ou offline.", 404
-
-    node_info = _estado_publico(ip, nodes_conectados[ip])
-    return render_template('node_detail.html', ip=ip, node=node_info)
-
-
 @app.route('/node/<ip>/worker/<alias>')
-def worker_terminal(ip, alias):
-    if ip not in nodes_conectados:
-        return "Node não encontrado.", 404
-    if not _alias_valido(alias) or alias not in nodes_conectados[ip]["workers"]:
-        return "Worker não encontrado neste node.", 404
-
-    return render_template('terminal.html', ip=ip, alias=alias)
+def spa(ip=None, alias=None):
+    return render_template('index.html')
 
 
 @app.route('/node/<ip>/worker/<alias>/delete')
 def delete_worker(ip, alias):
+    _prune_nodes()
     if ip not in nodes_conectados:
-        return "Node não encontrado.", 404
+        return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
     if not _alias_valido(alias) or alias not in nodes_conectados[ip]["workers"]:
-        return "Worker não encontrado neste node.", 404
+        return jsonify({"ok": False, "erro": "Worker não encontrado neste node."}), 404
 
     # Não remove da lista aqui: a lista é autoritativa do node (via sync).
     nova_tarefa = {
@@ -106,7 +90,8 @@ def delete_worker(ip, alias):
     }
     nodes_conectados[ip]["tarefas_pendentes"].append(nova_tarefa)
     logger.info("Tarefa enfileirada: deletar worker '%s' do node %s", alias, ip)
-    return redirect(url_for('node_detail', ip=ip))
+    socketio.emit('node_updated', {'ip': ip})
+    return jsonify({"ok": True})
 
 
 @app.route('/deploy_worker', methods=['POST'])
@@ -115,15 +100,15 @@ def deploy_worker():
     alias = request.form.get('alias', '').strip()
 
     if ip_alvo not in nodes_conectados:
-        return redirect(url_for('node_detail', ip=ip_alvo))
+        return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
 
     if not _alias_valido(alias):
         logger.warning("Alias inválido rejeitado no deploy: %r", alias)
-        return redirect(url_for('node_detail', ip=ip_alvo))
+        return jsonify({"ok": False, "erro": "Alias inválido."}), 400
 
     if alias in nodes_conectados[ip_alvo]["workers"]:
         logger.info("Worker '%s' já existe no node %s; nada a fazer.", alias, ip_alvo)
-        return redirect(url_for('node_detail', ip=ip_alvo))
+        return jsonify({"ok": False, "erro": "Worker já existe."}), 409
 
     nova_tarefa = {
         "acao": "criar_worker",
@@ -132,7 +117,8 @@ def deploy_worker():
     }
     nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
     logger.info("Tarefa enfileirada: criar worker '%s' no node %s", alias, ip_alvo)
-    return redirect(url_for('node_detail', ip=ip_alvo))
+    socketio.emit('node_updated', {'ip': ip_alvo})
+    return jsonify({"ok": True})
 
 
 @app.route('/api/nodes', methods=['GET'])

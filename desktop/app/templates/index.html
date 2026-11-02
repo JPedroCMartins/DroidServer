@@ -1,116 +1,136 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DroidServer — Painel de Orquestração</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-</head>
-<body>
-    <div class="layout">
-        <aside class="sidebar">
-            <div class="brand">
-                <div class="brand-icon">DS</div>
-                <div class="brand-text">
-                    <strong>DroidServer</strong>
-                    <span>Cluster</span>
-                </div>
-            </div>
-
-            <nav class="nav">
-                <span class="nav-label">Menu</span>
-                <a href="/" class="nav-item active">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-                    Dashboard
-                </a>
-            </nav>
-
-            <div class="sidebar-footer">
-                <div class="legend">
-                    <span class="status-dot online"></span>
-                    Online
-                </div>
-                <div class="legend">
-                    <span class="status-dot offline"></span>
-                    Offline
-                </div>
-                <div style="margin-top:8px; font-size:11.5px;">
-                    Host Flask + Socket.IO — porta 5050
-                </div>
-            </div>
-        </aside>
-
-        <main class="main">
-            <header class="topbar">
-                <div>
-                    <h1>Dashboard</h1>
-                    <p class="subtitle">Visão geral do cluster e dos nodes conectados.</p>
-                </div>
-                <div class="topbar-actions">
-                    <span class="updated-at">
-                        <span class="live-dot"></span>
-                        Atualizado em <span id="updatedAt">—</span>
-                    </span>
-                    <button class="btn btn-ghost btn-sm" onclick="refreshNow()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                        Atualizar
-                    </button>
-                </div>
-            </header>
-
-            <section class="stats">
-                <div class="stat-card">
-                    <div class="stat-icon primary">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-                    </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statNodes">0</div>
-                        <div class="stat-label">Nodes totais</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon green">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/></svg>
-                    </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statOnline">0</div>
-                        <div class="stat-label">Nodes online</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon cyan">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>
-                    </div>
-                    <div class="stat-info">
-                        <div class="stat-value" id="statWorkers">0</div>
-                        <div class="stat-label">Workers ativos</div>
-                    </div>
-                </div>
-            </section>
-
-            <div class="section-head">
-                <h2>Nodes conectados</h2>
-                <span class="count" id="nodeCount">0 nodes</span>
-            </div>
-
-            <section class="node-grid" id="nodeGrid">
-                <div class="skeleton"></div>
-                <div class="skeleton"></div>
-            </section>
-        </main>
-    </div>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <script>
-        const grid = document.getElementById('nodeGrid');
-        const updatedAt = document.getElementById('updatedAt');
-        const countBadge = document.getElementById('nodeCount');
-
-        function esc(value) {
-            return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'] },
+                    colors: {
+                        bg: '#0b1220',
+                        surface: '#111c33',
+                        surface2: '#16223c',
+                        term: '#050a15',
+                        muted: '#8aa0bf',
+                        accent: '#6366f1',
+                        accent2: '#22d3ee',
+                        ok: '#34d399',
+                        bad: '#f87171',
+                        warn: '#fbbf24',
+                    },
+                    boxShadow: { card: '0 10px 30px rgba(2,6,23,.45)' },
+                    keyframes: {
+                        pulseDot: {
+                            '0%': { boxShadow: '0 0 0 0 rgba(52,211,153,.55)' },
+                            '70%': { boxShadow: '0 0 0 8px rgba(52,211,153,0)' },
+                            '100%': { boxShadow: '0 0 0 0 rgba(52,211,153,0)' },
+                        },
+                        shimmer: { from: { backgroundPosition: '200% 0' }, to: { backgroundPosition: '-200% 0' } },
+                    },
+                    animation: {
+                        pulseDot: 'pulseDot 2s infinite',
+                        shimmer: 'shimmer 1.4s infinite',
+                    },
+                }
+            }
         }
+    </script>
+
+    <style type="text/tailwindcss">
+        @layer components {
+            .card {
+                @apply bg-gradient-to-br from-surface to-surface2 border border-slate-400/15 rounded-2xl shadow-card;
+            }
+            .btn {
+                @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-transparent text-[12.5px] font-semibold leading-none cursor-pointer transition-all duration-200 disabled:opacity-45 disabled:cursor-not-allowed;
+            }
+            .btn svg { @apply w-4 h-4; }
+            .btn-primary { @apply bg-gradient-to-br from-accent to-indigo-400 text-white shadow-lg shadow-indigo-500/30 hover:-translate-y-px hover:shadow-indigo-500/50; }
+            .btn-success { @apply bg-gradient-to-br from-emerald-500 to-ok text-[#04251a] shadow-lg shadow-emerald-400/30 hover:-translate-y-px px-[18px] py-[11px] text-[13.5px]; }
+            .btn-danger { @apply bg-bad/10 text-bad border-bad/30 hover:bg-bad/20 hover:-translate-y-px; }
+            .btn-dark { @apply bg-accent2/10 text-cyan-300 border-accent2/30 hover:bg-accent2/20 hover:-translate-y-px; }
+            .btn-ghost { @apply bg-slate-400/10 text-muted border-slate-400/15 hover:text-slate-200 hover:bg-slate-400/20; }
+            .pill { @apply text-[11.5px] font-semibold px-3 py-1 rounded-full tracking-wide uppercase; }
+            .pill-online { @apply bg-ok/15 text-ok; }
+            .pill-offline { @apply bg-bad/15 text-bad; }
+            .pill-warn { @apply bg-warn/15 text-warn; }
+            .pill-muted { @apply bg-slate-400/15 text-slate-400; }
+            .chip { @apply inline-flex items-center gap-1.5 text-xs font-medium bg-accent2/10 text-cyan-300 border border-accent2/25 px-3 py-1 rounded-full; }
+            .dot { @apply w-2.5 h-2.5 rounded-full shrink-0; }
+            .dot-online { @apply bg-ok shadow-[0_0_12px_rgba(52,211,153,.7)]; }
+            .dot-offline { @apply bg-bad shadow-[0_0_12px_rgba(248,113,113,.6)]; }
+            .dot-idle { @apply bg-warn shadow-[0_0_12px_rgba(251,191,36,.6)]; }
+            .nav-item { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-muted transition hover:bg-accent/10 hover:text-slate-200; }
+            .nav-item.active { @apply bg-gradient-to-r from-accent/25 to-accent2/10 text-white shadow-[inset_3px_0_0_#6366f1]; }
+            .label-xs { @apply text-[10.5px] uppercase tracking-widest text-muted font-semibold; }
+            .input { @apply w-full px-3.5 py-2.5 bg-slate-950/45 border border-slate-400/15 rounded-xl text-sm text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-accent focus:ring-4 focus:ring-indigo-500/20; }
+            .spinner { @apply w-3.5 h-3.5 rounded-full border-2 border-accent2/25 border-t-accent2 animate-spin shrink-0; }
+            .spinner-muted { @apply border-slate-400/20 border-t-muted; }
+        }
+    </style>
+
+    <style>
+        body {
+            background:
+                radial-gradient(1200px 600px at 85% -10%, rgba(99, 102, 241, .14), transparent 60%),
+                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, .10), transparent 55%),
+                #0b1220;
+            -webkit-font-smoothing: antialiased;
+        }
+        .skeleton {
+            background: linear-gradient(90deg, rgba(148,163,184,.08) 25%, rgba(148,163,184,.16) 50%, rgba(148,163,184,.08) 75%);
+            background-size: 200% 100%;
+        }
+        .xterm .xterm-viewport { background-color: transparent !important; }
+        .xterm-screen { padding: 12px; }
+    </style>
+</head>
+
+<body class="font-sans text-slate-200 min-h-screen">
+    <div class="flex flex-col md:flex-row md:h-screen min-h-screen">
+
+        <!-- ================= Sidebar ================= -->
+        <aside class="md:w-64 shrink-0 bg-gradient-to-b from-[#0d1730] to-[#0a1324] border-b md:border-b-0 md:border-r border-slate-400/15 px-4 py-4 md:py-6 flex md:flex-col items-center md:items-stretch justify-between md:justify-start gap-3 md:gap-7 md:overflow-y-auto">
+            <a href="/" data-link class="flex items-center gap-3 px-2">
+                <div class="w-10 h-10 rounded-xl grid place-items-center bg-gradient-to-br from-accent to-accent2 shadow-lg shadow-indigo-500/40 text-white font-extrabold text-[15px] tracking-wide">DS</div>
+                <div class="flex flex-col leading-tight">
+                    <strong class="text-[15px] font-bold tracking-wide">DroidServer</strong>
+                    <span class="text-[11px] text-muted uppercase tracking-wider">Cluster</span>
+                </div>
+            </a>
+
+            <nav class="flex md:flex-col gap-1.5" id="nav"></nav>
+
+            <div class="hidden md:block mt-auto p-3.5 border border-slate-400/15 rounded-xl bg-white/[.02] text-xs text-muted leading-relaxed" id="sidebarFooter"></div>
+        </aside>
+
+        <!-- ================= Conteúdo ================= -->
+        <main id="view" class="flex-1 min-w-0 md:overflow-y-auto"></main>
+    </div>
+
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg border border-slate-400/15 bg-[#0d1730]/95 text-slate-200 shadow-card text-[12.5px] font-semibold opacity-0 pointer-events-none transition-opacity duration-300"></div>
+
+    <script>
+        // =====================================================================
+        // Utilidades
+        // =====================================================================
+        const $ = (id) => document.getElementById(id);
+        const ACAO_CRIAR = 'criar_worker';
+        const ALIAS_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+        const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
         function fmtBytes(n) {
             if (n == null) return '—';
@@ -120,121 +140,684 @@
             return `${n.toFixed(1)} ${u[i]}`;
         }
 
+        const isOnline = (info) => (info.status || 'Offline').toLowerCase() === 'online';
+
+        let toastTimer = null;
+        function toast(msg) {
+            const el = $('toast');
+            el.innerText = msg;
+            el.classList.remove('opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => el.classList.add('opacity-0'), 2200);
+        }
+
+        // Ícones (stroke)
+        const svg = (inner, cls = '') =>
+            `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
+        const ICON = {
+            dash: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+            pulse: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+            server: '<rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+            check: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4 12 14.01l-3-3"/>',
+            box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05"/><path d="M12 22.08V12"/>',
+            refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
+            back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+            plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+            chevron: '<path d="m5 8 6 6 6-6"/>',
+            terminal: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m7 15 5-5 5 5"/>',
+            trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+            copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+            paste: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/><path d="m9 14 2 2 4-4"/>',
+            eraser: '<path d="m3 21 5-5"/><path d="m15 21 6-6"/><path d="M3 21h18"/><path d="m11.5 3.5 9 9-8 8h-1l-9-9z"/>',
+            full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+        };
+
         function metricBar(label, pct, sub) {
             const p = (pct == null) ? 0 : Math.max(0, Math.min(100, pct));
             const val = (pct == null) ? '—' : `${pct}%`;
             return `
-            <div class="metric">
-                <div class="metric-head">
-                    <span class="metric-label">${label}</span>
-                    <span class="metric-value">${val}</span>
+            <div class="flex-1 min-w-[200px]">
+                <div class="flex justify-between items-center mb-1.5">
+                    <span class="label-xs tracking-[.09em]">${label}</span>
+                    <span class="text-xs font-bold">${val}</span>
                 </div>
-                <div class="bar"><div class="bar-fill" style="width:${p}%"></div></div>
-                ${sub ? `<div class="metric-sub">${sub}</div>` : ''}
+                <div class="h-1.5 rounded-full bg-slate-950/45 border border-slate-400/15 overflow-hidden">
+                    <div class="h-full rounded-full bg-gradient-to-r from-accent to-accent2 transition-[width] duration-500" style="width:${p}%"></div>
+                </div>
+                ${sub ? `<div class="text-[11px] text-muted mt-1">${sub}</div>` : ''}
             </div>`;
         }
 
-        function nodeCard(ip, info) {
-            const workers = info.workers || [];
-            const status = info.status || 'Offline';
-            const isOnline = status.toLowerCase() === 'online';
-            const lastSeen = info.last_seen || '—';
-
-            const pendentes = (info.tarefas_pendentes || []).length;
-            const processando = (pendentes > 0 || info.tarefa_atual);
-            const processandoPill = processando
-                ? '<span class="pill" style="background:rgba(251,191,36,.14);color:#fbbf24;">processando</span>'
-                : '';
-
-            const mem = info.mem || {};
-            const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : null;
-
-            const workerChips = workers.length
-                ? workers.map(w => `<span class="chip">${esc(w)}</span>`).join('')
-                : '<span class="muted" style="font-size:12.5px;">Nenhum worker instalado</span>';
-
+        function topbar(title, subtitle, actions = '') {
             return `
-            <article class="node-card">
-                <div class="node-card-top">
-                    <div class="node-ip">
-                        <span class="status-dot ${isOnline ? 'online' : 'offline'}"></span>
-                        <span class="ip-text">${esc(ip)}</span>
-                    </div>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        ${processandoPill}
-                        <span class="pill ${isOnline ? 'pill-online' : 'pill-offline'}">${esc(status)}</span>
-                    </div>
+            <header class="flex items-end justify-between gap-4 flex-wrap mb-7">
+                <div>
+                    <h1 class="text-[26px] font-extrabold tracking-tight">${title}</h1>
+                    <p class="mt-1.5 text-[13.5px] text-muted" id="subtitle">${subtitle}</p>
                 </div>
-                <div class="node-meta">
-                    <div class="meta-item">
-                        <span class="meta-label">Último contato</span>
-                        <span class="meta-value">${esc(lastSeen)}</span>
-                    </div>
-                    <div class="meta-item">
-                        <span class="meta-label">Workers</span>
-                        <span class="meta-value">${workers.length}</span>
-                    </div>
-                </div>
-                <div class="node-metrics">
-                    ${metricBar('CPU', info.cpu)}
-                    ${metricBar('RAM', mem.percent, memSub)}
-                </div>
-                <div class="node-workers">${workerChips}</div>
-                <div class="node-actions">
-                    <a href="/node/${esc(ip)}" class="btn btn-primary btn-sm">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6 6-6"/></svg>
-                        Gerenciar Workers
-                    </a>
-                </div>
-            </article>`;
+                <div class="flex items-center gap-3.5">${actions}</div>
+            </header>`;
         }
 
-        function emptyState() {
-            return `
-            <div class="empty">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-                <h3>Nenhum node conectado</h3>
-                <p>Rode o agente <strong>node.py</strong> em um dispositivo Android para vê-lo aqui.</p>
+        // =====================================================================
+        // Socket.IO (único para todo o app)
+        // =====================================================================
+        const socket = io();
+        let cleanup = () => { };
+
+        // =====================================================================
+        // Roteador (mesmas rotas do routes.py, via History API)
+        //   /                          -> dashboard
+        //   /node/<ip>                 -> detalhe do node
+        //   /node/<ip>/worker/<alias>  -> terminal do worker
+        // =====================================================================
+        function go(path) {
+            if (path === location.pathname) return;
+            history.pushState({}, '', path);
+            route();
+        }
+
+        document.addEventListener('click', (e) => {
+            const a = e.target.closest('a[data-link]');
+            if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            go(a.getAttribute('href'));
+        });
+        window.addEventListener('popstate', route);
+
+        function setNav(ip) {
+            const items = [`<a href="/" data-link class="nav-item ${!ip ? 'active' : ''}">${svg(ICON.dash, 'w-[18px] h-[18px] shrink-0')}Dashboard</a>`];
+            if (ip) items.push(`<a href="/node/${esc(ip)}" data-link class="nav-item active">${svg(ICON.pulse, 'w-[18px] h-[18px] shrink-0')}<span class="truncate">Node ${esc(ip)}</span></a>`);
+            $('nav').innerHTML = `<span class="label-xs px-3 pb-2 hidden md:block">Menu</span>` + items.join('');
+        }
+
+        function setFooter(html) { $('sidebarFooter').innerHTML = html; }
+
+        function route() {
+            cleanup();
+            cleanup = () => { };
+            const path = location.pathname.replace(/\/+$/, '') || '/';
+            let m;
+            if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)$/))) {
+                return viewTerminal(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+            }
+            if ((m = path.match(/^\/node\/([^/]+)$/))) {
+                return viewNode(decodeURIComponent(m[1]));
+            }
+            return viewDashboard();
+        }
+
+        // =====================================================================
+        // VIEW: Dashboard  (GET /api/nodes)
+        // =====================================================================
+        function viewDashboard() {
+            setNav(null);
+            setFooter(`
+                <div class="flex items-center gap-2 mb-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Online</div>
+                <div class="flex items-center gap-2 mb-2"><span class="dot dot-offline !w-[9px] !h-[9px]"></span>Offline</div>
+                <div class="mt-2 text-[11.5px]">Host Flask + Socket.IO — porta 5050</div>`);
+
+            const statCard = (color, icon, id, label) => `
+                <div class="card relative overflow-hidden px-6 py-5 flex items-center gap-4 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
+                    <div class="w-11 h-11 rounded-xl grid place-items-center shrink-0 ${color}">${svg(icon, 'w-[22px] h-[22px]')}</div>
+                    <div>
+                        <div class="text-[26px] font-extrabold tracking-tight leading-none" id="${id}">0</div>
+                        <div class="mt-1.5 text-[12.5px] text-muted font-medium">${label}</div>
+                    </div>
+                </div>`;
+
+            $('view').innerHTML = `
+            <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14">
+                ${topbar('Dashboard', 'Visão geral do cluster e dos nodes conectados.', `
+                    <span class="flex items-center gap-2 text-[12.5px] text-muted">
+                        <span class="w-2 h-2 rounded-full bg-ok animate-pulseDot"></span>
+                        Atualizado em <span id="updatedAt">—</span>
+                    </span>
+                    <button class="btn btn-ghost" id="btnRefresh">${svg(ICON.refresh)}Atualizar</button>`)}
+
+                <section class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-9">
+                    ${statCard('bg-accent/15 text-indigo-300', ICON.server, 'statNodes', 'Nodes totais')}
+                    ${statCard('bg-ok/15 text-emerald-300', ICON.check, 'statOnline', 'Nodes online')}
+                    ${statCard('bg-accent2/15 text-cyan-300', ICON.box, 'statWorkers', 'Workers ativos')}
+                </section>
+
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-[17px] font-bold">Nodes conectados</h2>
+                    <span class="text-[12.5px] text-muted bg-slate-400/10 px-2.5 py-1 rounded-full" id="nodeCount">0 nodes</span>
+                </div>
+
+                <section class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(320px,1fr))]" id="nodeGrid"></section>
             </div>`;
-        }
 
-        async function fetchNodes() {
-            try {
-                const res = await fetch('/api/nodes');
-                const data = await res.json();
-                renderNodes(data);
-            } catch (err) {
-                grid.innerHTML = `<div class="empty"><h3>Falha ao consultar o host</h3><p>${esc(err.message)}</p></div>`;
+            const grid = $('nodeGrid');
+            const skeletons = '<div class="skeleton h-[180px] rounded-2xl animate-shimmer"></div>'.repeat(2);
+            grid.innerHTML = skeletons;
+
+            const nodeCard = (ip, info) => {
+                const workers = info.workers || [];
+                const status = info.status || 'Offline';
+                const online = isOnline(info);
+                const processando = (info.tarefas_pendentes || []).length > 0 || info.tarefa_atual;
+                const mem = info.mem || {};
+                const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : null;
+                const chips = workers.length
+                    ? workers.map(w => `<span class="chip">${esc(w)}</span>`).join('')
+                    : '<span class="text-[12.5px] text-muted">Nenhum worker instalado</span>';
+
+                return `
+                <article class="card relative overflow-hidden p-5 flex flex-col gap-4 transition hover:-translate-y-1 hover:border-indigo-500/45">
+                    <div class="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-accent to-accent2 opacity-80"></div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2.5">
+                            <span class="dot ${online ? 'dot-online' : 'dot-offline'}"></span>
+                            <span class="text-base font-bold tracking-wide">${esc(ip)}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${processando ? '<span class="pill pill-warn">processando</span>' : ''}
+                            <span class="pill ${online ? 'pill-online' : 'pill-offline'}">${esc(status)}</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 p-3.5 bg-slate-950/35 border border-slate-400/15 rounded-xl">
+                        <div class="flex flex-col gap-1">
+                            <span class="label-xs tracking-wider">Último contato</span>
+                            <span class="text-sm font-semibold">${esc(info.last_seen || '—')}</span>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <span class="label-xs tracking-wider">Workers</span>
+                            <span class="text-sm font-semibold">${workers.length}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-3.5">
+                        ${metricBar('CPU', info.cpu)}
+                        ${metricBar('RAM', mem.percent, memSub)}
+                    </div>
+                    <div class="flex flex-wrap gap-2 min-h-6 items-center">${chips}</div>
+                    <div class="flex gap-2.5 mt-auto">
+                        <a href="/node/${esc(ip)}" data-link class="btn btn-primary">${svg(ICON.chevron)}Gerenciar Workers</a>
+                    </div>
+                </article>`;
+            };
+
+            const emptyState = () => `
+                <div class="col-span-full text-center py-16 px-5 border border-dashed border-slate-400/15 rounded-2xl text-muted">
+                    ${svg(ICON.server, 'w-11 h-11 opacity-50 mx-auto mb-3.5')}
+                    <h3 class="text-base font-semibold text-slate-200 mb-1.5">Nenhum node conectado</h3>
+                    <p class="text-[13px]">Rode o agente <strong>node.py</strong> em um dispositivo Android para vê-lo aqui.</p>
+                </div>`;
+
+            function render(nodes) {
+                const entries = Object.entries(nodes || {});
+                $('statNodes').textContent = entries.length;
+                $('statOnline').textContent = entries.filter(([, i]) => isOnline(i)).length;
+                $('statWorkers').textContent = entries.reduce((a, [, i]) => a + (i.workers || []).length, 0);
+                $('nodeCount').textContent = `${entries.length} ${entries.length === 1 ? 'node' : 'nodes'}`;
+                $('updatedAt').textContent = new Date().toLocaleTimeString('pt-BR');
+
+                if (!entries.length) { grid.innerHTML = emptyState(); return; }
+                entries.sort((a, b) => isOnline(b[1]) - isOnline(a[1]));
+                grid.innerHTML = entries.map(([ip, info]) => nodeCard(ip, info)).join('');
             }
-        }
 
-        function renderNodes(nodes) {
-            const entries = Object.entries(nodes || {});
-            const online = entries.filter(([, i]) => (i.status || 'Offline').toLowerCase() === 'online');
-
-            document.getElementById('statNodes').textContent = entries.length;
-            document.getElementById('statOnline').textContent = online.length;
-            document.getElementById('statWorkers').textContent = entries.reduce((acc, [, i]) => acc + (i.workers || []).length, 0);
-            countBadge.textContent = `${entries.length} ${entries.length === 1 ? 'node' : 'nodes'}`;
-            updatedAt.textContent = new Date().toLocaleTimeString('pt-BR');
-
-            if (!entries.length) {
-                grid.innerHTML = emptyState();
-                return;
+            async function fetchNodes() {
+                try {
+                    const res = await fetch('/api/nodes');
+                    render(await res.json());
+                } catch (err) {
+                    grid.innerHTML = `<div class="col-span-full text-center py-16 text-muted"><h3 class="text-base font-semibold text-slate-200 mb-1.5">Falha ao consultar o host</h3><p class="text-[13px]">${esc(err.message)}</p></div>`;
+                }
             }
 
-            const isOnline = (info) => (info.status || 'Offline').toLowerCase() === 'online';
-            entries.sort((a, b) => isOnline(b[1]) - isOnline(a[1]));
-            grid.innerHTML = entries.map(([ip, info]) => nodeCard(ip, info)).join('');
-        }
+            $('btnRefresh').addEventListener('click', () => { grid.innerHTML = skeletons; fetchNodes(); });
 
-        function refreshNow() {
-            grid.innerHTML = '<div class="skeleton"></div><div class="skeleton"></div>';
             fetchNodes();
+            const timer = setInterval(fetchNodes, 5000);
+            const onUpd = () => fetchNodes();
+            socket.on('node_updated', onUpd);
+            cleanup = () => { clearInterval(timer); socket.off('node_updated', onUpd); };
         }
 
-        fetchNodes();
-        setInterval(fetchNodes, 5000);
+        // =====================================================================
+        // VIEW: Detalhe do node
+        //   GET  /api/node/<ip>
+        //   POST /deploy_worker
+        //   GET  /node/<ip>/worker/<alias>/delete
+        // =====================================================================
+        function viewNode(ip) {
+            setNav(ip);
+            setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Atualização ao vivo</div>`);
+
+            $('view').innerHTML = `
+            <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14">
+                <header class="flex items-end justify-between gap-4 flex-wrap mb-7">
+                    <div>
+                        <h1 class="text-[26px] font-extrabold tracking-tight">Node <span class="text-indigo-400">${esc(ip)}</span></h1>
+                        <p class="mt-1.5 text-[13.5px] text-muted" id="heroSub">Carregando...</p>
+                    </div>
+                    <a href="/" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao Dashboard</a>
+                </header>
+
+                <section class="rounded-2xl border border-slate-400/15 shadow-card p-6 md:p-7 mb-7 bg-gradient-to-br from-accent/20 to-accent2/10 bg-surface">
+                    <div class="flex items-center justify-between gap-5 flex-wrap">
+                        <div class="flex items-center gap-4">
+                            <div class="w-[54px] h-[54px] rounded-2xl grid place-items-center shrink-0 bg-gradient-to-br from-accent to-accent2 text-white shadow-lg shadow-indigo-500/40">${svg(ICON.server, 'w-[26px] h-[26px]')}</div>
+                            <div>
+                                <h2 class="text-xl font-extrabold tracking-tight">${esc(ip)}</h2>
+                                <p class="mt-1 text-[12.5px] text-muted" id="heroLastSeen">Último contato: —</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-2.5 flex-wrap" id="heroPills"></div>
+                    </div>
+                    <div class="flex gap-6 flex-wrap mt-5 pt-5 border-t border-slate-400/15" id="heroMetrics"></div>
+                </section>
+
+                <div class="card p-5 mb-7">
+                    <h3 class="text-[15px] font-bold mb-1">Criar novo worker</h3>
+                    <p class="text-[12.5px] text-muted mb-4">Cria um container Alpine via proot-distro e registra como serviço no Supervisor do node.</p>
+                    <form id="deployForm" class="flex gap-3 items-end flex-wrap">
+                        <div class="flex-1 min-w-[220px]">
+                            <label for="alias" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Alias do container</label>
+                            <input class="input" type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required pattern="[A-Za-z0-9_\\-]{1,64}" autocomplete="off">
+                        </div>
+                        <button type="submit" class="btn btn-success">${svg(ICON.plus)}Criar Container</button>
+                    </form>
+                </div>
+
+                <div id="pendingCard"></div>
+                <div id="resultsCard"></div>
+                <div id="workersSection"></div>
+            </div>`;
+
+            let notFound = false;
+
+            function renderHero(n) {
+                const online = isOnline(n);
+                $('heroSub').innerText = online ? 'Node online — atualização em tempo real.' : 'Node offline — aguardando o dispositivo voltar.';
+                $('heroLastSeen').innerText = 'Último contato: ' + (n.last_seen || '—');
+                $('heroPills').innerHTML = `
+                    <span class="pill ${online ? 'pill-online' : 'pill-offline'}">${esc(n.status || 'Offline')}</span>
+                    <span class="pill pill-muted">${(n.workers || []).length} workers</span>`;
+                const mem = n.mem || {};
+                const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : '';
+                $('heroMetrics').innerHTML = metricBar('CPU', n.cpu) + metricBar('RAM', mem.percent, memSub);
+            }
+
+            function renderPending(n) {
+                const pend = n.tarefas_pendentes || [];
+                const atual = n.tarefa_atual;
+                const el = $('pendingCard');
+                if (!pend.length && !atual) { el.innerHTML = ''; return; }
+
+                const item = (spin, verbo, alias, extra) => `
+                    <div class="flex items-center gap-2.5 text-[13.5px] text-muted">
+                        <span class="spinner ${spin}"></span>
+                        <span>${verbo} <strong class="text-slate-200">${esc(alias)}</strong> (${extra})</span>
+                    </div>`;
+                let items = '';
+                if (atual) items += item('', atual.acao === ACAO_CRIAR ? 'Criando' : 'Deletando', atual.alias, 'executando agora');
+                pend.forEach(t => items += item('spinner-muted', t.acao === ACAO_CRIAR ? 'Criar' : 'Deletar', t.alias, 'aguardando o node'));
+
+                el.innerHTML = `
+                <div class="card p-5 mb-7">
+                    <h3 class="text-[15px] font-bold mb-1">Em processamento</h3>
+                    <p class="text-[12.5px] text-muted mb-4">O node processa as tarefas em segundo plano — criar um container pode levar alguns minutos.</p>
+                    <div class="flex flex-col gap-2">${items}</div>
+                </div>`;
+            }
+
+            function renderResults(n) {
+                const res = n.resultados || [];
+                const el = $('resultsCard');
+                if (!res.length) { el.innerHTML = ''; return; }
+                const items = res.map(r => `
+                    <div class="flex items-start gap-2.5 text-[13px] px-3 py-2.5 rounded-xl border bg-slate-950/35 ${r.ok ? 'border-ok/30' : 'border-bad/30'}">
+                        <span class="font-extrabold shrink-0 leading-tight ${r.ok ? 'text-ok' : 'text-bad'}">${r.ok ? '✓' : '✗'}</span>
+                        <span>
+                            ${r.acao === ACAO_CRIAR ? 'Criação' : 'Deleção'}
+                            ${r.alias ? `<strong>${esc(r.alias)}</strong>` : ''}
+                            — ${esc(r.msg)}
+                            ${r.ts ? `<span class="text-muted text-[11px] ml-1.5">${esc(r.ts)}</span>` : ''}
+                        </span>
+                    </div>`).join('');
+                el.innerHTML = `
+                <div class="card p-5 mb-7">
+                    <h3 class="text-[15px] font-bold mb-3">Últimas operações</h3>
+                    <div class="flex flex-col gap-2">${items}</div>
+                </div>`;
+            }
+
+            function renderWorkers(n) {
+                const workers = n.workers || [];
+                const ws = n.worker_status || {};
+                const el = $('workersSection');
+                const plural = workers.length === 1 ? 'worker' : 'workers';
+                const head = `
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-[17px] font-bold">Workers ativos</h2>
+                        <span class="text-[12.5px] text-muted bg-slate-400/10 px-2.5 py-1 rounded-full">${workers.length} ${plural}</span>
+                    </div>`;
+
+                if (!workers.length) {
+                    el.innerHTML = head + `
+                    <div class="text-center py-16 px-5 border border-dashed border-slate-400/15 rounded-2xl text-muted">
+                        ${svg(ICON.box, 'w-11 h-11 opacity-50 mx-auto mb-3.5')}
+                        <h3 class="text-base font-semibold text-slate-200 mb-1.5">Nenhum worker criado</h3>
+                        <p class="text-[13px]">Crie o primeiro container usando o formulário acima.</p>
+                    </div>`;
+                    return;
+                }
+
+                // Workers com deleção pendente/em execução
+                const removendo = new Set(
+                    [...(n.tarefas_pendentes || []), ...(n.tarefa_atual ? [n.tarefa_atual] : [])]
+                        .filter(t => t.acao !== ACAO_CRIAR).map(t => t.alias)
+                );
+                const TONES = {
+                    ok: { bar: 'from-ok to-emerald-300', pill: 'pill-online', dot: 'bg-ok' },
+                    warn: { bar: 'from-warn to-amber-300', pill: 'pill-warn', dot: 'bg-warn' },
+                    muted: { bar: 'from-slate-500 to-slate-400', pill: 'pill-muted', dot: 'bg-slate-400' },
+                };
+
+                const cards = workers.map(w => {
+                    const st = ws[w] || null;
+                    const apagando = removendo.has(w);
+                    const tone = apagando ? 'warn' : st === 'RUNNING' ? 'ok' : st ? 'warn' : 'muted';
+                    const label = apagando ? 'Removendo' : st === 'RUNNING' ? 'Running' : st ? st : 'Sem serviço';
+                    const t = TONES[tone];
+
+                    return `
+                    <article class="card relative overflow-hidden p-5 flex flex-col gap-4 transition hover:-translate-y-1 hover:border-accent2/40 ${apagando ? 'opacity-60' : ''}">
+                        <div class="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${t.bar}"></div>
+
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <div class="relative w-11 h-11 rounded-xl grid place-items-center shrink-0 bg-gradient-to-br from-accent2/20 to-accent/20 text-cyan-300">
+                                    ${svg(ICON.box, 'w-5 h-5')}
+                                    <span class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full ring-2 ring-surface2 ${t.dot}"></span>
+                                </div>
+                                <div class="min-w-0">
+                                    <div class="text-[15px] font-bold truncate" title="${esc(w)}">${esc(w)}</div>
+                                    <div class="text-[11.5px] text-muted mt-0.5">Container Alpine</div>
+                                </div>
+                            </div>
+                            <span class="pill ${t.pill} shrink-0 flex items-center gap-1.5">
+                                ${apagando ? '<span class="spinner !w-3 !h-3"></span>' : ''}${esc(label)}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3 p-3 bg-slate-950/35 border border-slate-400/15 rounded-xl">
+                            <div class="flex flex-col gap-1 min-w-0">
+                                <span class="label-xs tracking-wider">Runtime</span>
+                                <span class="text-[13px] font-semibold truncate">proot-distro</span>
+                            </div>
+                            <div class="flex flex-col gap-1 min-w-0">
+                                <span class="label-xs tracking-wider">Serviço</span>
+                                <span class="text-[13px] font-semibold truncate">${st ? esc(st) : '—'}</span>
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2 mt-auto">
+                            <a href="/node/${esc(ip)}/worker/${esc(w)}" data-link class="btn btn-primary flex-1">${svg(ICON.terminal)}Abrir terminal</a>
+                            <button type="button" data-delete="${esc(w)}" ${apagando ? 'disabled' : ''} title="Apagar worker" aria-label="Apagar worker ${esc(w)}" class="btn btn-danger !px-3">${svg(ICON.trash)}</button>
+                        </div>
+                    </article>`;
+                }).join('');
+
+                el.innerHTML = head + `<div class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">${cards}</div>`;
+            }
+
+            async function carregar() {
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
+                    if (res.status === 404) {
+                        if (!notFound) {
+                            notFound = true;
+                            $('view').innerHTML = `
+                            <div class="px-5 md:px-10 pt-16 text-center text-muted">
+                                <h3 class="text-lg font-semibold text-slate-200 mb-2">Node não encontrado ou offline</h3>
+                                <p class="text-[13px] mb-5">O node ${esc(ip)} não está registrado no host.</p>
+                                <a href="/" data-link class="btn btn-primary">${svg(ICON.back)}Voltar ao Dashboard</a>
+                            </div>`;
+                        }
+                        return;
+                    }
+                    if (!res.ok || notFound) return;
+                    const n = await res.json();
+                    renderHero(n); renderPending(n); renderResults(n); renderWorkers(n);
+                } catch (e) { /* ignora falhas momentâneas de rede */ }
+            }
+
+            // POST /deploy_worker
+            $('deployForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const alias = $('alias').value.trim();
+                if (!ALIAS_RE.test(alias)) { toast('Alias inválido'); return; }
+                const fd = new FormData();
+                fd.append('ip', ip);
+                fd.append('alias', alias);
+                try {
+                    await fetch('/deploy_worker', { method: 'POST', body: fd });
+                    $('alias').value = '';
+                    toast('Tarefa enviada ao node');
+                } catch (err) { toast('Falha ao enviar'); }
+                carregar();
+            });
+
+            // GET /node/<ip>/worker/<alias>/delete
+            $('workersSection').addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-delete]');
+                if (!btn) return;
+                const w = btn.dataset.delete;
+                if (!confirm(`Apagar o worker ${w} deste node? Essa ação não pode ser desfeita.`)) return;
+                try {
+                    await fetch(`/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(w)}/delete`);
+                    toast('Deleção enfileirada');
+                } catch (err) { toast('Falha ao enviar'); }
+                carregar();
+            });
+
+            const onUpd = (data) => { if (data && data.ip === ip) carregar(); };
+            socket.on('node_updated', onUpd);
+            carregar();
+            const timer = setInterval(carregar, 10000);
+            cleanup = () => { clearInterval(timer); socket.off('node_updated', onUpd); };
+        }
+
+        // =====================================================================
+        // VIEW: Terminal (WebSocket)
+        //   emit  terminal_input / terminal_resize
+        //   on    output_for_<ip>_<alias>
+        // =====================================================================
+        function viewTerminal(ip, alias) {
+            setNav(ip);
+            setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Sessão ao vivo</div>`);
+
+            const view = $('view');
+            view.classList.remove('md:overflow-y-auto');
+            view.classList.add('md:overflow-hidden');
+
+            view.innerHTML = `
+            <div class="h-[calc(100vh-72px)] md:h-full flex flex-col p-5 box-border min-w-0">
+                <header class="flex items-end justify-between gap-4 flex-wrap mb-3.5 shrink-0">
+                    <div>
+                        <h1 class="text-[26px] font-extrabold tracking-tight flex items-center gap-2.5">
+                            Terminal <span class="chip">${esc(alias)}</span>
+                        </h1>
+                        <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — sessão interativa via WebSocket.</p>
+                    </div>
+                    <div class="flex items-center gap-3.5">
+                        <span class="flex items-center gap-2 text-[12.5px] font-semibold">
+                            <span class="dot dot-idle" id="statusDot"></span>
+                            <span id="status" class="text-warn">Conectando...</span>
+                        </span>
+                        <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Encerrar</a>
+                    </div>
+                </header>
+
+                <div class="flex items-center justify-between gap-3 flex-wrap mb-3 px-3 py-2.5 bg-surface border border-slate-400/15 rounded-xl shrink-0">
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <button class="btn btn-dark" id="btnCopy" title="Copiar seleção (Ctrl+C com texto selecionado)" disabled>${svg(ICON.copy)}Copiar</button>
+                        <button class="btn btn-dark" id="btnPaste" title="Colar no terminal (Ctrl+Shift+V)">${svg(ICON.paste)}Colar</button>
+                        <button class="btn btn-dark" id="btnClear" title="Limpar a tela">${svg(ICON.eraser)}Limpar</button>
+                    </div>
+                    <div class="flex gap-2 flex-wrap items-center">
+                        <button class="btn btn-ghost" id="btnReconnect" title="Reconectar o WebSocket">${svg(ICON.refresh)}Reconectar</button>
+                        <button class="btn btn-ghost" id="btnFullscreen" title="Tela cheia (ESC para sair)">${svg(ICON.full)}Tela cheia</button>
+                    </div>
+                </div>
+
+                <div class="flex-1 min-h-0 relative mb-2.5">
+                    <div id="termShell" class="absolute inset-0 bg-term border border-slate-400/15 rounded-xl overflow-hidden shadow-card"></div>
+                </div>
+
+                <div class="text-[11.5px] text-muted text-center shrink-0">
+                    Clique no terminal para digitar · selecione para copiar (Ctrl+C) · cole com Ctrl+Shift+V
+                </div>
+            </div>`;
+
+            const term = new Terminal({
+                cursorBlink: true,
+                fontSize: 14,
+                scrollback: 5000,
+                fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
+                theme: {
+                    background: '#050a15', foreground: '#e2e8f0', cursor: '#67e8f9', cursorAccent: '#050a15',
+                    selectionBackground: 'rgba(99,102,241,0.35)',
+                    black: '#050a15', red: '#f87171', green: '#34d399', yellow: '#fbbf24',
+                    blue: '#818cf8', magenta: '#c084fc', cyan: '#67e8f9', white: '#e2e8f0',
+                    brightBlack: '#64748b', brightRed: '#fb7185', brightGreen: '#6ee7b7', brightYellow: '#fcd34d',
+                    brightBlue: '#a5b4fc', brightMagenta: '#d8b4fe', brightCyan: '#a5f3fc', brightWhite: '#f8fafc'
+                }
+            });
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open($('termShell'));
+            fitAddon.fit();
+            term.focus();
+            term.write('\x1b[38;5;111mDroidServer\x1b[0m — Iniciando conexão com o host...\r\n\r\n');
+
+            // ---- Status ----
+            const statusEl = $('status'), statusDot = $('statusDot');
+            const STATUS_COLOR = { '#34d399': 'text-ok', '#f87171': 'text-bad', '#fbbf24': 'text-warn' };
+            function setStatus(texto, cor, classe) {
+                statusEl.innerText = texto;
+                statusEl.className = STATUS_COLOR[cor] || '';
+                statusDot.className = 'dot dot-' + classe;
+            }
+
+            // ---- Copiar ----
+            const btnCopy = $('btnCopy');
+            async function copiar() {
+                const sel = term.getSelection();
+                if (!sel) return;
+                try { await navigator.clipboard.writeText(sel); }
+                catch (e) {
+                    const ta = document.createElement('textarea');
+                    ta.value = sel; document.body.appendChild(ta); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
+                }
+                toast('Copiado!');
+                term.clearSelection();
+            }
+            term.onSelectionChange(() => { btnCopy.disabled = !term.hasSelection(); });
+            term.attachCustomKeyEventHandler((e) => {
+                if (e.type === 'keydown' && e.ctrlKey && !e.shiftKey && !e.altKey
+                    && e.key.toLowerCase() === 'c' && term.hasSelection()) { copiar(); return false; }
+                return true;
+            });
+            btnCopy.addEventListener('click', copiar);
+
+            // ---- Colar ----
+            const normalizarPaste = (t) => t.replace(/\r?\n/g, '\r');
+            const emitirPaste = (t) => {
+                const input = normalizarPaste(t);
+                if (input) socket.emit('terminal_input', { ip, alias, input });
+            };
+            let pasting = false;
+            $('termShell').addEventListener('paste', () => {
+                pasting = true; setTimeout(() => { pasting = false; }, 300);
+            }, true);
+
+            term.onData(data => {
+                let input = data;
+                if (pasting) { pasting = false; input = normalizarPaste(data); }
+                socket.emit('terminal_input', { ip, alias, input });
+            });
+
+            async function colar() {
+                try {
+                    const texto = await navigator.clipboard.readText();
+                    if (texto) { emitirPaste(texto); toast('Colado!'); return; }
+                } catch (e) { /* sem permissão de clipboard — fallback */ }
+
+                const ta = document.createElement('textarea');
+                ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+                document.body.appendChild(ta);
+                ta.focus();
+                toast('Pressione Ctrl+V para colar...');
+                ta.addEventListener('paste', (ev) => {
+                    ev.preventDefault();
+                    const texto = ev.clipboardData.getData('text');
+                    document.body.removeChild(ta);
+                    emitirPaste(texto);
+                    toast('Colado!');
+                }, { once: true });
+                setTimeout(() => { if (document.body.contains(ta)) document.body.removeChild(ta); }, 15000);
+            }
+            $('btnPaste').addEventListener('click', colar);
+
+            // ---- Limpar / Reconectar / Tela cheia ----
+            $('btnClear').addEventListener('click', () => term.clear());
+            $('btnReconnect').addEventListener('click', () => {
+                toast('Reconectando...');
+                if (socket.connected) socket.disconnect();
+                socket.connect();
+            });
+            $('btnFullscreen').addEventListener('click', () => {
+                if (document.fullscreenElement) document.exitFullscreen();
+                else document.documentElement.requestFullscreen().catch(() => toast('Tela cheia indisponível'));
+            });
+            const onFs = () => setTimeout(() => fitAddon.fit(), 80);
+            document.addEventListener('fullscreenchange', onFs);
+
+            // ---- Socket.IO ----
+            function sendResize() {
+                socket.emit('terminal_resize', { ip, alias, cols: term.cols, rows: term.rows });
+            }
+            const onConnect = () => { setStatus('Conectado ao Host. Aguardando Node...', '#34d399', 'online'); sendResize(); };
+            const onDisconnect = () => setStatus('Conexão perdida', '#f87171', 'offline');
+            const evento = `output_for_${ip}_${alias}`;
+            const onOutput = (data) => {
+                term.write(data.output);
+                if (statusEl.innerText !== 'Node ativo') setStatus('Node ativo', '#34d399', 'online');
+            };
+
+            socket.on('connect', onConnect);
+            socket.on('disconnect', onDisconnect);
+            socket.on(evento, onOutput);
+            if (socket.connected) onConnect();
+
+            term.onResize(sendResize);
+            const onWinResize = () => { fitAddon.fit(); sendResize(); };
+            const onOrient = () => setTimeout(onWinResize, 200);
+            window.addEventListener('resize', onWinResize);
+            window.addEventListener('orientationchange', onOrient);
+            setTimeout(onWinResize, 100);
+
+            cleanup = () => {
+                socket.off('connect', onConnect);
+                socket.off('disconnect', onDisconnect);
+                socket.off(evento, onOutput);
+                window.removeEventListener('resize', onWinResize);
+                window.removeEventListener('orientationchange', onOrient);
+                document.removeEventListener('fullscreenchange', onFs);
+                term.dispose();
+                view.classList.remove('md:overflow-hidden');
+                view.classList.add('md:overflow-y-auto');
+            };
+        }
+
+        route();
     </script>
 </body>
+
 </html>
