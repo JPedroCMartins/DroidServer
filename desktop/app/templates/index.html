@@ -412,8 +412,16 @@
 
                 <div class="card p-5 mb-7">
                     <h3 class="text-[15px] font-bold mb-1">Criar novo worker</h3>
-                    <p class="text-[12.5px] text-muted mb-4">Cria um container Alpine via proot-distro e registra como serviço no Supervisor do node.</p>
+                    <p class="text-[12.5px] text-muted mb-4">Cria um container via proot-distro (Alpine, Debian ou Arch Linux) e registra como serviço no Supervisor do node.</p>
                     <form id="deployForm" class="flex gap-3 items-end flex-wrap">
+                        <div class="w-full sm:w-48">
+                            <label for="imagem" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Distribuição</label>
+                            <select class="input cursor-pointer [&>option]:bg-[#111c33]" id="imagem" name="imagem">
+                                <option value="alpine">Alpine</option>
+                                <option value="debian">Debian</option>
+                                <option value="archlinux">Arch Linux</option>
+                            </select>
+                        </div>
                         <div class="flex-1 min-w-[220px]">
                             <label for="alias" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Alias do container</label>
                             <input class="input" type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required pattern="[A-Za-z0-9_\\-]{1,64}" autocomplete="off">
@@ -536,7 +544,7 @@
                                 </div>
                                 <div class="min-w-0">
                                     <div class="text-[15px] font-bold truncate" title="${esc(w)}">${esc(w)}</div>
-                                    <div class="text-[11.5px] text-muted mt-0.5">Container Alpine</div>
+                                    <div class="text-[11.5px] text-muted mt-0.5">Container Linux</div>
                                 </div>
                             </div>
                             <span class="pill ${t.pill} shrink-0 flex items-center gap-1.5">
@@ -594,6 +602,7 @@
                 const fd = new FormData();
                 fd.append('ip', ip);
                 fd.append('alias', alias);
+                fd.append('imagem', $('imagem').value);
                 try {
                     await fetch('/deploy_worker', { method: 'POST', body: fd });
                     $('alias').value = '';

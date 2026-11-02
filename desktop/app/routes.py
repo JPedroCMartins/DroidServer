@@ -17,6 +17,9 @@ STALE_TIMEOUT = 25
 # Segundos offline sem tarefas pendentes antes do node ser removido do painel.
 PRUNE_TIMEOUT = 180
 
+# Distribuições (proot-distro) que podem ser criadas pelo painel.
+IMAGENS_PERMITIDAS = {"alpine", "debian", "archlinux"}
+
 # Alias de worker: caracteres seguros (usado em caminhos, serviços e eventos WS).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -98,9 +101,14 @@ def delete_worker(ip, alias):
 def deploy_worker():
     ip_alvo = request.form.get('ip')
     alias = request.form.get('alias', '').strip()
+    imagem = request.form.get('imagem', 'alpine').strip().lower()
 
     if ip_alvo not in nodes_conectados:
         return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
+
+    if imagem not in IMAGENS_PERMITIDAS:
+        logger.warning("Imagem inválida rejeitada no deploy: %r", imagem)
+        return jsonify({"ok": False, "erro": "Distribuição inválida."}), 400
 
     if not _alias_valido(alias):
         logger.warning("Alias inválido rejeitado no deploy: %r", alias)
@@ -112,11 +120,11 @@ def deploy_worker():
 
     nova_tarefa = {
         "acao": "criar_worker",
-        "imagem": "alpine",
+        "imagem": imagem,
         "alias": alias
     }
     nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
-    logger.info("Tarefa enfileirada: criar worker '%s' no node %s", alias, ip_alvo)
+    logger.info("Tarefa enfileirada: criar worker '%s' (%s) no node %s", alias, imagem, ip_alvo)
     socketio.emit('node_updated', {'ip': ip_alvo})
     return jsonify({"ok": True})
 

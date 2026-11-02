@@ -21,6 +21,10 @@ log = logging.getLogger("node")
 DEFAULT_HOST_IP = "192.168.1.10"
 DEFAULT_HOST_PORT = 5050
 POLL_INTERVAL = 10
+# Distribuições do proot-distro aceitas pelo painel (deve espelhar o host).
+IMAGENS_PERMITIDAS = {"alpine", "debian", "archlinux"}
+# O rootfs do Debian é bem maior que o do Alpine; 20 min cobre redes lentas.
+INSTALL_TIMEOUT = 1200
 # Alias de container só pode conter caracteres seguros (usado em caminhos,
 # nomes de serviço do supervisor e nomes de eventos WebSocket).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -154,6 +158,9 @@ while true; do sleep 30; done
         if not WorkerManager._alias_valido(alias):
             return False, f"Alias inválido: '{alias}'"
 
+        if imagem not in IMAGENS_PERMITIDAS:
+            return False, f"Distribuição não suportada: '{imagem}'"
+
         if WorkerManager._existe(alias):
             return False, f"Container '{alias}' já existe"
 
@@ -194,7 +201,7 @@ while true; do sleep 30; done
             # 1. Instala o proot-distro
             proc = subprocess.run(
                 ["proot-distro", "install", imagem, "--override-alias", alias],
-                capture_output=True, text=True, timeout=600,
+                capture_output=True, text=True, timeout=INSTALL_TIMEOUT,
             )
             if proc.returncode != 0:
                 erro = (proc.stderr or proc.stdout).strip()[:300]
