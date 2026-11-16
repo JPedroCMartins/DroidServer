@@ -1,5 +1,6 @@
 import logging
 import os
+import secrets
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask
@@ -43,7 +44,9 @@ def _configurar_logging(app):
 
 def create_app():
     app = Flask(__name__)
-    app.config['SECRET_KEY'] = 'chave_secreta_tcc'
+    # Chave de sessão: DROID_SECRET_KEY, ou uma aleatória a cada execução
+    # (o painel não usa sessões persistentes, então não há o que perder).
+    app.config['SECRET_KEY'] = os.getenv("DROID_SECRET_KEY") or secrets.token_hex(32)
 
     # Anexa o app ao SocketIO
     socketio.init_app(app)
@@ -54,3 +57,42 @@ def create_app():
     _configurar_logging(app)
 
     return app
+
+
+def _env_bool(nome, padrao=False):
+    valor = os.getenv(nome)
+    if valor is None:
+        return padrao
+    return valor.strip().lower() in ("1", "true", "sim", "yes", "on")
+
+
+def opcoes_servidor():
+    """Parâmetros de socketio.run() lidos das variáveis de ambiente.
+
+    DROID_BIND  -> endereço de escuta (padrão 0.0.0.0: os nodes precisam alcançar o host)
+    DROID_PORT  -> porta (padrão 5050)
+    DROID_DEBUG -> 1 liga o modo debug (padrão desligado)
+
+    O modo debug do Werkzeug expõe um console Python interativo a quem
+    alcançar a porta; por isso só é permitido escutando em localhost.
+
+    allow_unsafe_werkzeug=True permite iniciar o servidor sem um terminal
+    interativo (systemd, nohup, preview). Sem ele, o Flask-SocketIO recusa o
+    Werkzeug quando não há TTY. Para um protótipo em LAN o Werkzeug basta;
+    em produção use um servidor como gunicorn + eventlet/gevent.
+    """
+    host = os.getenv("DROID_BIND", "0.0.0.0")
+    porta = int(os.getenv("DROID_PORT", "5050"))
+    debug = _env_bool("DROID_DEBUG")
+    if debug and host not in ("127.0.0.1", "localhost", "::1"):
+        logging.getLogger("droidserver").warning(
+            "DROID_DEBUG ignorado: o debugger do Werkzeug não pode ficar exposto em %s. "
+            "Use DROID_BIND=127.0.0.1 para depurar localmente.", host)
+        debug = False
+    return {
+        "host": host,
+        "port": porta,
+        "debug": debug,
+        "use_reloader": debug,
+        "allow_unsafe_werkzeug": True,
+    }

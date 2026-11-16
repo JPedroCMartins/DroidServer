@@ -6,7 +6,7 @@ from logging.handlers import RotatingFileHandler
 
 import pytest
 
-from app import create_app, socketio
+from app import create_app, opcoes_servidor, socketio
 
 
 def _routes():
@@ -309,3 +309,40 @@ def test_terminal_output_repassa_evento(app_ctx):
         e["name"] == "output_for_10.0.0.5_w1" and e["args"][0]["output"] == "olá"
         for e in events
     )
+
+
+# ---------- Configuração do servidor ----------
+
+def _limpa_env(monkeypatch):
+    for nome in ("DROID_BIND", "DROID_PORT", "DROID_DEBUG"):
+        monkeypatch.delenv(nome, raising=False)
+
+
+def test_opcoes_servidor_padrao_sem_debug(monkeypatch):
+    _limpa_env(monkeypatch)
+    op = opcoes_servidor()
+    assert op["host"] == "0.0.0.0"
+    assert op["port"] == 5050
+    assert op["debug"] is False
+    # permite subir sem TTY (systemd, nohup)
+    assert op["allow_unsafe_werkzeug"] is True
+
+
+def test_opcoes_servidor_debug_bloqueado_na_rede(monkeypatch):
+    _limpa_env(monkeypatch)
+    monkeypatch.setenv("DROID_DEBUG", "1")
+    assert opcoes_servidor()["debug"] is False
+
+
+def test_opcoes_servidor_debug_permitido_em_localhost(monkeypatch):
+    _limpa_env(monkeypatch)
+    monkeypatch.setenv("DROID_DEBUG", "1")
+    monkeypatch.setenv("DROID_BIND", "127.0.0.1")
+    monkeypatch.setenv("DROID_PORT", "8000")
+    op = opcoes_servidor()
+    assert op["debug"] is True and op["host"] == "127.0.0.1" and op["port"] == 8000
+
+
+def test_secret_key_nao_e_fixa(app_instance):
+    assert app_instance.config["SECRET_KEY"] != "chave_secreta_tcc"
+    assert len(app_instance.config["SECRET_KEY"]) >= 32
