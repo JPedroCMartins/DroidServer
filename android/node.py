@@ -22,7 +22,9 @@ DEFAULT_HOST_IP = "192.168.1.10"
 DEFAULT_HOST_PORT = 5050
 POLL_INTERVAL = 10
 # Distribuições do proot-distro aceitas pelo painel (deve espelhar o host).
-IMAGENS_PERMITIDAS = {"alpine", "debian", "archlinux"}
+# Alpine é a recomendada (rootfs pequeno, instala em segundos); Debian é a
+# alternativa. O Arch foi retirado: a imagem oficial não tem build arm64.
+IMAGENS_PERMITIDAS = {"alpine", "debian"}
 # O rootfs do Debian é bem maior que o do Alpine; 20 min cobre redes lentas.
 INSTALL_TIMEOUT = 1200
 # Limites por container (aplicados com `ulimit` no serviço do Supervisor).
@@ -224,6 +226,7 @@ while true; do sleep 30; done
         if imagem not in IMAGENS_PERMITIDAS:
             return False, f"Distribuição não suportada: '{imagem}'"
 
+
         if WorkerManager._existe(alias):
             return False, f"Container '{alias}' já existe"
 
@@ -274,23 +277,25 @@ while true; do sleep 30; done
                 return False, f"Falha ao instalar '{alias}': {erro}"
             log.info("[+] Container '%s' criado com sucesso!", alias)
 
-            # 2. Garante que as pastas de configuração e logs existam
+            # 2. Tudo o que o serviço precisa é preparado ANTES de registrá-lo
+            #    no Supervisor: se o serviço subir sem o /app/run_server.sh, ele
+            #    falha, esgota as tentativas e fica FATAL.
+            # 3. /app/run_server.sh dentro do container
+            WorkerManager._injetar_run_server(alias)
+
+            # 4. Garante que as pastas de configuração e logs existam
             os.makedirs(conf_dir, exist_ok=True)
             os.makedirs(os.path.dirname(log_out), exist_ok=True)
 
-            # 3. Cria o arquivo de configuração do Supervisor
+            # 5. Cria o arquivo de configuração do Supervisor
             with open(arquivo_conf, "w") as f:
                 f.write(conteudo_conf)
             log.info("[+] Arquivo de configuração criado: %s", arquivo_conf)
 
-            # 4. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
+            # 6. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
             WorkerManager._supervisorctl("reread")
             WorkerManager._supervisorctl("update")
-
             log.info("[+] Serviço '%s' registrado e iniciado no Supervisor.", alias)
-
-            # 5. Garante que /app/run_server.sh exista dentro do container
-            WorkerManager._injetar_run_server(alias)
 
             return True, f"Container '{alias}' criado com sucesso"
 

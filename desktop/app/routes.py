@@ -16,12 +16,16 @@ nodes_conectados = {}
 STALE_TIMEOUT = 25
 # Segundos offline sem tarefas pendentes antes do node ser removido do painel.
 PRUNE_TIMEOUT = 180
+# Quantos resultados de operações (✓/✗) o painel guarda por node.
+MAX_RESULTADOS = 20
 
 # Distribuições (proot-distro) que podem ser criadas pelo painel.
-IMAGENS_PERMITIDAS = {"alpine", "debian", "archlinux"}
+# Alpine é a recomendada; Debian, a alternativa. Arch foi retirado (sem build arm64).
+IMAGENS_PERMITIDAS = {"alpine", "debian"}
 
 # Alias de worker: caracteres seguros (usado em caminhos, serviços e eventos WS).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
 
 
 def _authorized(dados):
@@ -49,6 +53,26 @@ def _prune_nodes():
         if offline_muito and sem_tarefas:
             del nodes_conectados[ip]
             logger.info("Node %s removido do painel (offline há %ds)", ip, int((agora - ultimo).total_seconds()))
+
+
+def _acumular_resultados(anteriores, novos):
+    """Junta os resultados recebidos aos já guardados.
+
+    O agente envia cada resultado uma única vez e o descarta após o sync
+    bem-sucedido. Se o host substituísse a lista a cada sync, um ✓/✗ ficaria
+    visível só por ~10 s (até o próximo sync, que chega vazio). Reenvios
+    (resposta perdida) são ignorados para não duplicar.
+    """
+    lista = list(anteriores or [])
+    vistos = {(r.get("acao"), r.get("alias"), r.get("ts"), r.get("msg")) for r in lista}
+    for r in novos or []:
+        if not isinstance(r, dict):
+            continue
+        chave = (r.get("acao"), r.get("alias"), r.get("ts"), r.get("msg"))
+        if chave not in vistos:
+            vistos.add(chave)
+            lista.append(r)
+    return lista[-MAX_RESULTADOS:]
 
 
 def _estado_publico(ip, node):
@@ -166,7 +190,7 @@ def node_sync():
             "workers": dados.get("workers", []),
             "worker_status": dados.get("worker_status", {}),
             "tarefa_atual": dados.get("tarefa_atual"),
-            "resultados": dados.get("resultados", []),
+            "resultados": _acumular_resultados([], dados.get("resultados")),
             "cpu": dados.get("cpu"),
             "cpu_termux": dados.get("cpu_termux"),
             "cpu_workers": dados.get("cpu_workers", {}),
@@ -181,7 +205,8 @@ def node_sync():
             nodes_conectados[ip_node]["workers"] = dados.get("workers", [])
         nodes_conectados[ip_node]["worker_status"] = dados.get("worker_status", {})
         nodes_conectados[ip_node]["tarefa_atual"] = dados.get("tarefa_atual")
-        nodes_conectados[ip_node]["resultados"] = dados.get("resultados", [])
+        nodes_conectados[ip_node]["resultados"] = _acumular_resultados(
+            nodes_conectados[ip_node].get("resultados"), dados.get("resultados"))
         nodes_conectados[ip_node]["cpu"] = dados.get("cpu")
         nodes_conectados[ip_node]["cpu_termux"] = dados.get("cpu_termux")
         nodes_conectados[ip_node]["cpu_workers"] = dados.get("cpu_workers", {})

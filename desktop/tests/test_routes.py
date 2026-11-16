@@ -362,3 +362,29 @@ def test_node_sync_armazena_cpu_do_termux_e_por_worker(client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": [], "cpu_termux": 0.4, "cpu_workers": {}})
     data = client.get("/api/node/10.0.0.5").get_json()
     assert data["cpu_termux"] == 0.4 and data["cpu_workers"] == {}
+
+
+def test_deploy_worker_rejeita_archlinux(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    resp = client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": "a1", "imagem": "archlinux"})
+    assert resp.status_code == 400
+
+def test_resultados_ficam_visiveis_apos_o_sync_seguinte(client):
+    """O agente envia cada resultado uma vez; o host não pode apagá-lo no sync seguinte."""
+    r1 = {"acao": "criar_worker", "alias": "w1", "ok": False, "msg": "falhou", "ts": "12:00:01"}
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "resultados": [r1]})
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "resultados": []})
+    assert client.get("/api/node/10.0.0.5").get_json()["resultados"] == [r1]
+
+
+def test_resultados_reenviados_nao_duplicam_e_tem_limite(client):
+    r1 = {"acao": "criar_worker", "alias": "w1", "ok": True, "msg": "ok", "ts": "12:00:01"}
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "resultados": [r1]})
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "resultados": [r1]})  # resposta perdida -> reenvio
+    assert len(client.get("/api/node/10.0.0.5").get_json()["resultados"]) == 1
+
+    for i in range(30):
+        client.post("/api/node_sync", json={"ip": "10.0.0.5", "resultados": [
+            {"acao": "deletar_worker", "alias": f"w{i}", "ok": True, "msg": "ok", "ts": f"12:01:{i:02d}"}]})
+    res = client.get("/api/node/10.0.0.5").get_json()["resultados"]
+    assert len(res) == 20 and res[-1]["alias"] == "w29"

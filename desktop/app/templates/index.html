@@ -422,14 +422,13 @@
 
                 <div class="card p-5 mb-7">
                     <h3 class="text-[15px] font-bold mb-1">Criar novo worker</h3>
-                    <p class="text-[12.5px] text-muted mb-4">Cria um container via proot-distro (Alpine, Debian ou Arch Linux) e registra como serviço no Supervisor do node.</p>
+                    <p class="text-[12.5px] text-muted mb-4">Cria um container via proot-distro e registra como serviço no Supervisor do node. Prefira <strong class="text-slate-300">Alpine</strong>: imagem de ~50 MB, criada em segundos. O <strong class="text-slate-300">Debian</strong> (~150 MB) é a alternativa quando o software exige glibc ou pacotes <code>apt</code>.</p>
                     <form id="deployForm" class="flex gap-3 items-end flex-wrap">
                         <div class="w-full sm:w-48">
                             <label for="imagem" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Distribuição</label>
                             <select class="input cursor-pointer [&>option]:bg-[#111c33]" id="imagem" name="imagem">
-                                <option value="alpine">Alpine</option>
+                                <option value="alpine" selected>Alpine (recomendado)</option>
                                 <option value="debian">Debian</option>
-                                <option value="archlinux">Arch Linux</option>
                             </select>
                         </div>
                         <div class="flex-1 min-w-[220px]">
@@ -490,7 +489,7 @@
                 const res = n.resultados || [];
                 const el = $('resultsCard');
                 if (!res.length) { el.innerHTML = ''; return; }
-                const items = res.map(r => `
+                const items = res.slice().reverse().map(r => `
                     <div class="flex items-start gap-2.5 text-[13px] px-3 py-2.5 rounded-xl border bg-slate-950/35 ${r.ok ? 'border-ok/30' : 'border-bad/30'}">
                         <span class="font-extrabold shrink-0 leading-tight ${r.ok ? 'text-ok' : 'text-bad'}">${r.ok ? '✓' : '✗'}</span>
                         <span>
@@ -624,7 +623,9 @@
                 fd.append('imagem', $('imagem').value);
                 fd.append('isolado', $('isolado').checked ? '1' : '0');
                 try {
-                    await fetch('/deploy_worker', { method: 'POST', body: fd });
+                    const res = await fetch('/deploy_worker', { method: 'POST', body: fd });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) { toast(data.erro || 'Falha ao enviar'); return; }
                     $('alias').value = '';
                     toast('Tarefa enviada ao node');
                 } catch (err) { toast('Falha ao enviar'); }

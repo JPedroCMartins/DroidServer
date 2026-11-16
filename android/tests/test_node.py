@@ -920,3 +920,27 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
     assert payload["cpu_termux"] == 12.5
     assert payload["cpu_workers"] == {"w1": 10.0}
     assert payload["worker_status"] == {"w1": "RUNNING"}
+
+
+# ---------- Ordem da criação ----------
+
+def test_criar_prepara_o_script_antes_de_registrar_o_servico(monkeypatch, tmp_path):
+    """O /app/run_server.sh precisa existir antes de o Supervisor subir o serviço."""
+    conf = tmp_path / "etc" / "supervisor" / "conf.d" / "w1.conf"
+    comandos = []
+    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: (comandos.append((cmd, conf.exists())), _Proc())[1])
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    ok, _ = WorkerManager.criar("w1", "alpine")
+
+    assert ok is True
+    script = next(existia for c, existia in comandos if "run_server.sh" in " ".join(c))
+    update = [existia for c, existia in comandos if c[0] == "supervisorctl" and "update" in c]
+    assert script is False      # .conf ainda não existia quando o script foi criado
+    assert update[-1] is True   # registro no supervisor só depois
+
+
+def test_criar_rejeita_archlinux(monkeypatch, tmp_path):
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    ok, msg = WorkerManager.criar("w1", "archlinux")
+    assert ok is False and "não suportada" in msg
