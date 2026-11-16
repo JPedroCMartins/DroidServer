@@ -99,7 +99,7 @@ def test_node_sync_entrega_tarefas_pendentes(client):
 
     resp = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
     tarefas = resp.get_json()["tarefas"]
-    assert tarefas == [{"acao": "criar_worker", "imagem": "alpine", "alias": "worker_x"}]
+    assert tarefas == [{"acao": "criar_worker", "imagem": "alpine", "alias": "worker_x", "isolado": True}]
 
     resp2 = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
     assert resp2.get_json()["tarefas"] == []
@@ -107,7 +107,8 @@ def test_node_sync_entrega_tarefas_pendentes(client):
 
 def test_deploy_worker_em_node_desconhecido(client):
     resp = client.post("/deploy_worker", data={"ip": "10.0.0.99", "alias": "w1"})
-    assert resp.status_code == 302
+    assert resp.status_code == 404
+    assert resp.get_json()["ok"] is False
     assert client.get("/api/nodes").get_json() == {}
 
 
@@ -128,7 +129,8 @@ def test_deploy_worker_nao_duplica_worker_existente(client):
 def test_delete_worker_enfileira_tarefa(client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
     resp = client.get("/node/10.0.0.5/worker/w1/delete")
-    assert resp.status_code == 302
+    assert resp.status_code == 200
+    assert resp.get_json() == {"ok": True}
 
     # delete NÃO remove otimistamente da lista
     nodes = client.get("/api/nodes").get_json()
@@ -156,9 +158,13 @@ def test_node_sync_armazena_resultados_e_status(client):
     assert nodes["10.0.0.5"]["resultados"][0]["ok"] is True
 
 
-def test_node_detail_404_para_desconhecido(client):
+def test_node_detail_desconhecido_serve_spa(client):
+    # A SPA é servida para qualquer IP; quem informa "não encontrado" é a API,
+    # e o front exibe a mensagem a partir do 404 de /api/node/<ip>.
     resp = client.get("/node/10.0.0.99")
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert b"DroidServer" in resp.data
+    assert client.get("/api/node/10.0.0.99").status_code == 404
 
 
 def test_node_detail_200(client):
@@ -186,15 +192,28 @@ def test_api_node_404_para_desconhecido(client):
     assert client.get("/api/node/10.0.0.99").status_code == 404
 
 
-def test_worker_terminal_404_para_desconhecido(client):
-    resp = client.get("/node/10.0.0.99/worker/w1")
-    assert resp.status_code == 404
-
-
-def test_worker_terminal_404_para_worker_nao_listado(client):
+def test_worker_terminal_serve_spa(client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
-    assert client.get("/node/10.0.0.5/worker/nope").status_code == 404
-    assert client.get("/node/10.0.0.5/worker/w1").status_code == 200
+    resp = client.get("/node/10.0.0.5/worker/w1")
+    assert resp.status_code == 200
+    # a view de terminal usa os eventos Socket.IO do terminal
+    assert b"terminal_input" in resp.data
+    assert b"output_for_" in resp.data
+
+
+def test_deploy_worker_rejeita_imagem_invalida(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    resp = client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": "w1", "imagem": "windows"})
+    assert resp.status_code == 400
+    resp = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    assert resp.get_json()["tarefas"] == []
+
+
+def test_deploy_worker_envia_isolado_e_imagem(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": "d1", "imagem": "debian", "isolado": "0"})
+    tarefas = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).get_json()["tarefas"]
+    assert tarefas == [{"acao": "criar_worker", "imagem": "debian", "alias": "d1", "isolado": False}]
 
 
 def test_prune_remove_node_offline_por_muito_tempo(client):
