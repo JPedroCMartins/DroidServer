@@ -34,13 +34,24 @@ PORTA_NATIVA = 8090
 
 
 def iniciar_nativo(worker):
+    """Roda o mesmo app.py fora do PRoot.
+
+    O app lê /etc/os-release (platform.freedesktop_os_release), que não existe
+    no Termux: aponta o Python para o os-release do próprio container, sem
+    alterar o app. O Python guarda o resultado em cache, então o trabalho por
+    requisição é o mesmo nos dois alvos.
+    """
     raiz = f"$PREFIX/var/lib/proot-distro/containers/{worker}/rootfs"
+    lancador = ("import platform, runpy, sys; "
+                "platform._os_release_candidates = (sys.argv[1] + '/etc/os-release',); "
+                "runpy.run_path('droid_e8_app.py', run_name='__main__')")
     comum.ssh(f"cp {raiz}/app/app.py $PREFIX/tmp/droid_e8_app.py && cd $PREFIX/tmp && "
-              f"(PORT={PORTA_NATIVA} WORKER=nativo nohup python3 droid_e8_app.py > droid_e8.log 2>&1 &)")
+              f"(PORT={PORTA_NATIVA} WORKER=nativo nohup python3 -c \"{lancador}\" {raiz} "
+              f"> droid_e8.log 2>&1 &)")
 
 
 def parar_nativo():
-    comum.ssh("pkill -f '^python3 droid_e8_app.py'; rm -f $PREFIX/tmp/droid_e8_app.py $PREFIX/tmp/droid_e8.log")
+    comum.ssh("pkill -f 'droid_e8_app.py'; rm -f $PREFIX/tmp/droid_e8_app.py $PREFIX/tmp/droid_e8.log")
 
 
 def hey(url, concorrencia, duracao):
@@ -56,8 +67,10 @@ def hey(url, concorrencia, duracao):
     # bloco "Error distribution:" com linhas "  [N]\tGet ...: <erro>"
     bloco_erros = saida.split("Error distribution:", 1)[1] if "Error distribution:" in saida else ""
     erros = sum(int(n) for n in re.findall(r"^\s*\[(\d+)\]", bloco_erros, re.M))
+    # Vazão útil: só respostas 2xx (o "Requests/sec" do hey conta também os erros)
     return {
-        "req_s": num(r"Requests/sec:\s+([\d.]+)"),
+        "req_s": round(ok / duracao, 2),
+        "req_s_hey": num(r"Requests/sec:\s+([\d.]+)"),
         "p50_ms": (num(r"50%+ in ([\d.]+) secs") or 0) * 1000,
         "p95_ms": (num(r"95%+ in ([\d.]+) secs") or 0) * 1000,
         "p99_ms": (num(r"99%+ in ([\d.]+) secs") or 0) * 1000,
@@ -115,13 +128,17 @@ def main():
         alvos["nativo"] = f"http://{ip}:{PORTA_NATIVA}/"
         for _ in range(20):
             try:
-                requests.get(alvos["nativo"], timeout=2)
-                break
+                if requests.get(alvos["nativo"], timeout=2).ok:
+                    break
             except requests.RequestException:
-                time.sleep(1)
+                pass
+            time.sleep(1)
+        else:
+            parar_nativo()
+            raise SystemExit("O servidor nativo não respondeu 2xx: confira o log no aparelho.")
 
     csv = comum.GravadorCSV(comum.arquivo_csv("e8_vazao"), [
-        "alvo", "concorrencia", "repeticao", "duracao_s", "req_s", "p50_ms", "p95_ms", "p99_ms",
+        "alvo", "concorrencia", "repeticao", "duracao_s", "req_s", "req_s_hey", "p50_ms", "p95_ms", "p99_ms",
         "respostas", "respostas_2xx", "erros", "cpu_droidserver_media", "cpu_worker_media", "carimbo"])
     resultados = {}
     try:

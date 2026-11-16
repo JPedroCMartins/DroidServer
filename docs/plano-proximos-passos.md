@@ -127,7 +127,9 @@ Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitaçõe
 
 A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o painel não abre. É barata e protege a demonstração.
 
-## Fase 3 — Dados para o TCC (≈ 3 dias, metade é o aparelho trabalhando sozinho)
+## Fase 3 — Dados para o TCC 🟡 (16/11: E1–E5, E8 e E10 feitos; E7 rodando até 17/11 ~14h)
+
+**Feito em 16/11** (resultados na nota 09, seção 9.5; *scripts* e CSVs em `bench/`): E1/E2/E5 (20 criações, Alpine e Debian, com e sem cache), E3 (10 repetições), E4 (1000 medições em 5 GHz com *polling*, 5 GHz com WebSocket e 2,4 GHz), E8 (Worker × nativo, 1/10/50 conexões) e E10 parcial. Um **segundo Node** (moto e40, Android 11) foi adicionado ao cluster, o que também cumpre a 1.6. A E7 roda no moto e40 desde 14:11; pode ser encerrada depois de uma noite com a tela apagada (`--resumo` funciona com dados parciais). Defeitos achados nas medições: 2.32–2.34 do overview.
 
 Do protocolo da nota 09, executar **só o essencial**, com scripts no repositório (`bench/`) e dados brutos em CSV:
 
