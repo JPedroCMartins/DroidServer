@@ -69,7 +69,7 @@ POST /api/node_sync
   "status": "Online",
   "workers": ["alpine_api", "debian_bd"],
   "worker_status": {"alpine_api": "RUNNING", "debian_bd": "STARTING"},
-  "tarefa_atual": {"acao": "criar_worker", "alias": "arch_dev", "imagem": "archlinux"},
+  "tarefa_atual": {"acao": "criar_worker", "alias": "debian_dev", "imagem": "debian"},
   "resultados": [{"acao": "deletar_worker", "alias": "teste", "ok": true, "msg": "...", "ts": "14:02:11"}],
   "cpu": null,
   "cpu_termux": 25.0,
@@ -82,7 +82,7 @@ POST /api/node_sync
 O Host atualiza o registro do Node, emite `node_updated` aos painéis abertos e responde com as tarefas pendentes, esvaziando a fila daquele Node:
 
 ```json
-{"status": "ok", "tarefas": [{"acao": "criar_worker", "alias": "arch_dev", "imagem": "archlinux", "isolado": true}]}
+{"status": "ok", "tarefas": [{"acao": "criar_worker", "alias": "debian_dev", "imagem": "debian", "isolado": true}]}
 ```
 
 A lista de Workers é **autoritativa do Node**: o Host nunca a altera de forma otimista, apenas exibe o que o aparelho reporta.

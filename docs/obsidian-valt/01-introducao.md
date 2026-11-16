@@ -16,7 +16,7 @@ Para garantir a viabilidade da pesquisa e a precisão da avaliação, este proje
 
 O trabalho limita-se a:
 
-- Implementar a comunicação de rede e o provisionamento de ambientes isolados (Alpine, Debian e Arch Linux) utilizando exclusivamente o Termux e o PRoot (via `proot-distro`), **sem** acesso *root*, desbloqueio de *bootloader* ou ROMs customizadas nos aparelhos.
+- Implementar a comunicação de rede e o provisionamento de ambientes isolados (Alpine e Debian) utilizando exclusivamente o Termux e o PRoot (via `proot-distro`), **sem** acesso *root*, desbloqueio de *bootloader* ou ROMs customizadas nos aparelhos.
 - Desenvolver a camada de controle (Host) focada na distribuição de tarefas e no monitoramento de estado via HTTP e WebSockets.
 - Hospedar e orquestrar cargas de trabalho leves (microsserviços, *bots*, APIs e automações simples) em uma **rede local** (LAN).
 

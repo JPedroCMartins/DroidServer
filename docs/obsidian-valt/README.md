@@ -63,7 +63,7 @@ Manaus - AM, 2026
 |---|---|---|
 | **Host** | Computador que executa o servidor Flask (plano de controle) | "servidor" sem qualificação |
 | **Node** (nó) | Um smartphone Android executando o agente `node.py` no Termux | chamar o celular de "Worker" |
-| **Worker** | Um ambiente Linux (Alpine, Debian ou Arch) criado com `proot-distro` dentro de um Node e mantido pelo Supervisor | "container Docker" |
+| **Worker** | Um ambiente Linux (Alpine ou Debian) criado com `proot-distro` dentro de um Node e mantido pelo Supervisor | "container Docker" |
 | **Tarefa** | Ordem enfileirada pelo Host (`criar_worker`, `deletar_worker`) e entregue ao Node no próximo *sync* | — |
 
 ## Status das notas

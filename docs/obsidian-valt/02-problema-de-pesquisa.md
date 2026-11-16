@@ -14,7 +14,7 @@ Diante desse cenário, a pesquisa é norteada pela seguinte questão central:
 
 O problema desdobra-se nos seguintes questionamentos secundários:
 
-- **QP1 — Isolamento:** Como provisionar distribuições Linux (Alpine, Debian, Arch) dentro do Android sem *root*, garantindo às aplicações hospedadas acesso satisfatório ao sistema de arquivos e à rede, e qual é o custo de desempenho dessa abordagem em relação à execução nativa?
+- **QP1 — Isolamento:** Como provisionar distribuições Linux (Alpine e Debian) dentro do Android sem *root*, garantindo às aplicações hospedadas acesso satisfatório ao sistema de arquivos e à rede, e qual é o custo de desempenho dessa abordagem em relação à execução nativa?
 - **QP2 — Orquestração e redes:** Qual combinação de modelos de comunicação (HTTP *polling* e WebSockets) mantém a conectividade entre o Host e os Nodes com latência aceitável, tolerando as interrupções impostas pelo Android?
 - **QP3 — Recursos e estabilidade:** Como os aparelhos se comportam, em termos de disponibilidade, consumo de energia e temperatura, ao sustentar cargas contínuas dentro de ambientes PRoot?
 

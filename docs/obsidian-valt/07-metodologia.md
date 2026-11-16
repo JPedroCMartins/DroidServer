@@ -21,7 +21,7 @@ O sistema segue o padrão controlador–trabalhador em três níveis:
 
 - **Plano de controle (Host):** servidor central em Linux (Debian) executando Flask e Flask-SocketIO. Mantém o estado do *cluster* em memória, oferece o painel web ao administrador e enfileira as tarefas de criação e remoção de Workers.
 - **Nós (Nodes):** smartphones Android físicos executando, no Termux, o agente `node.py`. Cada Node sincroniza-se com o Host, executa as tarefas recebidas e retransmite as sessões de terminal.
-- **Workers:** ambientes Linux (Alpine, Debian ou Arch Linux) criados com `proot-distro` dentro de cada Node e mantidos em execução pelo Supervisor. São os responsáveis pelas cargas de trabalho.
+- **Workers:** ambientes Linux (Alpine, recomendado, ou Debian) criados com `proot-distro` dentro de cada Node e mantidos em execução pelo Supervisor. São os responsáveis pelas cargas de trabalho.
 
 O detalhamento dos componentes, do protocolo e dos fluxos está na nota [08 — Prototipação e implementação](08-prototipacao.md).
 

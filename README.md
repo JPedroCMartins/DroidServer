@@ -2,7 +2,7 @@
 
 Transforme smartphones Android antigos — **sem root** — em nós de um pequeno cluster de servidores Linux.
 
-Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em cada Node, um agente Python rodando no [Termux](https://termux.dev/) cria ambientes Linux com `proot-distro` (Alpine, Debian ou Arch Linux), chamados **Workers**, e os mantém de pé com o **Supervisor**. Tudo é operado por um painel web com métricas em tempo real e terminal interativo no navegador.
+Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em cada Node, um agente Python rodando no [Termux](https://termux.dev/) cria ambientes Linux com `proot-distro` (Alpine, recomendado, ou Debian), chamados **Workers**, e os mantém de pé com o **Supervisor**. Tudo é operado por um painel web com métricas em tempo real e terminal interativo no navegador.
 
 > Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026). A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md).
 
@@ -49,7 +49,7 @@ Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em 
                          │  SystemMonitor ─ CPU/RAM via /proc         │
                          │   ┌─────────┐ ┌─────────┐ ┌─────────┐      │
                          │   │ Worker  │ │ Worker  │ │ Worker  │      │
-                         │   │ alpine  │ │ debian  │ │  arch   │      │
+                         │   │ alpine  │ │ alpine  │ │ debian  │      │
                          │   └─────────┘ └─────────┘ └─────────┘      │
                          └───────────────────────────────────────────┘
 ```
@@ -188,7 +188,7 @@ O Android encerra processos em segundo plano agressivamente. Para um Node estáv
 
 1. Acesse `http://<host>:5050`. O **Dashboard** mostra os Nodes, se estão online e o uso de CPU/RAM de cada um.
 2. Clique em **Gerenciar Workers** para abrir a página do Node.
-3. Escolha a distribuição (Alpine, Debian ou Arch Linux), informe um alias (`[A-Za-z0-9_-]`, até 64 caracteres) e clique em **Criar Container**. A opção **Isolar do host** (`--isolated`, ativada por padrão) impede o Worker de enxergar o *home* do Termux e o armazenamento do aparelho.
+3. Escolha a distribuição (**Alpine**, recomendada: ~50 MB e pronta em segundos; ou **Debian**, ~150 MB, quando o software exigir glibc/`apt`), informe um alias (`[A-Za-z0-9_-]`, até 64 caracteres) e clique em **Criar Container**. A opção **Isolar do host** (`--isolated`, ativada por padrão) impede o Worker de enxergar o *home* do Termux e o armazenamento do aparelho.
 4. Acompanhe "Em processamento" e "Últimas operações"; o Worker aparece como `RUNNING` quando o Supervisor o inicia.
 5. Clique em **Abrir terminal** para uma sessão interativa dentro do Worker, ou no ícone de lixeira para removê-lo.
 
@@ -221,7 +221,7 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 |---|---|---|---|
 | `POLL_INTERVAL` | `android/node.py` | 10 s | Intervalo entre syncs |
 | `INSTALL_TIMEOUT` | `android/node.py` | 1200 s | Tempo máximo do `proot-distro install` |
-| `IMAGENS_PERMITIDAS` | `node.py` e `routes.py` | alpine, debian, archlinux | Distribuições aceitas (mantenha iguais nos dois) |
+| `IMAGENS_PERMITIDAS` | `node.py` e `routes.py` | alpine, debian | Distribuições aceitas (mantenha iguais nos dois) |
 | `STALE_TIMEOUT` | `desktop/app/routes.py` | 25 s | Sem contato até virar Offline |
 | `PRUNE_TIMEOUT` | `desktop/app/routes.py` | 180 s | Offline até sair do painel |
 

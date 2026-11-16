@@ -21,7 +21,7 @@ Recomenda-se ao menos três aparelhos de gerações diferentes (ex.: 2016, 2019,
 
 | ID | Questão | Métrica | Procedimento | Repetições |
 |---|---|---|---|---|
-| E1 | QP1 | **Tempo de provisionamento** por distribuição (s) | Criar Workers Alpine, Debian e Arch pelo painel; medir do clique até `RUNNING` (instrumentar `ts` da tarefa e do resultado) | 10 por distro × Node |
+| E1 | QP1 | **Tempo de provisionamento** por distribuição (s) | Criar Workers Alpine e Debian pelo painel; medir do clique até `RUNNING` (instrumentar `ts` da tarefa e do resultado) | 10 por distro × Node |
 | E2 | QP1 | **Uso de disco** por Worker (MB) | `du -sh` do *rootfs* após a criação | 1 por distro |
 | E3 | QP1 | **Sobrecarga do PRoot** (%) | Rodar o mesmo *benchmark* no Termux nativo e dentro do Worker: CPU (`sysbench cpu`), E/S de arquivos (`sysbench fileio` ou `fio`), chamadas de sistema (compilar um projeto pequeno; `apk add`/`apt install` de um pacote) | 10 cada |
 | E4 | QP2 | **Latência de eco do terminal** (ms) | Enviar um caractere e medir o tempo até o eco voltar ao navegador (instrumentar o JS com `performance.now()`) | 1000 amostras; reportar mediana, p95, p99 |

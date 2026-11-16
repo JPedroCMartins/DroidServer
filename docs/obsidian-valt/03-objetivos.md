@@ -6,7 +6,7 @@ Desenvolver e avaliar uma arquitetura de orquestração de ambientes Linux isola
 
 ## 3.2 Objetivos Específicos
 
-- **OE1** — Configurar o ambiente de execução nos dispositivos móveis (Nodes) com o Termux e o `proot-distro`, permitindo executar distribuições Linux (Alpine, Debian e Arch Linux) em espaço de usuário sem privilégios administrativos, de forma automatizada (`setup.sh`). *Responde à QP1.*
+- **OE1** — Configurar o ambiente de execução nos dispositivos móveis (Nodes) com o Termux e o `proot-distro`, permitindo executar distribuições Linux (Alpine e Debian) em espaço de usuário sem privilégios administrativos, de forma automatizada (`setup.sh`). *Responde à QP1.*
 - **OE2** — Desenvolver um agente (Node Agent) em Python para coletar métricas de hardware (CPU e memória via `/proc`), descobrir os ambientes instalados, executar as tarefas recebidas e sincronizar seu estado com o servidor orquestrador. *Responde à QP2.*
 - **OE3** — Implementar o servidor central (plano de controle) com Flask e Flask-SocketIO, oferecendo um painel web para monitoramento do *cluster* e gerenciamento do ciclo de vida dos Workers (criar, listar, remover). *Responde à QP2.*
 - **OE4** — Viabilizar o acesso interativo, em tempo real, à linha de comando dos Workers pelo navegador, integrando WebSockets, pseudo-terminais (PTY) e xterm.js. *Responde à QP2.*
