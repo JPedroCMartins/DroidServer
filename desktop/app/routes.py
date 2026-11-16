@@ -14,13 +14,17 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from flask import current_app as app
-from flask import render_template, request, jsonify
+from flask import redirect, render_template, request, jsonify, session
 from flask_socketio import join_room, leave_room
 from . import socketio
 
 logger = logging.getLogger("droidserver.routes")
 
 nodes_conectados = {}
+# sid do WebSocket -> IP (cadastrado) do node. Só sockets autenticados pelo
+# token entram aqui; comandos vão apenas para eles e só eles podem mandar
+# saída de terminal, logs e respostas de serviço.
+sockets_nodes = {}
 # Série temporal de CPU/RAM por node, para o gráfico do painel. Fica fora de
 # nodes_conectados para não ir junto em toda chamada de /api/nodes.
 historico = {}
@@ -86,6 +90,9 @@ def _mover_node(ip_antigo, ip_novo):
         nodes_conectados[ip_novo] = nodes_conectados.pop(ip_antigo)
     if ip_antigo in historico:
         historico[ip_novo] = historico.pop(ip_antigo)
+    for sid, ip in list(sockets_nodes.items()):
+        if ip == ip_antigo:
+            sockets_nodes[sid] = ip_novo
     _salvar_cadastro()
     logger.info("Node mudou de IP: %s -> %s (identificado pelo token)", ip_antigo, ip_novo)
 
@@ -224,6 +231,89 @@ def _estado_publico(ip, node):
 
 
 # ---------------------------------------------------------------------------
+# Proteção contra requisições de outros sites (CSRF)
+# ---------------------------------------------------------------------------
+def _origem_permitida(origem):
+    """A origem (Origin) é o próprio painel? Sem Origin (agente, curl) é aceito."""
+    if not origem:
+        return True
+    from urllib.parse import urlsplit
+    return urlsplit(origem).netloc.lower() == (request.host or "").lower()
+
+
+# ---------------------------------------------------------------------------
+# Login do painel (DROID_PANEL_PASSWORD)
+#   Navegadores precisam de sessão; os nodes se autenticam pelo token
+#   (/api/node_sync e o WebSocket com papel "node").
+# ---------------------------------------------------------------------------
+ROTAS_LIVRES = ("/login", "/static/", "/api/node_sync", "/socket.io")
+
+
+def _senha_exigida():
+    return bool(app.config.get("PANEL_PASSWORD"))
+
+
+def _logado():
+    return not _senha_exigida() or session.get("autenticado") is True
+
+
+def _destino_seguro(destino):
+    """Só caminhos deste painel (evita redirecionar para outro site)."""
+    if destino and destino.startswith("/") and not destino.startswith("//") and "\\" not in destino:
+        return destino
+    return "/"
+
+
+@app.before_request
+def _exigir_login():
+    if _logado() or request.path.startswith(ROTAS_LIVRES):
+        return None
+    if request.method == "GET" and not request.path.startswith("/api/"):
+        return redirect(f"/login?proximo={request.full_path.rstrip('?')}")
+    return jsonify({"ok": False, "erro": "Faça login no painel."}), 401
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if not _senha_exigida():
+        return redirect("/")
+    destino = _destino_seguro(request.values.get("proximo"))
+    erro = None
+    if request.method == "POST":
+        senha = request.form.get("senha", "")
+        if hmac.compare_digest(senha.encode(), app.config["PANEL_PASSWORD"].encode()):
+            session.clear()
+            session.permanent = True
+            session["autenticado"] = True
+            logger.info("Login no painel a partir de %s", request.remote_addr)
+            return redirect(destino)
+        time.sleep(1)  # atrasa tentativas em série
+        logger.warning("Senha do painel incorreta (de %s)", request.remote_addr)
+        erro = "Senha incorreta."
+    return render_template('login.html', erro=erro, proximo=destino), (401 if erro else 200)
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.before_request
+def _bloquear_outros_sites():
+    """Recusa POST vindo de páginas de outros sites.
+
+    O navegador manda o cabeçalho Origin em todo POST; uma página maliciosa
+    aberta na mesma rede poderia, sem isto, criar ou apagar workers e
+    cadastrar nodes com um simples formulário. O agente (requests) não envia
+    Origin e continua aceito; ele é autenticado pelo token.
+    """
+    if request.method == "POST" and not _origem_permitida(request.headers.get("Origin")):
+        logger.warning("POST recusado de outra origem: %s -> %s", request.headers.get("Origin"), request.path)
+        return jsonify({"ok": False, "erro": "Origem não permitida."}), 403
+
+
+# ---------------------------------------------------------------------------
 # Páginas: o front é uma SPA (templates/index.html) que resolve a tela
 # no cliente a partir da URL e consome as rotas /api/* abaixo.
 # ---------------------------------------------------------------------------
@@ -232,11 +322,13 @@ def _estado_publico(ip, node):
 @app.route('/node/<ip>/worker/<alias>')
 @app.route('/node/<ip>/worker/<alias>/terminal')
 def spa(ip=None, alias=None):
-    return render_template('index.html')
+    return render_template('index.html', senha_exigida=_senha_exigida())
 
 
-@app.route('/node/<ip>/worker/<alias>/delete')
+@app.route('/node/<ip>/worker/<alias>/delete', methods=['POST'])
 def delete_worker(ip, alias):
+    # POST (não GET): pré-carregamento do navegador, robôs ou um <img src>
+    # numa página qualquer não conseguem apagar workers.
     _prune_nodes()
     if ip not in nodes_conectados:
         return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
@@ -513,18 +605,24 @@ def handle_servico(data):
                       to=request.sid)
         return
     logger.info("servico: node=%s worker=%s acao=%s", ip, alias, acao)
-    socketio.emit(f"servico_to_{ip}", {'alias': alias, 'acao': acao, 'dados': data.get('dados') or {},
-                                       'sid': request.sid, 'req': data.get('req')})
+    enviado = _emitir_ao_node(ip, f"servico_to_{ip}", {'alias': alias, 'acao': acao, 'dados': data.get('dados') or {},
+                                                      'sid': request.sid, 'req': data.get('req')})
+    if not enviado:
+        socketio.emit('servico_resposta', {'ip': ip, 'alias': alias, 'acao': acao, 'req': data.get('req'),
+                                           'ok': False, 'msg': 'O node não está conectado ao WebSocket.'},
+                      to=request.sid)
 
 
 @socketio.on('servico_resposta')
 def handle_servico_resposta(data):
     data = data if isinstance(data, dict) else {}
     sid = data.get('sid')
-    if not sid:
+    ip = _ip_do_node_que_enviou()
+    if not sid or not ip:
         return
+    data['ip'] = ip
     # Atualiza o estado guardado para o painel não esperar o próximo sync
-    ip, alias, est = data.get('ip'), data.get('alias'), data.get('servico')
+    alias, est = data.get('alias'), data.get('servico')
     if ip in nodes_conectados and _alias_valido(alias) and isinstance(est, dict):
         nodes_conectados[ip].setdefault("servicos", {})[alias] = est
     socketio.emit('servico_resposta', {k: v for k, v in data.items() if k != 'sid'}, to=sid)
@@ -538,7 +636,7 @@ def handle_logs_assinar(data):
         return
     join_room(_sala_logs(ip, alias))
     assinantes_logs.setdefault((ip, alias), set()).add(request.sid)
-    socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
+    _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
 
 
 def _reconciliar_logs(ip, ativos_no_node):
@@ -552,10 +650,10 @@ def _reconciliar_logs(ip, ativos_no_node):
     no_node = {a for a in ativos_no_node if isinstance(a, str)}
     assistidos = {alias for (ip_s, alias), sids in assinantes_logs.items() if ip_s == ip and sids}
     for alias in sorted(assistidos - no_node):
-        socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
+        _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
     for alias in sorted(no_node - assistidos):
         if _alias_valido(alias):
-            socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
+            _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
 
 
 def _sair_dos_logs(sid, ip, alias):
@@ -568,7 +666,7 @@ def _sair_dos_logs(sid, ip, alias):
     if not sids:
         # Ninguém mais assistindo: o node para de ler o arquivo
         assinantes_logs.pop(chave, None)
-        socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
+        _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
 
 
 @socketio.on('logs_cancelar')
@@ -580,40 +678,95 @@ def handle_logs_cancelar(data):
 @socketio.on('logs_saida')
 def handle_logs_saida(data):
     data = data if isinstance(data, dict) else {}
-    ip, alias = data.get('ip'), data.get('alias')
-    if not _alias_valido(alias):
+    ip, alias = _ip_do_node_que_enviou(), data.get('alias')
+    if not ip or not _alias_valido(alias):
         return
     socketio.emit('logs_saida', {'alias': alias, 'linhas': data.get('linhas') or [],
                                  'inicial': bool(data.get('inicial'))}, to=_sala_logs(ip, alias))
 
 
+def _emitir_ao_node(ip, evento, dados):
+    """Envia um evento só para o(s) socket(s) do node. Devolve quantos receberam."""
+    sids = [sid for sid, ip_node in list(sockets_nodes.items()) if ip_node == ip]
+    for sid in sids:
+        socketio.emit(evento, dados, to=sid)
+    return len(sids)
+
+
+def _ip_do_node_que_enviou():
+    """IP do node dono do socket atual, ou None se quem enviou não é um node.
+
+    O IP vem do cadastro (token), nunca do conteúdo do evento: um navegador
+    não consegue se passar por node, nem um node por outro.
+    """
+    return sockets_nodes.get(request.sid)
+
+
+def _sala_terminal(ip, alias):
+    return f"term:{ip}:{alias}"
+
+
 @socketio.on('disconnect')
 def handle_disconnect(*_):
+    ip_node = sockets_nodes.pop(request.sid, None)
+    if ip_node:
+        logger.info("[-] WebSocket do node %s encerrado.", ip_node)
     for ip, alias in [chave for chave, sids in assinantes_logs.items() if request.sid in sids]:
         _sair_dos_logs(request.sid, ip, alias)
 
 
 @socketio.on('connect')
-def handle_connect():
-    logger.info("[*] Nova conexão WebSocket estabelecida.")
+def handle_connect(auth=None):
+    auth = auth if isinstance(auth, dict) else {}
+    if auth.get('papel') != 'node':
+        if not _logado():
+            logger.warning("WebSocket do painel recusado: sem login.")
+            return False
+        logger.info("[*] Nova conexão WebSocket (painel).")
+        return None
+    ip = _autorizar_node({'ip': auth.get('ip'), 'token': auth.get('token')})
+    if not ip:
+        logger.warning("WebSocket de node recusado (%s): token inválido ou node não cadastrado.", auth.get('ip'))
+        return False
+    sockets_nodes[request.sid] = ip
+    logger.info("[+] WebSocket do node %s autenticado.", ip)
+    return None
+
+
+@socketio.on('terminal_assinar')
+def handle_terminal_assinar(data):
+    """O navegador abriu o terminal de um worker: passa a receber só a saída dele."""
+    data = data if isinstance(data, dict) else {}
+    ip, alias = data.get('ip'), data.get('alias')
+    if ip in nodes_conectados and _alias_valido(alias):
+        join_room(_sala_terminal(ip, alias))
+
+
+@socketio.on('terminal_cancelar')
+def handle_terminal_cancelar(data):
+    data = data if isinstance(data, dict) else {}
+    ip, alias = data.get('ip'), data.get('alias')
+    if _alias_valido(alias):
+        leave_room(_sala_terminal(ip, alias))
 
 
 @socketio.on('terminal_input')
 def handle_terminal_input(data):
+    data = data if isinstance(data, dict) else {}
     ip_alvo = data.get('ip')
     comando = data.get('input')
     alias = data.get('alias')
 
-    if not _alias_valido(alias):
+    if not _alias_valido(alias) or not isinstance(comando, str):
         return
 
-    logger.info("terminal_input: node=%s worker=%s", ip_alvo, alias)
-    evento_alvo = f"cmd_to_{ip_alvo}_{alias}"
-    socketio.emit(evento_alvo, {'input': comando})
+    logger.debug("terminal_input: node=%s worker=%s", ip_alvo, alias)
+    _emitir_ao_node(ip_alvo, f"cmd_to_{ip_alvo}_{alias}", {'input': comando})
 
 
 @socketio.on('terminal_resize')
 def handle_terminal_resize(data):
+    data = data if isinstance(data, dict) else {}
     ip_alvo = data.get('ip')
     alias = data.get('alias')
     cols = data.get('cols')
@@ -623,18 +776,18 @@ def handle_terminal_resize(data):
         return
 
     logger.info("terminal_resize: node=%s worker=%s %sx%s", ip_alvo, alias, cols, rows)
-    evento_alvo = f"resize_to_{ip_alvo}_{alias}"
-    socketio.emit(evento_alvo, {'cols': cols, 'rows': rows})
+    _emitir_ao_node(ip_alvo, f"resize_to_{ip_alvo}_{alias}", {'cols': cols, 'rows': rows})
 
 
 @socketio.on('terminal_output')
 def handle_terminal_output(data):
-    ip_origem = data.get('ip')
+    data = data if isinstance(data, dict) else {}
+    ip_origem = _ip_do_node_que_enviou()
     alias = data.get('alias')
     saida = data.get('output')
 
-    if not _alias_valido(alias):
+    if not ip_origem or not _alias_valido(alias):
         return
 
-    evento_alvo = f"output_for_{ip_origem}_{alias}"
-    socketio.emit(evento_alvo, {'output': saida})
+    # Só para quem abriu o terminal deste worker
+    socketio.emit(f"output_for_{ip_origem}_{alias}", {'output': saida}, to=_sala_terminal(ip_origem, alias))

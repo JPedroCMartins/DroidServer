@@ -654,7 +654,7 @@ def test_conectar_ws_retenta_apos_falha(monkeypatch):
 
     tentativas = [Exception("boom")]
 
-    def fake_connect(url):
+    def fake_connect(url, auth=None):
         if tentativas:
             raise tentativas.pop(0)
 
@@ -668,7 +668,7 @@ def test_conectar_ws_ja_conectado_nao_refaz(monkeypatch):
     agente = NodeAgent()
     agente.sio.connected = True
 
-    def fake_connect(url):
+    def fake_connect(url, auth=None):
         raise AssertionError("não deveria reconectar")
 
     monkeypatch.setattr(agente.sio, "connect", fake_connect)
@@ -1157,3 +1157,16 @@ def test_parear_aceita_o_mesmo_host_com_ip_novo_se_provar_o_token():
     status, _ = d.parear("192.168.1.22", {"host_port": 5050, "token": novo, "token_atual": TOKEN})
     assert status == 200
     assert (agente.config.host_ip, agente.config.token) == ("192.168.1.22", novo)
+
+
+def test_websocket_se_autentica_com_o_token_do_pareamento(monkeypatch):
+    """O host só manda comandos (terminal, serviço, logs) a sockets autenticados."""
+    agente = NodeAgent()
+    agente.config = Config(host_ip="10.0.0.1", token=TOKEN)
+    agente.sio.connected = False
+    chamadas = []
+    monkeypatch.setattr(agente.sio, "connect", lambda url, auth=None: chamadas.append((url, auth)))
+    assert agente._conectar_ws() is True
+    url, auth = chamadas[0]
+    assert url == "http://10.0.0.1:5050"
+    assert auth == {"papel": "node", "ip": agente.meu_ip, "token": TOKEN}

@@ -1,14 +1,27 @@
 import logging
 import os
 import secrets
+from datetime import timedelta
 from logging.handlers import RotatingFileHandler
 
 from flask import Flask
 from flask_socketio import SocketIO
 
+def _origens_permitidas():
+    """Quem pode abrir o WebSocket a partir de um navegador.
+
+    Padrão (None): só a mesma origem do painel. Uma página de outro site não
+    consegue abrir o WebSocket e mandar comandos aos terminais. O agente
+    (python-socketio) não envia Origin e é aceito. DROID_CORS_ORIGINS aceita
+    uma lista separada por vírgula (ex.: painel atrás de um proxy HTTPS).
+    """
+    valor = os.getenv("DROID_CORS_ORIGINS", "").strip()
+    return [o.strip() for o in valor.split(",") if o.strip()] or None
+
+
 # Inicializamos o SocketIO globalmente
 # ping_timeout maior reduz desconexões com o long-polling do engineio no Termux
-socketio = SocketIO(cors_allowed_origins="*", ping_interval=25, ping_timeout=60)
+socketio = SocketIO(cors_allowed_origins=_origens_permitidas(), ping_interval=25, ping_timeout=60)
 
 
 def _configurar_logging(app):
@@ -42,11 +55,37 @@ def _configurar_logging(app):
     app.logger.info("Aplicação iniciada. Log: %s", arquivo)
 
 
+def _chave_persistente():
+    data_dir = os.getenv("DROID_DATA_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    arquivo = os.path.join(data_dir, "secret_key")
+    try:
+        with open(arquivo) as f:
+            chave = f.read().strip()
+        if len(chave) >= 32:
+            return chave
+    except OSError:
+        pass
+    chave = secrets.token_hex(32)
+    try:
+        os.makedirs(data_dir, exist_ok=True)
+        with open(os.open(arquivo, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            f.write(chave)
+    except OSError:
+        pass  # sem disco gravável: vale só nesta execução
+    return chave
+
+
 def create_app():
     app = Flask(__name__)
-    # Chave de sessão: DROID_SECRET_KEY, ou uma aleatória a cada execução
-    # (o painel não usa sessões persistentes, então não há o que perder).
-    app.config['SECRET_KEY'] = os.getenv("DROID_SECRET_KEY") or secrets.token_hex(32)
+    # Chave que assina o cookie de login: DROID_SECRET_KEY ou uma gerada uma
+    # vez e guardada em data/ (assim reiniciar o Host não derruba o login).
+    app.config['SECRET_KEY'] = os.getenv("DROID_SECRET_KEY") or _chave_persistente()
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
+    app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+    app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
+    # Senha do painel. Sem ela, o painel fica aberto a quem alcançar a porta.
+    app.config['PANEL_PASSWORD'] = os.getenv("DROID_PANEL_PASSWORD", "")
 
     # Anexa o app ao SocketIO
     socketio.init_app(app)
@@ -55,6 +94,9 @@ def create_app():
         from app import routes
 
     _configurar_logging(app)
+    if not app.config['PANEL_PASSWORD']:
+        app.logger.warning("DROID_PANEL_PASSWORD não definida: o painel está aberto a quem alcançar "
+                           "esta porta. Defina uma senha para exigir login.")
 
     return app
 

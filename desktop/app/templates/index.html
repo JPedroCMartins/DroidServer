@@ -6,12 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DroidServer — Painel de Orquestração</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <!-- Bibliotecas servidas pelo próprio Host: o painel funciona sem internet
+         (versões e licenças em static/vendor/LEIAME.md) -->
+    <script src="{{ url_for('static', filename='vendor/tailwind-3.4.17.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/inter.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm-5.3.0.css') }}">
+    <script src="{{ url_for('static', filename='vendor/xterm-5.3.0.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/xterm-addon-fit-0.8.0.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}"></script>
 
     <script>
         tailwind.config = {
@@ -114,6 +116,11 @@
             <nav class="flex md:flex-col gap-1.5" id="nav"></nav>
 
             <div class="hidden md:block mt-auto p-3.5 border border-slate-400/15 rounded-xl bg-white/[.02] text-xs text-muted leading-relaxed" id="sidebarFooter"></div>
+            {% if senha_exigida %}
+            <form method="post" action="/logout" class="md:-mt-4">
+                <button type="submit" class="nav-item w-full text-left" title="Sair do painel">Sair</button>
+            </form>
+            {% endif %}
         </aside>
 
         <!-- ================= Conteúdo ================= -->
@@ -247,6 +254,14 @@
         // =====================================================================
         // Socket.IO (único para todo o app)
         // =====================================================================
+        // Sessão expirada (ou Host reiniciado com outra senha): volta ao login.
+        const irParaLogin = () => { location.href = '/login?proximo=' + encodeURIComponent(location.pathname); };
+        const fetchOriginal = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+            const resp = await fetchOriginal(...args);
+            if (resp.status === 401 && {{ 'true' if senha_exigida else 'false' }}) irParaLogin();
+            return resp;
+        };
         const socket = io();
         let cleanup = () => { };
 
@@ -702,7 +717,7 @@
         // VIEW: Detalhe do node
         //   GET  /api/node/<ip>
         //   POST /deploy_worker
-        //   GET  /node/<ip>/worker/<alias>/delete
+        //   POST /node/<ip>/worker/<alias>/delete
         // =====================================================================
         function viewNode(ip) {
             setNav(ip);
@@ -949,15 +964,16 @@
                 carregar();
             });
 
-            // GET /node/<ip>/worker/<alias>/delete
+            // POST /node/<ip>/worker/<alias>/delete
             $('workersSection').addEventListener('click', async (e) => {
                 const btn = e.target.closest('[data-delete]');
                 if (!btn) return;
                 const w = btn.dataset.delete;
                 if (!confirm(`Apagar o worker ${w} deste node? Essa ação não pode ser desfeita.`)) return;
                 try {
-                    await fetch(`/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(w)}/delete`);
-                    toast('Deleção enfileirada');
+                    const resp = await fetch(`/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(w)}/delete`, { method: 'POST' });
+                    const data = await resp.json().catch(() => ({}));
+                    toast(resp.ok ? 'Deleção enfileirada' : (data.erro || 'Não foi possível apagar'));
                 } catch (err) { toast('Falha ao enviar'); }
                 carregar();
             });
@@ -971,8 +987,9 @@
 
         // =====================================================================
         // VIEW: Terminal (WebSocket)
+        //   emit  terminal_assinar / terminal_cancelar (sala do terminal)
         //   emit  terminal_input / terminal_resize
-        //   on    output_for_<ip>_<alias>
+        //   on    output_for_<ip>_<alias> (só quem está na sala)
         // =====================================================================
         // =====================================================================
         // VIEW: Serviço do worker (o que roda, como, quando e os logs)
@@ -1408,7 +1425,13 @@
             function sendResize() {
                 socket.emit('terminal_resize', { ip, alias, cols: term.cols, rows: term.rows });
             }
-            const onConnect = () => { setStatus('Conectado ao Host. Aguardando Node...', '#34d399', 'online'); sendResize(); };
+            // Entra na sala do terminal: o Host só manda a saída deste worker
+            // para quem o abriu (refeito a cada reconexão do Socket.IO)
+            const onConnect = () => {
+                socket.emit('terminal_assinar', { ip, alias });
+                setStatus('Conectado ao Host. Aguardando Node...', '#34d399', 'online');
+                sendResize();
+            };
             const onDisconnect = () => setStatus('Conexão perdida', '#f87171', 'offline');
             const evento = `output_for_${ip}_${alias}`;
             const onOutput = (data) => {
@@ -1429,6 +1452,7 @@
             setTimeout(onWinResize, 100);
 
             cleanup = () => {
+                socket.emit('terminal_cancelar', { ip, alias });
                 socket.off('connect', onConnect);
                 socket.off('disconnect', onDisconnect);
                 socket.off(evento, onOutput);

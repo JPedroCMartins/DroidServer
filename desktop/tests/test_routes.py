@@ -145,7 +145,9 @@ def test_deploy_worker_nao_duplica_worker_existente(client):
 
 def test_delete_worker_enfileira_tarefa(client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
-    resp = client.get("/node/10.0.0.5/worker/w1/delete")
+    # GET não apaga nada (pré-carregamento, robôs, <img src>)
+    assert client.get("/node/10.0.0.5/worker/w1/delete").status_code == 405
+    resp = client.post("/node/10.0.0.5/worker/w1/delete")
     assert resp.status_code == 200
     assert resp.get_json() == {"ok": True}
 
@@ -159,7 +161,7 @@ def test_delete_worker_enfileira_tarefa(client):
 
 def test_delete_worker_404_para_worker_desconhecido(client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
-    assert client.get("/node/10.0.0.5/worker/nope/delete").status_code == 404
+    assert client.post("/node/10.0.0.5/worker/nope/delete").status_code == 404
 
 
 def test_node_sync_armazena_resultados_e_status(client):
@@ -269,47 +271,79 @@ def test_node_volta_a_online_apos_novo_sync(client):
     assert nodes["10.0.0.5"]["status"] == "Online"
 
 
-def test_terminal_input_repassa_evento(app_ctx):
-    receiver = socketio.test_client(app_ctx)
-    sender = socketio.test_client(app_ctx)
-    receiver.get_received()
-
-    sender.emit("terminal_input", {"ip": "10.0.0.5", "alias": "w1", "input": "ls\n"})
-
-    events = receiver.get_received()
-    assert any(
-        e["name"] == "cmd_to_10.0.0.5_w1" and e["args"][0]["input"] == "ls\n"
-        for e in events
-    )
+NODE_AUTH = {"papel": "node", "ip": "10.0.0.5", "token": ""}
 
 
-def test_terminal_resize_repassa_evento(app_ctx):
-    receiver = socketio.test_client(app_ctx)
-    sender = socketio.test_client(app_ctx)
-    receiver.get_received()
+@pytest.fixture
+def terminal(app_instance, client):
+    """Node 10.0.0.5 autenticado no WebSocket, um navegador com o terminal do w1
+    aberto e outro navegador qualquer."""
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    node = socketio.test_client(app_instance, auth=NODE_AUTH)
+    dono = socketio.test_client(app_instance)
+    outro = socketio.test_client(app_instance)
+    dono.emit("terminal_assinar", {"ip": "10.0.0.5", "alias": "w1"})
+    for c in (node, dono, outro):
+        c.get_received()
+    yield node, dono, outro
+    for c in (node, dono, outro):
+        if c.is_connected():
+            c.disconnect()
+    _routes().sockets_nodes.clear()
 
-    sender.emit("terminal_resize", {"ip": "10.0.0.5", "alias": "w1", "cols": 120, "rows": 30})
 
-    events = receiver.get_received()
-    assert any(
-        e["name"] == "resize_to_10.0.0.5_w1"
-        and e["args"][0] == {"cols": 120, "rows": 30}
-        for e in events
-    )
+def test_terminal_input_e_resize_vao_so_para_o_node(terminal):
+    node, dono, outro = terminal
+    dono.emit("terminal_input", {"ip": "10.0.0.5", "alias": "w1", "input": "ls\n"})
+    dono.emit("terminal_resize", {"ip": "10.0.0.5", "alias": "w1", "cols": 120, "rows": 30})
+
+    recebidos = {e["name"]: e["args"][0] for e in node.get_received()}
+    assert recebidos["cmd_to_10.0.0.5_w1"] == {"input": "ls\n"}
+    assert recebidos["resize_to_10.0.0.5_w1"] == {"cols": 120, "rows": 30}
+    # o que se digita num terminal não vaza para outros navegadores
+    assert outro.get_received() == [] and dono.get_received() == []
 
 
-def test_terminal_output_repassa_evento(app_ctx):
-    receiver = socketio.test_client(app_ctx)
-    sender = socketio.test_client(app_ctx)
-    receiver.get_received()
+def test_saida_do_terminal_so_para_quem_o_abriu(terminal):
+    node, dono, outro = terminal
+    node.emit("terminal_output", {"ip": "10.0.0.5", "alias": "w1", "output": "olá"})
+    assert [e["args"][0] for e in dono.get_received()] == [{"output": "olá"}]
+    assert outro.get_received() == []
 
-    sender.emit("terminal_output", {"ip": "10.0.0.5", "alias": "w1", "output": "olá"})
+    # depois de fechar o terminal, não recebe mais
+    dono.emit("terminal_cancelar", {"ip": "10.0.0.5", "alias": "w1"})
+    node.emit("terminal_output", {"ip": "10.0.0.5", "alias": "w1", "output": "mais"})
+    assert dono.get_received() == []
 
-    events = receiver.get_received()
-    assert any(
-        e["name"] == "output_for_10.0.0.5_w1" and e["args"][0]["output"] == "olá"
-        for e in events
-    )
+
+def test_navegador_nao_se_passa_por_node(terminal):
+    _, dono, outro = terminal
+    outro.emit("terminal_output", {"ip": "10.0.0.5", "alias": "w1", "output": "falso"})
+    outro.emit("logs_saida", {"ip": "10.0.0.5", "alias": "w1", "linhas": ["falso"]})
+    assert dono.get_received() == []
+
+
+def test_websocket_de_node_exige_token(app_instance, client, cadastro_on):
+    r = _routes()
+    r.cadastro["10.0.0.5"] = {"token": "ab" * 24}
+    assert not socketio.test_client(app_instance, auth={**NODE_AUTH, "token": "errado"}).is_connected()
+    ok = socketio.test_client(app_instance, auth={**NODE_AUTH, "token": "ab" * 24})
+    assert ok.is_connected() and "10.0.0.5" in r.sockets_nodes.values()
+    ok.disconnect()
+    assert r.sockets_nodes == {}
+    # navegadores (sem papel de node) conectam normalmente
+    nav = socketio.test_client(app_instance)
+    assert nav.is_connected()
+    nav.disconnect()
+
+
+def test_servico_sem_node_no_websocket_responde_erro(app_instance, client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    nav = socketio.test_client(app_instance)
+    nav.emit("servico", {"ip": "10.0.0.5", "alias": "w1", "acao": "iniciar", "req": 1})
+    resp = [e["args"][0] for e in nav.get_received() if e["name"] == "servico_resposta"]
+    assert resp and resp[0]["ok"] is False and "WebSocket" in resp[0]["msg"]
+    nav.disconnect()
 
 
 # ---------- Configuração do servidor ----------
@@ -557,7 +591,7 @@ def _eventos(cliente, nome):
 def ambiente_servico(app_instance, client):
     """Um node online (10.0.0.5) e três clientes Socket.IO: o node e dois navegadores."""
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
-    node = socketio.test_client(app_instance)
+    node = socketio.test_client(app_instance, auth=NODE_AUTH)
     nav_a = socketio.test_client(app_instance)
     nav_b = socketio.test_client(app_instance)
     for c in (node, nav_a, nav_b):
@@ -567,6 +601,7 @@ def ambiente_servico(app_instance, client):
         if c.is_connected():
             c.disconnect()
     _routes().assinantes_logs.clear()
+    _routes().sockets_nodes.clear()
 
 
 def test_comando_de_servico_vai_ao_node_e_volta_so_para_quem_pediu(ambiente_servico):
@@ -653,3 +688,109 @@ def test_readicionar_node_envia_o_token_atual(client, monkeypatch):
     segundo = chamadas[-1][2]
     assert segundo["token_atual"] == primeiro["token"]
     assert _routes().cadastro["192.168.1.7"]["token"] == segundo["token"] != primeiro["token"]
+
+
+def test_painel_nao_depende_de_internet(client):
+    """Sem CDNs: numa rede sem internet (laboratório, defesa) o painel abre igual."""
+    import re
+    html = client.get("/").get_data(as_text=True)
+    assert not re.search(r"""(src|href)=["']https?://""", html)
+    recursos = re.findall(r"""(?:src|href)=["'](/static/[^"']+)""", html)
+    assert len(recursos) >= 6
+    for caminho in recursos:
+        resp = client.get(caminho)
+        assert resp.status_code == 200 and len(resp.data) > 500, caminho
+        resp.close()
+    css = client.get("/static/vendor/inter.css")
+    for fonte in re.findall(r"url\('([^']+)'\)", css.get_data(as_text=True)):
+        assert client.get("/static/vendor/" + fonte).status_code == 200
+
+
+@pytest.mark.parametrize("rota,dados", [
+    ("/node/10.0.0.5/worker/w1/delete", None),
+    ("/deploy_worker", {"ip": "10.0.0.5", "alias": "w2", "imagem": "alpine"}),
+    ("/api/nodes/adicionar", {"ip": "192.168.1.9"}),
+])
+def test_post_de_outro_site_e_recusado(client, rota, dados):
+    """Uma página de outro site não pode apagar/criar workers nem cadastrar nodes (CSRF)."""
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    resp = client.post(rota, data=dados, headers={"Origin": "http://site-malicioso.example"})
+    assert resp.status_code == 403
+    assert _routes().nodes_conectados["10.0.0.5"]["tarefas_pendentes"] == []
+
+
+def test_post_do_proprio_painel_e_do_agente_sao_aceitos(client):
+    # o agente (requests) não manda Origin; o painel manda a própria origem
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    resp = client.post("/node/10.0.0.5/worker/w1/delete", headers={"Origin": "http://localhost"})
+    assert resp.status_code == 200
+
+
+def test_websocket_recusa_outro_site_e_aceita_o_painel_e_o_agente(client):
+    """Handshake do Engine.IO: Origin de outro site é recusado (CORS restrito)."""
+    url = "/socket.io/?EIO=4&transport=polling"
+    assert client.get(url, headers={"Origin": "http://site-malicioso.example"}).status_code == 400
+    assert client.get(url, headers={"Origin": "http://localhost"}).status_code == 200
+    assert client.get(url).status_code == 200  # agente: sem Origin
+
+
+# ---------- Login do painel (DROID_PANEL_PASSWORD) ----------
+
+@pytest.fixture
+def com_senha(app_instance, client):
+    app_instance.config["PANEL_PASSWORD"] = "segredo-do-tcc"
+    yield client
+    app_instance.config["PANEL_PASSWORD"] = ""
+
+
+def test_sem_login_paginas_redirecionam_e_api_responde_401(com_senha):
+    c = com_senha
+    resp = c.get("/node/10.0.0.5")
+    assert resp.status_code == 302 and resp.headers["Location"].startswith("/login?proximo=/node/10.0.0.5")
+    assert c.get("/api/nodes").status_code == 401
+    assert c.post("/deploy_worker", data={"ip": "x", "alias": "y"}).status_code == 401
+    # o que precisa ficar livre: login, arquivos estáticos e o sync dos nodes
+    assert c.get("/login").status_code == 200
+    assert c.get("/static/vendor/inter.css").status_code == 200
+    assert c.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).status_code == 200
+
+
+def test_login_errado_e_certo(com_senha, monkeypatch):
+    monkeypatch.setattr(_routes().time, "sleep", lambda s: None)
+    c = com_senha
+    resp = c.post("/login", data={"senha": "chute", "proximo": "/"})
+    assert resp.status_code == 401 and "Senha incorreta" in resp.get_data(as_text=True)
+    assert c.get("/api/nodes").status_code == 401
+
+    resp = c.post("/login", data={"senha": "segredo-do-tcc", "proximo": "/node/10.0.0.5"})
+    assert resp.status_code == 302 and resp.headers["Location"] == "/node/10.0.0.5"
+    assert c.get("/api/nodes").status_code == 200
+    assert "Sair" in c.get("/").get_data(as_text=True)
+
+    c.post("/logout")
+    assert c.get("/api/nodes").status_code == 401
+
+
+def test_login_nao_redireciona_para_outro_site(com_senha):
+    for destino in ("https://site-malicioso.example", "//site-malicioso.example", "/\\\\site.example"):
+        resp = com_senha.post("/login", data={"senha": "segredo-do-tcc", "proximo": destino})
+        assert resp.headers["Location"] == "/"
+
+
+def test_websocket_do_painel_exige_login_mas_o_do_node_nao(app_instance, com_senha):
+    assert not socketio.test_client(app_instance, flask_test_client=com_senha).is_connected()
+    node = socketio.test_client(app_instance, auth=NODE_AUTH)
+    assert node.is_connected()
+    node.disconnect()
+    _routes().sockets_nodes.clear()
+
+    com_senha.post("/login", data={"senha": "segredo-do-tcc"})
+    nav = socketio.test_client(app_instance, flask_test_client=com_senha)
+    assert nav.is_connected()
+    nav.disconnect()
+
+
+def test_sem_senha_o_painel_fica_aberto(client):
+    assert client.get("/").status_code == 200
+    assert client.get("/login").status_code == 302
+    assert "Sair" not in client.get("/").get_data(as_text=True)

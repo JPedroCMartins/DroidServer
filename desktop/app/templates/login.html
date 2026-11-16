@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DroidServer — Entrar</title>
+    <script src="{{ url_for('static', filename='vendor/tailwind-3.4.17.js') }}"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/inter.css') }}">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'] },
+                    colors: { bg: '#0b1220', surface: '#111c33', muted: '#8aa0bf', accent: '#6366f1', accent2: '#22d3ee', bad: '#f87171' },
+                },
+            },
+        };
+    </script>
+    <style>
+        body {
+            background:
+                radial-gradient(1200px 600px at 10% -10%, rgba(99, 102, 241, .16), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(34, 211, 238, .10), transparent 60%),
+                #0b1220;
+        }
+    </style>
+</head>
+
+<body class="font-sans text-slate-200 min-h-screen grid place-items-center px-4">
+    <main class="w-full max-w-sm">
+        <div class="flex items-center gap-3 mb-6 justify-center">
+            <div class="w-11 h-11 rounded-xl grid place-items-center font-extrabold text-white bg-gradient-to-br from-accent to-accent2">DS</div>
+            <div>
+                <div class="font-bold text-[17px] leading-tight">DroidServer</div>
+                <div class="text-[11px] uppercase tracking-wider text-muted">Painel de orquestração</div>
+            </div>
+        </div>
+
+        <form method="post" action="/login" class="rounded-2xl border border-slate-400/15 bg-surface/80 p-6 shadow-[0_10px_30px_rgba(2,6,23,.45)]">
+            <input type="hidden" name="proximo" value="{{ proximo }}">
+            <label for="senha" class="block text-[11px] font-semibold uppercase tracking-wider text-muted mb-2">Senha do painel</label>
+            <input id="senha" name="senha" type="password" autocomplete="current-password" required autofocus
+                class="w-full rounded-xl bg-[#0a1428] border border-slate-400/20 px-3.5 py-2.5 text-[14px] outline-none focus:border-accent focus:ring-2 focus:ring-accent/30">
+            {% if erro %}
+            <p class="mt-3 text-[13px] text-bad" role="alert">{{ erro }}</p>
+            {% endif %}
+            <button type="submit"
+                class="mt-5 w-full rounded-xl bg-accent hover:bg-indigo-500 transition-colors py-2.5 text-[14px] font-semibold text-white">Entrar</button>
+        </form>
+        <p class="mt-4 text-center text-[12px] text-muted">A senha é definida no Host pela variável <code class="text-slate-300">DROID_PANEL_PASSWORD</code>.</p>
+    </main>
+</body>
+
+</html>

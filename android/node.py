@@ -774,7 +774,12 @@ class NodeAgent:
         if not self.config.pareado:
             return False
         try:
-            self.sio.connect(self.config.ws_url)
+            # Identifica o socket como este node (o mesmo token do sync): o host
+            # só manda comandos a sockets autenticados e só aceita deles a saída
+            # do terminal, os logs e as respostas de serviço.
+            self.sio.connect(self.config.ws_url, auth={
+                "papel": "node", "ip": self.meu_ip, "token": self.config.token or "",
+            })
             return True
         except Exception as e:
             log.warning("[-] WebSocket indisponível (%s). Nova tentativa no próximo ciclo.", e)
