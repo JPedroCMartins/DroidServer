@@ -4,7 +4,7 @@ Transforme smartphones Android antigos — **sem root** — em nós de um pequen
 
 Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em cada Node, um agente Python rodando no [Termux](https://termux.dev/) cria ambientes Linux com `proot-distro` (Alpine, recomendado, ou Debian), chamados **Workers**, e os mantém de pé com o **Supervisor**. Tudo é operado por um painel web com métricas em tempo real e terminal interativo no navegador.
 
-> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026). A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md).
+> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026): **"DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados"**. A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md).
 
 ## Sumário
 

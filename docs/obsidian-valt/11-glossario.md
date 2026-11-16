@@ -25,7 +25,7 @@
 | **Socket.IO** | Biblioteca de comunicação em tempo real sobre WebSocket com *fallback* para *long polling*. |
 | **Supervisor** | Sistema de controle de processos que inicia, monitora e reinicia programas. |
 | **Termux** | Emulador de terminal e ambiente Linux para Android que funciona sem *root*. |
-| **VPS** | *Virtual Private Server*; servidor virtual alugado de um provedor. |
+| **VPS** | *Virtual Private Server*; servidor virtual alugado de um provedor. Neste trabalho, "servidor virtual privado" designa o modelo de serviço oferecido por cada Worker (ambiente Linux próprio, administrado remotamente), sem virtualização de *hardware* (ver 1.1). |
 | **WebSocket** | Protocolo de comunicação bidirecional e persistente sobre TCP (RFC 6455). |
 | **Worker** | Ambiente Linux criado com `proot-distro` dentro de um Node. |
 | **xterm.js** | Biblioteca JavaScript que desenha um terminal no navegador. |

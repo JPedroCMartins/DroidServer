@@ -10,6 +10,8 @@ Paralelamente, o paradigma da computação em nuvem tem expandido suas fronteira
 
 Este trabalho apresenta o **DroidServer**, um protótipo de orquestração que reúne smartphones Android sem acesso *root* em um pequeno *cluster* gerenciado por um servidor central. Cada aparelho executa um agente em Python dentro do Termux, que provisiona ambientes Linux isolados com `proot-distro`, mantém esses ambientes como serviços supervisionados e reporta métricas ao servidor; o administrador opera tudo por um painel web, incluindo um terminal interativo no navegador.
 
+Neste trabalho, **servidor virtual privado** designa o **modelo de serviço** que cada Worker oferece: um ambiente Linux próprio, com sistema de arquivos, pacotes e serviços independentes, acessível pela rede e administrado remotamente como um servidor — a experiência de uso de uma VPS de um provedor de nuvem. Não se trata de virtualização de *hardware* nem de contêineres com isolamento pelo *kernel*: os Workers compartilham o *kernel* do Android, a pilha de rede, a CPU e a memória do aparelho, e o isolamento se limita ao sistema de arquivos, obtido em espaço de usuário pelo PRoot (seção 5). Os custos e limites dessa escolha são medidos no capítulo 9 (E3 e E8) e discutidos no capítulo 10.
+
 ## 1.2 Limites do Trabalho (Escopo e Delimitação)
 
 Para garantir a viabilidade da pesquisa e a precisão da avaliação, este projeto restringe-se ao desenvolvimento e à análise de um protótipo de orquestração no modelo Host-Node-Worker (ver [Convenção de termos](README.md)).

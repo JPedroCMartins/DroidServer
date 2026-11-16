@@ -13,8 +13,8 @@
 
 Manaus - AM, 2026
 
-> [!warning] Título ainda não unificado
-> O arquivo `docs/artigo_nao_finalizado.odt` usa dois títulos diferentes ("Mitigação de Obsolescência Programada Através da Criação de **Clusters de Computação** em Dispositivos Android" na capa e "...de **servidores de baixo custo**..." na folha de rosto), e este vault usa um terceiro. Escolha um e replique nos três lugares. Sugestão: *"DroidServer: orquestração de ambientes Linux sem root em smartphones Android reaproveitados como nós de computação de borda"*.
+> [!note] Título
+> O mesmo título está na capa e na folha de rosto do `docs/artigo_nao_finalizado.odt`. "Servidor virtual privado" é usado no sentido do **modelo de serviço** (um ambiente Linux próprio, acessível pela rede e administrado como um servidor), e não no de virtualização de *hardware*: ver a definição na seção 1.1 e o glossário.
 
 ---
 

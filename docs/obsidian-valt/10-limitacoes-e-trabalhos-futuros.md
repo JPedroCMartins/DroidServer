@@ -2,17 +2,19 @@
 
 ## 10.1 Limitações do protótipo
 
+- **"Servidor virtual privado" como modelo de serviço:** cada Worker se comporta, para o usuário, como uma VPS (ambiente Linux próprio administrado remotamente), mas não há virtualização de *hardware* nem isolamento pelo *kernel* (ver 1.1); garantias de isolamento e de desempenho de uma VPS de provedor não se aplicam.
 - **Isolamento fraco:** o PRoot isola apenas a visão do sistema de arquivos. Workers compartilham rede, processos e recursos com o Termux e entre si; um Worker pode esgotar a CPU ou a memória do aparelho. Não é adequado a cargas de terceiros não confiáveis.
 - **Sem limites de CPU e memória:** sem *cgroups*, o único controle disponível é o `ulimit` (arquivos abertos e número de processos).
-- **Sobrecarga do `ptrace`:** cargas intensivas em chamadas de sistema (E/S, instalação de pacotes) ficam mais lentas.
+- **Sobrecarga do `ptrace`:** medida na E3 — operações de metadados de arquivo ficam ~13× mais lentas e a criação de processos ~2,7×, enquanto CPU pura (+15%) e escrita sequencial (~0%) quase não são afetadas; na E8, a mesma API entrega ~40–45% da vazão nativa sob concorrência.
 - **Métricas de CPU indisponíveis sem *root*:** no Android 16 (aparelho de testes Xiaomi 2311DRK48G), o SELinux bloqueia `/proc/stat` para aplicativos, e o `top` do sistema também não consegue calcular o uso global — exibe 100% ocioso com todos os campos zerados. O agente reporta a CPU do aparelho como indisponível e passou a medir a CPU dos processos do próprio Termux (agente e Workers) por `/proc/<pid>/stat` (ver 8.5). Essa métrica não enxerga outros aplicativos: uma carga alheia ao DroidServer reduz o desempenho dos Workers sem aparecer no painel. Também não foi possível ler temperatura nem bateria; para o experimento E9 será preciso o app Termux:API ou um medidor USB externo.
 - **Distribuições disponíveis:** o `proot-distro` recente baixa imagens do Docker Hub, e a imagem oficial do Arch Linux só é publicada para `amd64`. Há imagens comunitárias do Arch Linux ARM (ex.: `menci/archlinuxarm`), mas, por não serem oficiais, o protótipo oferece apenas Alpine (recomendada) e Debian.
 - **Políticas do Android:** Doze, `lmkd` e *phantom process killer* podem encerrar o agente ou os Workers; as mitigações exigem configuração manual (e, para o *phantom process killer*, ADB ou opções de desenvolvedor).
-- **Segurança:** o painel não tem autenticação; o token dos Nodes trafega sem TLS; o servidor roda com `debug=True` e `cors_allowed_origins="*"`; os eventos de terminal são difundidos a todos os clientes conectados. O protótipo deve ficar restrito a uma rede confiável.
+- **Segurança:** a Fase 2 acrescentou senha no painel, isolamento dos terminais por sala, autenticação do WebSocket dos Nodes e bloqueio de requisições de outros sites, mas **não há TLS**: senha e tokens trafegam em claro na rede local (mitigação: proxy HTTPS).
 - **Pareamento sem confirmação no aparelho:** um Node ainda não pareado aceita o pareamento de qualquer máquina da rede local; não há código de confirmação exibido no celular. Depois de pareado, só o mesmo Host pode parear de novo ou desfazer. O token trafega sem TLS.
 - **Estado volátil e ponto único de falha:** o Host guarda tudo em memória e não é replicado.
 - **Sem escalonamento:** o administrador escolhe manualmente em qual Node cada Worker roda.
 - **Serviços não expostos:** não há mapeamento de portas nem *proxy* reverso para acessar, a partir do Host, os serviços que rodam nos Workers.
+- **Temperatura e energia não medidas (E9):** sem *root*, `/sys/class/thermal` e `/sys/class/power_supply` são negados pelo Android; seria necessário o Termux:API (bateria) ou um medidor USB externo.
 
 ## 10.2 Ameaças à validade
 

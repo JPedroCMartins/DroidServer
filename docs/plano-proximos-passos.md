@@ -147,7 +147,7 @@ Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatu
 
 | # | Tarefa | Esforço |
 |---|---|---|
-| 4.1 | **Escolher um único título** e aplicar na capa, no vault e no README | 15 min |
+| 4.1 | ✅ *Feito em 16/11:* "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados" (capa, folha de rosto, vault, README; termo definido na seção 1.1) | — |
 | 4.2 | Escrever o capítulo 9.5 (Resultados) com tabelas e gráficos da Fase 3 | 1 dia |
 | 4.3 | Preencher o Resumo/Abstract (nota 00) com os números reais | 1 h |
 | 4.4 | Conclusão: responder às QP1–QP3 e dizer se a hipótese H1 foi confirmada | 3 h |
