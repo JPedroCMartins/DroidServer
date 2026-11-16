@@ -26,6 +26,10 @@ const VAULT = path.resolve(AQUI, "../obsidian-valt");
 const SAIDA = path.resolve(AQUI, "../DroidServer_TCC_artigo.docx");
 const DIAGRAMAS = path.join(VAULT, "figuras", "diagramas");
 const CHROME = process.env.CHROME || "/usr/bin/google-chrome";
+const EQUACOES_DIR = path.join(VAULT, "figuras", "equacoes");
+// EQUACOES=word gera equação nativa do Word (OMML). O padrão é imagem, que abre
+// em qualquer editor (o WordCraft ainda não tem editor de equações).
+const EQUACAO_NATIVA = process.env.EQUACOES === "word";
 
 // ---------------------------------------------------------------------------
 // Dados da capa / folha de rosto (o que estiver entre colchetes sai destacado)
@@ -387,8 +391,33 @@ function latexParaMath(src) {
   return sequencia(undefined);
 }
 
+function renderizarEquacao(latex) {
+  fs.mkdirSync(EQUACOES_DIR, { recursive: true });
+  const hash = createHash("sha256").update(latex).digest("hex").slice(0, 12);
+  const png = path.join(EQUACOES_DIR, `equacao-${hash}.png`);
+  if (!fs.existsSync(png)) {
+    execFileSync("uv", ["run", "--with", "matplotlib", "python", path.join(AQUI, "render_equacao.py"), latex, png],
+      { stdio: "pipe" });
+    console.log(`  equação renderizada: ${path.relative(VAULT, png)}`);
+  }
+  return png;
+}
+
 let numeroEquacao = 0;
 function equacao(latex) {
+  if (!EQUACAO_NATIVA) {
+    const dados = fs.readFileSync(renderizarEquacao(latex));
+    const { w, h } = tamanhoPng(dados);
+    const fator = 96 / 300;                          // PNG a 300 dpi -> tamanho real
+    return new Paragraph({
+      spacing: { line: 240, before: 240, after: 240 },
+      tabStops: [{ type: "center", position: Math.round(LARGURA_TEXTO / 2) }, { type: "right", position: LARGURA_TEXTO }],
+      children: [new TextRun({ text: "\t" }),
+        new ImageRun({ type: "png", data: dados, transformation: { width: Math.round(w * fator), height: Math.round(h * fator) },
+          altText: { name: `Equação ${numeroEquacao + 1}`, title: `Equação ${numeroEquacao + 1}`, description: latex } }),
+        new TextRun({ text: `\t(${++numeroEquacao})` })],
+    });
+  }
   return new Paragraph({
     alignment: AlignmentType.CENTER, spacing: { line: 240, before: 240, after: 240 },
     children: [new Equacao({ children: latexParaMath(latex) }), new TextRun({ text: `\t(${++numeroEquacao})` })],
@@ -572,6 +601,7 @@ const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, ctx));
 
 const margens = { top: 3 * CM, left: 3 * CM, bottom: 2 * CM, right: 2 * CM };
 const doc = new Document({
+  compatabilityModeVersion: 15,   // Word 2013+: abre sem "Modo de Compatibilidade"
   creator: META.autorNome,
   title: META.titulo,
   description: "Gerado a partir do vault do Obsidian (docs/obsidian-valt) por docs/gerador-docx/gerar.mjs",
@@ -598,6 +628,21 @@ const doc = new Document({
 const zip = await JSZip.loadAsync(await Packer.toBuffer(doc));
 const xml = await zip.file("word/document.xml").async("string");
 zip.file("word/document.xml", xml.replace(/<\/m:sub><m:e>/g, "</m:sub><m:sup/><m:e>"));
-fs.writeFileSync(SAIDA, await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+// A biblioteca grava <w:highlightCs>, que não existe no esquema OOXML: o Word pode
+// acusar "conteúdo ilegível" e editores menos tolerantes podem recusar o arquivo.
+for (const parte of ["word/document.xml", "word/footnotes.xml", "word/styles.xml", "word/header1.xml"]) {
+  const f = zip.file(parte);
+  if (f) zip.file(parte, (await f.async("string")).replace(/<w:highlightCs\b[^>]*\/>/g, ""));
+}
+// Sem entradas de pasta no ZIP (alguns leitores de .docx recusam o arquivo com elas).
+// Copia só os arquivos para um pacote novo: no JSZip, remover a pasta apagaria o conteúdo.
+const limpo = new JSZip();
+const arquivos = [];
+zip.forEach((caminho, arq) => { if (!arq.dir) arquivos.push(caminho); });
+arquivos.sort((a, b) => (a === "[Content_Types].xml" ? -1 : b === "[Content_Types].xml" ? 1 : 0));
+for (const caminho of arquivos) {
+  limpo.file(caminho, await zip.file(caminho).async("uint8array"), { createFolders: false });
+}
+fs.writeFileSync(SAIDA, await limpo.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
 console.log(`Gerado: ${path.relative(process.cwd(), SAIDA)}`);
 console.log("Renumeração de figuras/quadros/tabelas:", renumeracao);
