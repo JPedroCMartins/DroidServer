@@ -11,3 +11,6 @@ wheels/
 # Logs
 logs/
 *.log
+
+# Obsidian (estado local da interface)
+docs/obsidian-valt/.obsidian/workspace.json
