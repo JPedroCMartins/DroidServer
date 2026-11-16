@@ -143,6 +143,18 @@ while true; do sleep 30; done
         return os.path.join(prefix, 'etc', 'supervisord.conf')
 
     @staticmethod
+    def _supervisorctl(*args, **kwargs):
+        """Executa o supervisorctl sempre apontando para o supervisord.conf do Termux.
+
+        Sem o `-c`, o supervisorctl procura o arquivo em caminhos padrão e, no modo
+        HTTP com usuário/senha (Python sem os.link()), falharia na autenticação.
+        """
+        kwargs.setdefault("check", False)
+        kwargs.setdefault("capture_output", True)
+        cmd = ["supervisorctl", "-c", WorkerManager._supervisor_conf(), *args]
+        return subprocess.run(cmd, **kwargs)
+
+    @staticmethod
     def get_installed_workers():
         """Lista os containers instalados no proot-distro.
 
@@ -168,10 +180,7 @@ while true; do sleep 30; done
     def get_workers_status():
         """Devolve {alias: status} a partir do `supervisorctl status`."""
         try:
-            proc = subprocess.run(
-                ["supervisorctl", "-c", WorkerManager._supervisor_conf(), "status"],
-                capture_output=True, text=True, timeout=5,
-            )
+            proc = WorkerManager._supervisorctl("status", text=True, timeout=5)
         except Exception:
             return {}
         if proc.returncode != 0:
@@ -226,12 +235,12 @@ while true; do sleep 30; done
             #    (a) lock do proot-distro segurado pelo supervisor em loop de
             #    restart e (b) "fantasma" em installed-distros.json quando o
             #    rootfs já não existe.
-            subprocess.run(["supervisorctl", "stop", alias], check=False, capture_output=True)
+            WorkerManager._supervisorctl("stop", alias)
             if os.path.exists(arquivo_conf):
                 os.remove(arquivo_conf)
                 log.info("[+] Removida configuração de serviço antiga: %s", arquivo_conf)
-            subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
-            subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
+            WorkerManager._supervisorctl("reread")
+            WorkerManager._supervisorctl("update")
             subprocess.run(["proot-distro", "remove", alias], check=False, capture_output=True, timeout=120)
 
             # 1. Instala o proot-distro
@@ -255,8 +264,8 @@ while true; do sleep 30; done
             log.info("[+] Arquivo de configuração criado: %s", arquivo_conf)
 
             # 4. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
-            subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
-            subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
+            WorkerManager._supervisorctl("reread")
+            WorkerManager._supervisorctl("update")
 
             log.info("[+] Serviço '%s' registrado e iniciado no Supervisor.", alias)
 
@@ -316,7 +325,7 @@ while true; do sleep 30; done
 
         try:
             # 1. Para o serviço no Supervisor (se estiver rodando) para evitar processos zumbis
-            subprocess.run(["supervisorctl", "stop", alias], check=False, capture_output=True)
+            WorkerManager._supervisorctl("stop", alias)
 
             # 2. Remove o arquivo de configuração do Supervisor
             if os.path.exists(arquivo_conf):
@@ -324,12 +333,12 @@ while true; do sleep 30; done
                 log.info("[+] Arquivo de configuração removido: %s", arquivo_conf)
 
             # 3. Atualiza o Supervisor para remover o serviço da memória
-            subprocess.run(["supervisorctl", "reread"], check=False, capture_output=True)
-            subprocess.run(["supervisorctl", "update"], check=False, capture_output=True)
+            WorkerManager._supervisorctl("reread")
+            WorkerManager._supervisorctl("update")
 
             # 4. Remove o container proot-distro (se existir)
             if WorkerManager._existe(alias):
-                subprocess.run(["proot-distro", "remove", alias], check=True)
+                subprocess.run(["proot-distro", "remove", alias], check=True, timeout=300)
                 log.info("[+] Container '%s' deletado com sucesso!", alias)
 
             # 5. Remove os arquivos de log associados
@@ -341,6 +350,9 @@ while true; do sleep 30; done
 
             return True, f"Container '{alias}' deletado"
 
+        except subprocess.TimeoutExpired:
+            log.error("[-] Tempo esgotado ao remover '%s'.", alias)
+            return False, f"Tempo esgotado ao remover '{alias}'"
         except subprocess.CalledProcessError as e:
             log.error("[-] Erro de processo ao tentar deletar '%s'.", alias)
             return False, f"Falha ao deletar '{alias}': {e}"
@@ -372,7 +384,7 @@ class TerminalManager:
             os.execvp(cmd[0], cmd)
         else:
             self.ativos[alias] = (master_fd, pid)
-            t = threading.Thread(target=self._ler_saida, args=(master_fd, alias), daemon=True)
+            t = threading.Thread(target=self._ler_saida, args=(master_fd, alias, pid), daemon=True)
             t.start()
 
     def escrever_comando(self, alias, comando):
@@ -387,19 +399,48 @@ class TerminalManager:
             log.debug("PTY do '%s' não está mais disponível.", alias)
 
     def encerrar(self, alias):
-        """Encerra a sessão de terminal do worker (usado ao deletar o container)."""
+        """Encerra a sessão de terminal do worker (usado ao deletar o container).
+
+        Apenas sinaliza o processo: a thread leitora detecta o fim da sessão,
+        fecha o descritor do PTY e recolhe o processo (ver _finalizar_sessao).
+        """
         if alias not in self.ativos:
             return
         fd, pid = self.ativos.pop(alias)
         try:
-            os.kill(pid, signal.SIGTERM)
-        except (OSError, ProcessLookupError):
-            pass
-        try:
             os.write(fd, b'exit\r')
         except OSError:
             pass
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pass
         log.info("[*] Sessão de terminal '%s' encerrada manualmente.", alias)
+
+    @staticmethod
+    def _finalizar_sessao(master_fd, pid, espera=2.0):
+        """Fecha o PTY e recolhe o processo-filho, evitando fd vazado e zumbi."""
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+        limite = time.monotonic() + espera
+        while True:
+            try:
+                recolhido, _ = os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                return  # já recolhido (ou não é nosso filho)
+            if recolhido:
+                return
+            if time.monotonic() >= limite:
+                break
+            time.sleep(0.1)
+        # Não saiu com SIGTERM/EOF: força o encerramento e recolhe
+        try:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        except (OSError, ChildProcessError):
+            pass
 
     def redimensionar(self, alias, cols, rows):
         """Ajusta o tamanho da janela (TIOCSWINSZ) do PTY para o tamanho do navegador."""
@@ -417,10 +458,13 @@ class TerminalManager:
         except (OSError, ValueError):
             log.debug("Falha ao redimensionar PTY do '%s'.", alias)
 
-    def _ler_saida(self, master_fd, alias):
-        """Fica lendo a tela do Alpine e enviando pro Flask (Thread)."""
+    def _ler_saida(self, master_fd, alias, pid=None):
+        """Fica lendo a tela do container e enviando pro Flask (Thread)."""
         while True:
-            r, _, _ = select.select([master_fd], [], [])
+            try:
+                r, _, _ = select.select([master_fd], [], [])
+            except (OSError, ValueError):
+                break
             if master_fd in r:
                 try:
                     dados = os.read(master_fd, 1024).decode('utf-8', errors='replace')
@@ -435,8 +479,11 @@ class TerminalManager:
                     break
 
         log.info("[*] Sessão do terminal '%s' encerrada.", alias)
-        if alias in self.ativos:
+        # Só remove o registro se ainda for esta sessão (pode já haver uma nova)
+        if self.ativos.get(alias, (None,))[0] == master_fd:
             del self.ativos[alias]
+        if pid is not None:
+            self._finalizar_sessao(master_fd, pid)
 
 
 class NodeAgent:
@@ -451,7 +498,9 @@ class NodeAgent:
         self.monitor = SystemMonitor()
 
         # Resultado das tarefas executadas, enviado no próximo sync.
+        # Escrito pela thread de tarefas e lido/limpo pela thread de polling.
         self._resultados = []
+        self._lock_resultados = threading.Lock()
         # Tarefa atualmente em execução na thread de background.
         self._tarefa_atual = None
 
@@ -515,13 +564,15 @@ class NodeAgent:
 
     def _poll_once(self):
         """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
+        with self._lock_resultados:
+            enviados = list(self._resultados)
         payload = {
             "ip": self.meu_ip,
             "status": "Online",
             "workers": WorkerManager.get_installed_workers(),
             "worker_status": WorkerManager.get_workers_status(),
             "tarefa_atual": self._tarefa_atual,
-            "resultados": list(self._resultados),
+            "resultados": enviados,
         }
         uso = self.monitor.sample()
         payload["cpu"] = uso["cpu"]
@@ -532,7 +583,11 @@ class NodeAgent:
         try:
             resposta = requests.post(self.config.http_url, json=payload, timeout=5)
             if resposta.status_code == 200:
-                self._resultados.clear()
+                # Remove só o que foi enviado: resultados registrados durante o
+                # POST ficam para o próximo sync em vez de serem descartados.
+                ids_enviados = {id(r) for r in enviados}
+                with self._lock_resultados:
+                    self._resultados[:] = [r for r in self._resultados if id(r) not in ids_enviados]
                 tarefas = resposta.json().get("tarefas", [])
                 mem_pct = payload["mem"]["percent"] if payload.get("mem") else None
                 log.info("Sync OK com host (cpu=%s%%, mem=%s%%, workers=%s, %d tarefa(s))",
@@ -556,15 +611,16 @@ class NodeAgent:
                 self._tarefa_atual = None
 
     def _registrar_resultado(self, acao, alias, ok, msg):
-        self._resultados.append({
-            "acao": acao,
-            "alias": alias,
-            "ok": bool(ok),
-            "msg": msg,
-            "ts": time.strftime("%H:%M:%S"),
-        })
-        # Mantém apenas os últimos resultados (evita payload gigante)
-        del self._resultados[:-10]
+        with self._lock_resultados:
+            self._resultados.append({
+                "acao": acao,
+                "alias": alias,
+                "ok": bool(ok),
+                "msg": msg,
+                "ts": time.strftime("%H:%M:%S"),
+            })
+            # Mantém apenas os últimos resultados (evita payload gigante)
+            del self._resultados[:-10]
         if ok:
             log.info("[+] Tarefa OK: %s", msg)
         else:

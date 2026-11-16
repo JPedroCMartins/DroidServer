@@ -75,7 +75,12 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     assert conf.exists()
     conteudo = conf.read_text()
     assert "[program:worker_bd]" in conteudo
-    assert "command=proot-distro login worker_bd -- /app/run_server.sh" in conteudo
+    # isolado por padrão, com limites ulimit e exec para o supervisor controlar o proot
+    assert "exec proot-distro login --isolated worker_bd -- /app/run_server.sh" in conteudo
+    assert "ulimit -n" in conteudo and "ulimit -u" in conteudo
+    # toda chamada ao supervisorctl aponta para o supervisord.conf do Termux
+    sup = [c for c in comandos if c and c[0] == "supervisorctl"]
+    assert sup and all(c[1:3] == ["-c", str(tmp_path / "etc" / "supervisord.conf")] for c in sup)
 
     # injeção do run_server.sh acontece via base64 (sem depender de stdin)
     import base64
@@ -132,7 +137,7 @@ def test_worker_criar_remove_conf_antigo(monkeypatch, tmp_path):
     # o conf é reescrito no final; a limpeza do fantasma ocorreu via proot-distro remove
     assert any("proot-distro" in c and "remove" in c and "worker_bd" in c for c in comandos)
     conteudo = conf.read_text()
-    assert "[program:worker_bd]" in conteudo and "command=proot-distro login worker_bd" in conteudo
+    assert "[program:worker_bd]" in conteudo and "proot-distro login --isolated worker_bd" in conteudo
 
 
 def test_worker_criar_captura_erro_do_install(monkeypatch, tmp_path):
@@ -479,9 +484,10 @@ def test_poll_once_status_nao_200_retorna_vazio(monkeypatch):
 def test_executar_tarefa_criar_worker(monkeypatch):
     chamadas = {}
 
-    def fake_criar(alias, imagem):
+    def fake_criar(alias, imagem, isolado=True):
         chamadas["alias"] = alias
         chamadas["imagem"] = imagem
+        chamadas["isolado"] = isolado
         return (True, f"Container '{alias}' criado")
 
     monkeypatch.setattr(WorkerManager, "criar", staticmethod(fake_criar))
@@ -489,7 +495,7 @@ def test_executar_tarefa_criar_worker(monkeypatch):
     agente = NodeAgent()
     agente._executar_tarefa({"acao": "criar_worker", "alias": "w1", "imagem": "alpine"})
 
-    assert chamadas == {"alias": "w1", "imagem": "alpine"}
+    assert chamadas == {"alias": "w1", "imagem": "alpine", "isolado": True}
     assert len(agente._resultados) == 1
     assert agente._resultados[0]["ok"] is True
     assert agente._resultados[0]["alias"] == "w1"
@@ -512,7 +518,7 @@ def test_executar_tarefa_deletar_worker(monkeypatch):
 
 
 def test_executar_tarefa_falha_registra_resultado(monkeypatch):
-    def fake_criar(alias, imagem):
+    def fake_criar(alias, imagem, isolado=True):
         return (False, f"Falha ao instalar '{alias}'")
 
     monkeypatch.setattr(WorkerManager, "criar", staticmethod(fake_criar))
@@ -617,3 +623,122 @@ def test_conectar_ws_ja_conectado_nao_refaz(monkeypatch):
     monkeypatch.setattr(agente.sio, "connect", fake_connect)
 
     assert agente._conectar_ws() is True
+
+
+# ---------- Regressões ----------
+
+def test_executar_tarefa_repassa_isolado_falso(monkeypatch):
+    chamadas = {}
+
+    def fake_criar(alias, imagem, isolado=True):
+        chamadas["isolado"] = isolado
+        return (True, "ok")
+
+    monkeypatch.setattr(WorkerManager, "criar", staticmethod(fake_criar))
+    agente = NodeAgent()
+    agente._executar_tarefa({"acao": "criar_worker", "alias": "w1", "imagem": "debian", "isolado": False})
+    assert chamadas["isolado"] is False
+
+
+def test_worker_criar_sem_isolamento(monkeypatch, tmp_path):
+    class RunResult:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: RunResult())
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    ok, _ = WorkerManager.criar("w1", "debian", isolado=False)
+    assert ok is True
+    conteudo = (tmp_path / "etc" / "supervisor" / "conf.d" / "w1.conf").read_text()
+    assert "--isolated" not in conteudo
+    assert "exec proot-distro login w1 -- /app/run_server.sh" in conteudo
+
+
+def test_worker_criar_rejeita_imagem_nao_permitida(monkeypatch, tmp_path):
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    ok, msg = WorkerManager.criar("w1", "windows")
+    assert ok is False
+    assert "não suportada" in msg
+
+
+def test_worker_deletar_usa_conf_do_supervisor(monkeypatch, tmp_path):
+    comandos = []
+    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: comandos.append(cmd))
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+
+    WorkerManager.deletar("w1")
+
+    sup = [c for c in comandos if c[0] == "supervisorctl"]
+    assert sup and all(c[1:3] == ["-c", str(tmp_path / "etc" / "supervisord.conf")] for c in sup)
+
+
+def test_poll_once_preserva_resultado_registrado_durante_o_post(monkeypatch):
+    """Um resultado que chega enquanto o POST está em andamento não pode ser apagado."""
+    agente = NodeAgent()
+    agente._registrar_resultado("criar_worker", "w1", True, "w1 criado")
+
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"status": "ok", "tarefas": []}
+
+    def fake_post(url, json=None, timeout=None):
+        # Simula a thread de tarefas terminando outra operação durante o envio
+        agente._registrar_resultado("deletar_worker", "w2", True, "w2 deletado")
+        assert [r["alias"] for r in json["resultados"]] == ["w1"]
+        return RespostaFake()
+
+    monkeypatch.setattr("requests.post", fake_post)
+    agente._poll_once()
+
+    assert [r["alias"] for r in agente._resultados] == ["w2"]
+
+
+def test_ler_saida_fecha_fd_e_recolhe_processo(monkeypatch):
+    fechados, recolhidos = [], []
+    monkeypatch.setattr("select.select", lambda r, w, x: (r, [], []))
+    monkeypatch.setattr("os.read", lambda fd, n: b"")  # EOF: a sessão terminou
+    monkeypatch.setattr("os.close", lambda fd: fechados.append(fd))
+    monkeypatch.setattr("os.waitpid", lambda pid, flags: (recolhidos.append(pid), (pid, 0))[1])
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = (9, 4321)
+    agente.terminal._ler_saida(9, "w1", 4321)
+
+    assert fechados == [9]
+    assert recolhidos == [4321]
+    assert "w1" not in agente.terminal.ativos
+
+
+def test_ler_saida_nao_remove_sessao_nova_do_mesmo_alias(monkeypatch):
+    monkeypatch.setattr("select.select", lambda r, w, x: (r, [], []))
+    monkeypatch.setattr("os.read", lambda fd, n: b"")
+    monkeypatch.setattr("os.close", lambda fd: None)
+    monkeypatch.setattr("os.waitpid", lambda pid, flags: (pid, 0))
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = (11, 5555)  # sessão nova, aberta depois
+    agente.terminal._ler_saida(9, "w1", 4321)  # a antiga terminando
+
+    assert agente.terminal.ativos["w1"] == (11, 5555)
+
+
+def test_finalizar_sessao_forca_kill_se_processo_nao_sai(monkeypatch):
+    sinais = []
+    chamadas_wait = []
+
+    def fake_waitpid(pid, flags):
+        chamadas_wait.append(flags)
+        return (0, 0) if flags == os.WNOHANG else (pid, 0)
+
+    monkeypatch.setattr("os.close", lambda fd: None)
+    monkeypatch.setattr("os.waitpid", fake_waitpid)
+    monkeypatch.setattr("os.kill", lambda pid, sig: sinais.append(sig))
+
+    TerminalManager._finalizar_sessao(9, 4321, espera=0)
+
+    assert sinais == [signal.SIGKILL]
+    assert chamadas_wait[-1] == 0  # recolhe de forma bloqueante após o SIGKILL
