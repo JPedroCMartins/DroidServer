@@ -86,8 +86,16 @@ def _cpu_via_top():
                 idle = float(next(p for p in partes if p.endswith("%idle")).replace("%idle", ""))
             except (StopIteration, ValueError):
                 return None
-            if total > 0:
-                return round(max(0.0, min(100.0, 100.0 * (total - idle) / total)), 1)
+            if total <= 0:
+                return None
+            if idle >= total:
+                # Em Android recente o toybox top também não lê /proc/stat e
+                # mostra 100% ocioso com todos os campos zerados ("800%idle"),
+                # mesmo com o próprio top em execução. Isso não é uma medição:
+                # devolvemos None para o painel exibir "—" em vez de um falso 0%.
+                log.debug("top sem dados de CPU (idle=%s de %s): tratado como indisponível", idle, total)
+                return None
+            return round(max(0.0, min(100.0, 100.0 * (total - idle) / total)), 1)
     return None
 
 

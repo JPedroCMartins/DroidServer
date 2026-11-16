@@ -32,6 +32,11 @@ ULIMIT_NPROC = int(os.getenv("DROID_ULIMIT_NPROC", "1024"))    # processos
 # Alias de container só pode conter caracteres seguros (usado em caminhos,
 # nomes de serviço do supervisor e nomes de eventos WebSocket).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# `proot-distro remove` falha se uma sessão ainda segura o lock do container.
+REMOVE_TENTATIVAS = 5
+REMOVE_ESPERA = 2  # segundos entre tentativas
+# Remove as cores (códigos ANSI) das mensagens do proot-distro.
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _configurar_logging():
@@ -306,6 +311,32 @@ while true; do sleep 30; done
             log.warning("[-] Não foi possível criar /app/run_server.sh do '%s': %s", alias, e)
 
     @staticmethod
+    def _remover_container(alias, tentativas=REMOVE_TENTATIVAS, espera=REMOVE_ESPERA):
+        """Executa `proot-distro remove`, tolerando sessões ainda encerrando.
+
+        O remove exige o lock exclusivo do container e falha na hora (não
+        espera) se alguma sessão `login` ainda o segura — o que acontece logo
+        após parar o serviço no Supervisor ou fechar o terminal. Por isso:
+        encerra as sessões restantes com `proot-distro kill` e tenta de novo
+        algumas vezes. Devolve (ok, mensagem_de_erro).
+        """
+        # Versões antigas não têm o subcomando kill; a falha é ignorada.
+        subprocess.run(["proot-distro", "kill", alias], check=False, capture_output=True, timeout=60)
+
+        erro = ""
+        for tentativa in range(1, tentativas + 1):
+            proc = subprocess.run(["proot-distro", "remove", alias],
+                                  capture_output=True, text=True, timeout=300)
+            if proc.returncode == 0:
+                return True, ""
+            erro = ANSI_RE.sub("", (proc.stderr or proc.stdout or "").strip())[-300:]
+            log.warning("[-] proot-distro remove '%s' falhou (tentativa %d/%d): %s",
+                        alias, tentativa, tentativas, erro)
+            if tentativa < tentativas:
+                time.sleep(espera)
+        return False, erro or "proot-distro remove retornou erro"
+
+    @staticmethod
     def deletar(alias):
         """Remove o container. Devolve (ok: bool, mensagem: str).
 
@@ -338,7 +369,9 @@ while true; do sleep 30; done
 
             # 4. Remove o container proot-distro (se existir)
             if WorkerManager._existe(alias):
-                subprocess.run(["proot-distro", "remove", alias], check=True, timeout=300)
+                ok, erro = WorkerManager._remover_container(alias)
+                if not ok:
+                    return False, f"Falha ao deletar '{alias}': {erro}"
                 log.info("[+] Container '%s' deletado com sucesso!", alias)
 
             # 5. Remove os arquivos de log associados
@@ -443,9 +476,19 @@ class TerminalManager:
             pass
 
     def redimensionar(self, alias, cols, rows):
-        """Ajusta o tamanho da janela (TIOCSWINSZ) do PTY para o tamanho do navegador."""
+        """Ajusta o tamanho da janela (TIOCSWINSZ) do PTY para o tamanho do navegador.
+
+        O navegador envia o tamanho assim que a tela do terminal se conecta; se
+        ainda não há sessão, ela é aberta aqui. Assim o shell já está pronto (com
+        o prompt na tela) quando o usuário digitar, em vez de iniciar na primeira
+        tecla e perder/duplicar o que foi digitado durante a inicialização.
+        """
         if alias not in self.ativos:
-            return
+            if not WorkerManager._alias_valido(alias):
+                return
+            self.iniciar_pty(alias)
+            if alias not in self.ativos:
+                return
         try:
             import fcntl
             import struct
@@ -538,6 +581,8 @@ class NodeAgent:
             prefixo_cmd = f"cmd_to_{self.meu_ip}_"
             if evento.startswith(prefixo_cmd):
                 alias = evento.replace(prefixo_cmd, "")
+                if not WorkerManager._alias_valido(alias):
+                    return
                 comando = dados.get('input', '')
                 self.terminal.escrever_comando(alias, comando)
                 return
@@ -545,6 +590,8 @@ class NodeAgent:
             prefixo_resize = f"resize_to_{self.meu_ip}_"
             if evento.startswith(prefixo_resize):
                 alias = evento.replace(prefixo_resize, "")
+                if not WorkerManager._alias_valido(alias):
+                    return
                 self.terminal.redimensionar(alias, dados.get('cols'), dados.get('rows'))
 
     def _conectar_ws(self):

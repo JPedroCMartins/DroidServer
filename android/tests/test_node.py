@@ -160,12 +160,17 @@ def test_worker_criar_captura_erro_do_install(monkeypatch, tmp_path):
     assert "erro do proot-distro" in msg
 
 
+class _Proc:
+    def __init__(self, rc=0, out="", err=""):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+
+
 def test_worker_deletar_para_e_remove_conf(monkeypatch, tmp_path):
     comandos = []
 
     def fake_run(cmd, **kw):
         comandos.append(cmd)
-        return None
+        return _Proc()
 
     monkeypatch.setattr("subprocess.run", fake_run)
     monkeypatch.setenv("PREFIX", str(tmp_path))
@@ -298,9 +303,28 @@ def test_redimensionar_pty(monkeypatch):
     assert ioctls[0][2] == struct.pack("HHHH", 30, 120, 0, 0)
 
 
-def test_redimensionar_sem_sessao_nao_falha():
+def test_redimensionar_sem_sessao_abre_pty(monkeypatch):
+    """O resize enviado ao abrir a tela do terminal já inicia a sessão."""
+    monkeypatch.setattr("pty.fork", lambda: (1234, 9))
+    monkeypatch.setattr(threading.Thread, "start", lambda self: None)
+    ioctls = []
+    monkeypatch.setattr("fcntl.ioctl", lambda fd, req, arg: ioctls.append(fd))
+
     agente = NodeAgent()
-    agente.terminal.redimensionar("w1", 80, 24)  # não deve levantar
+    agente.terminal.redimensionar("w1", 80, 24)
+
+    assert agente.terminal.ativos["w1"] == (9, 1234)
+    assert ioctls == [9]
+
+
+def test_redimensionar_alias_invalido_nao_abre_pty(monkeypatch):
+    def nao_chamar():
+        raise AssertionError("não deveria abrir PTY")
+
+    monkeypatch.setattr("pty.fork", nao_chamar)
+    agente = NodeAgent()
+    agente.terminal.redimensionar("../x", 80, 24)
+    assert agente.terminal.ativos == {}
 
 
 # ---------- SystemMonitor (CPU / memória) ----------
@@ -333,6 +357,8 @@ def test_system_monitor_amostra_cpu_e_mem(monkeypatch, tmp_path):
 def test_system_monitor_sem_arquivos_nao_falha(monkeypatch, tmp_path):
     monkeypatch.setattr(sysinfo, "STAT_FILE", str(tmp_path / "nao_existe"))
     monkeypatch.setattr(sysinfo, "MEMINFO_FILE", str(tmp_path / "nao_existe"))
+    # isola do ambiente: no Android o top real responderia (fallback)
+    monkeypatch.setattr(sysinfo, "_cpu_via_top", lambda: None)
 
     mon = SystemMonitor()
     mon._prev_cpu = (100, 90)
@@ -376,6 +402,19 @@ def test_cpu_via_top_fallback(monkeypatch):
     monkeypatch.setattr("subprocess.run", lambda *a, **k: ProcFake())
     # (800 - 700) / 800 = 12.5%
     assert sysinfo._cpu_via_top() == 12.5
+
+
+def test_cpu_via_top_sem_dados_retorna_none(monkeypatch):
+    """Android 16: top sem acesso a /proc/stat mostra tudo zerado e 100% ocioso."""
+    class ProcFake:
+        returncode = 0
+        stdout = (
+            "Tasks: 9 total,   1 running\n"
+            "800%cpu   0%user   0%nice   0%sys 800%idle   0%iow   0%irq   0%sirq   0%host\n"
+        )
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: ProcFake())
+    assert sysinfo._cpu_via_top() is None
 
 
 def test_cpu_via_top_falha_retorna_none(monkeypatch):
@@ -665,7 +704,7 @@ def test_worker_criar_rejeita_imagem_nao_permitida(monkeypatch, tmp_path):
 
 def test_worker_deletar_usa_conf_do_supervisor(monkeypatch, tmp_path):
     comandos = []
-    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: comandos.append(cmd))
+    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: (comandos.append(cmd), _Proc())[1])
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
     WorkerManager.deletar("w1")
@@ -742,3 +781,48 @@ def test_finalizar_sessao_forca_kill_se_processo_nao_sai(monkeypatch):
 
     assert sinais == [signal.SIGKILL]
     assert chamadas_wait[-1] == 0  # recolhe de forma bloqueante após o SIGKILL
+
+
+def _container_existente(tmp_path, alias="w1"):
+    (tmp_path / "var/lib/proot-distro/containers" / alias).mkdir(parents=True)
+
+
+def test_deletar_encerra_sessoes_e_retenta_remove(monkeypatch, tmp_path):
+    """O remove falha enquanto uma sessão segura o lock; o agente tenta de novo."""
+    _container_existente(tmp_path)
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    comandos, removes = [], []
+
+    def fake_run(cmd, **kw):
+        comandos.append(cmd)
+        if cmd[:2] == ["proot-distro", "remove"]:
+            removes.append(cmd)
+            if len(removes) == 1:
+                return _Proc(1, err="\x1b[31mcontainer is locked\x1b[0m")
+        return _Proc()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    ok, msg = WorkerManager.deletar("w1")
+
+    assert ok is True
+    assert len(removes) == 2
+    kill = comandos.index(["proot-distro", "kill", "w1"])
+    assert kill < comandos.index(removes[0])  # sessões encerradas antes do remove
+
+
+def test_deletar_reporta_erro_real_do_remove(monkeypatch, tmp_path):
+    _container_existente(tmp_path)
+    monkeypatch.setenv("PREFIX", str(tmp_path))
+    monkeypatch.setattr("time.sleep", lambda s: None)
+
+    def fake_run(cmd, **kw):
+        if cmd[:2] == ["proot-distro", "remove"]:
+            return _Proc(1, err="\x1b[31mError: container is in use\x1b[0m")
+        return _Proc()
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    ok, msg = WorkerManager.deletar("w1")
+
+    assert ok is False
+    assert "container is in use" in msg and "\x1b" not in msg
