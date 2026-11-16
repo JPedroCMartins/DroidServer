@@ -149,8 +149,8 @@ Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatu
 |---|---|---|
 | 4.1 | ✅ *Feito em 16/11:* "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados" (capa, folha de rosto, vault, README; termo definido na seção 1.1) | — |
 | 4.2 | Escrever o capítulo 9.5 (Resultados) com tabelas e gráficos da Fase 3 | 1 dia |
-| 4.3 | Preencher o Resumo/Abstract (nota 00) com os números reais | 1 h |
-| 4.4 | Conclusão: responder às QP1–QP3 e dizer se a hipótese H1 foi confirmada | 3 h |
+| 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (226/216 palavras); falta o valor da E7 | 1 h |
+| 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; falta fechar com a E7 | 3 h |
 | 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) | 4 h |
 | 4.6 | Capturas de tela para a seção 8.8 (Dashboard, Node, terminal, CPU por Worker) | 30 min |
 | 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final | 4 h |

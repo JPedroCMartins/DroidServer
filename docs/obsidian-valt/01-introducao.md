@@ -32,4 +32,4 @@ O trabalho **não** abrangerá:
 
 ## 1.3 Organização do Trabalho
 
-Além desta introdução, o Capítulo 2 apresenta o problema de pesquisa e a hipótese; o Capítulo 3, os objetivos; o Capítulo 4, a justificativa. O Capítulo 5 reúne o referencial teórico e o Capítulo 6, os trabalhos relacionados. O Capítulo 7 descreve a metodologia; o Capítulo 8, a arquitetura e a implementação do protótipo; e o Capítulo 9, o protocolo de avaliação e os resultados. O Capítulo 10 discute limitações, ameaças à validade e trabalhos futuros.
+Além desta introdução, o Capítulo 2 apresenta o problema de pesquisa e a hipótese; o Capítulo 3, os objetivos; o Capítulo 4, a justificativa. O Capítulo 5 reúne o referencial teórico e o Capítulo 6, os trabalhos relacionados. O Capítulo 7 descreve a metodologia; o Capítulo 8, a arquitetura e a implementação do protótipo; e o Capítulo 9, o protocolo de avaliação e os resultados. O Capítulo 10 discute limitações, ameaças à validade e trabalhos futuros, e o Capítulo 11 apresenta as conclusões.

@@ -52,7 +52,8 @@ const META = {
 const ARQUIVOS = [
   "00-resumo.md", "01-introducao.md", "02-problema-de-pesquisa.md", "03-objetivos.md", "04-justificativa.md",
   "05-referencial-teorico.md", "06-trabalhos-relacionados.md", "07-metodologia.md", "08-prototipacao.md",
-  "09-avaliacao-experimental.md", "10-limitacoes-e-trabalhos-futuros.md", "12-referencias.md", "11-glossario.md",
+  "09-avaliacao-experimental.md", "10-limitacoes-e-trabalhos-futuros.md", "11-conclusao.md", "12-referencias.md",
+  "13-glossario.md",
 ];
 
 // ---------------------------------------------------------------------------

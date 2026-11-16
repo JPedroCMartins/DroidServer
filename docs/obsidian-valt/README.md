@@ -24,7 +24,7 @@ Manaus - AM, 2026
 
 ## Sumário
 
-0. [Resumo / Abstract](00-resumo.md) *(rascunho — depende dos resultados)*
+0. [Resumo / Abstract](00-resumo.md) *(preenchido; falta a E7)*
 1. [Introdução](01-introducao.md)
    - 1.1 Contextualização
    - 1.2 Limites do Trabalho (Escopo e Delimitação)
@@ -56,8 +56,13 @@ Manaus - AM, 2026
 8. [Prototipação e Implementação](08-prototipacao.md)
 9. [Protocolo de Avaliação Experimental](09-avaliacao-experimental.md)
 10. [Limitações, Ameaças à Validade e Trabalhos Futuros](10-limitacoes-e-trabalhos-futuros.md)
-11. [Glossário](11-glossario.md)
+11. [Conclusão](11-conclusao.md)
+    - 11.1 Respostas às questões de pesquisa
+    - 11.2 Hipótese
+    - 11.3 Contribuições
+    - 11.4 Considerações finais
 12. [Referências](12-referencias.md)
+13. [Glossário](13-glossario.md)
 
 ---
 
@@ -74,12 +79,13 @@ Manaus - AM, 2026
 
 | Nota | Situação |
 |---|---|
-| 00 Resumo | Rascunho com lacunas `[RESULTADO]` |
+| 00 Resumo | Preenchido com os resultados; falta a E7 |
 | 01–05 | Revisadas e ampliadas |
 | 06 Trabalhos relacionados | Nova |
 | 07 Metodologia | Revisada (antiga 06) |
 | 08 Prototipação | Ampliada com a implementação real |
-| 09 Avaliação | Nova — protocolo a executar |
+| 09 Avaliação | Executada em 16/11 (E7 em andamento) |
 | 10 Limitações | Nova |
-| 11 Glossário | Nova |
+| 11 Conclusão | Nova (16/11); falta a E7 |
+| 13 Glossário | Nova (era a 11) |
 | 12 Referências | Ampliada (antiga 08) |
