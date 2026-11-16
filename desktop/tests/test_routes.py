@@ -23,8 +23,10 @@ def app_instance():
 @pytest.fixture
 def client(app_instance):
     _routes().nodes_conectados.clear()
+    _routes().historico.clear()
     yield app_instance.test_client()
     _routes().nodes_conectados.clear()
+    _routes().historico.clear()
 
 
 @pytest.fixture
@@ -388,3 +390,27 @@ def test_resultados_reenviados_nao_duplicam_e_tem_limite(client):
             {"acao": "deletar_worker", "alias": f"w{i}", "ok": True, "msg": "ok", "ts": f"12:01:{i:02d}"}]})
     res = client.get("/api/node/10.0.0.5").get_json()["resultados"]
     assert len(res) == 20 and res[-1]["alias"] == "w29"
+
+
+# ---------- Histórico para o gráfico ----------
+
+def test_historico_acumula_cpu_e_ram_por_sync(client):
+    for cpu, ram in ((1.0, 50.0), (25.0, 55.5), (None, 60.0)):
+        client.post("/api/node_sync", json={"ip": "10.0.0.5", "cpu_termux": cpu, "mem": {"percent": ram}})
+    resp = client.get("/api/node/10.0.0.5/historico")
+    assert resp.status_code == 200
+    amostras = resp.get_json()["amostras"]
+    assert [(a["cpu"], a["ram"]) for a in amostras] == [(1.0, 50.0), (25.0, 55.5), (None, 60.0)]
+    assert amostras[0]["t"] <= amostras[-1]["t"]
+    # o histórico não vai junto na listagem geral
+    assert "historico" not in client.get("/api/nodes").get_json()["10.0.0.5"]
+
+
+def test_historico_tem_limite_e_404(client, monkeypatch):
+    monkeypatch.setattr(_routes(), "MAX_HISTORICO", 5)
+    _routes().historico.clear()
+    for i in range(12):
+        client.post("/api/node_sync", json={"ip": "10.0.0.5", "cpu_termux": float(i), "mem": {"percent": 1.0}})
+    amostras = client.get("/api/node/10.0.0.5/historico").get_json()["amostras"]
+    assert [a["cpu"] for a in amostras] == [7.0, 8.0, 9.0, 10.0, 11.0]
+    assert client.get("/api/node/10.0.0.99/historico").status_code == 404

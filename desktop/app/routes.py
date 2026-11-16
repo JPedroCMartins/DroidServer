@@ -1,6 +1,8 @@
 import logging
 import os
 import re
+import time
+from collections import deque
 from datetime import datetime, timedelta
 
 from flask import current_app as app
@@ -10,12 +12,18 @@ from . import socketio
 logger = logging.getLogger("droidserver.routes")
 
 nodes_conectados = {}
+# Série temporal de CPU/RAM por node, para o gráfico do painel. Fica fora de
+# nodes_conectados para não ir junto em toda chamada de /api/nodes.
+historico = {}
 
 # Segundos sem contato antes de um node ser marcado como Offline.
 # O agente sincroniza a cada 10s, então 25s é tolerante a falhas pontuais.
 STALE_TIMEOUT = 25
 # Segundos offline sem tarefas pendentes antes do node ser removido do painel.
 PRUNE_TIMEOUT = 180
+# Amostras de CPU/RAM guardadas por node: 180 syncs de 10 s = 30 minutos.
+MAX_HISTORICO = 180
+
 # Quantos resultados de operações (✓/✗) o painel guarda por node.
 MAX_RESULTADOS = 20
 
@@ -52,6 +60,7 @@ def _prune_nodes():
         sem_tarefas = not node.get("tarefas_pendentes")
         if offline_muito and sem_tarefas:
             del nodes_conectados[ip]
+            historico.pop(ip, None)
             logger.info("Node %s removido do painel (offline há %ds)", ip, int((agora - ultimo).total_seconds()))
 
 
@@ -73,6 +82,17 @@ def _acumular_resultados(anteriores, novos):
             vistos.add(chave)
             lista.append(r)
     return lista[-MAX_RESULTADOS:]
+
+
+def _registrar_amostra(ip, dados):
+    """Guarda CPU do DroidServer e RAM do sync no histórico do node."""
+    mem = dados.get("mem") or {}
+    serie = historico.setdefault(ip, deque(maxlen=MAX_HISTORICO))
+    serie.append({
+        "t": round(time.time(), 1),
+        "cpu": dados.get("cpu_termux"),
+        "ram": mem.get("percent") if isinstance(mem, dict) else None,
+    })
 
 
 def _estado_publico(ip, node):
@@ -170,6 +190,15 @@ def api_node(ip):
     return jsonify(_estado_publico(ip, nodes_conectados[ip]))
 
 
+@app.route('/api/node/<ip>/historico', methods=['GET'])
+def api_node_historico(ip):
+    """Série de CPU (DroidServer) e RAM do node: [{t, cpu, ram}], mais antiga primeiro."""
+    _prune_nodes()
+    if ip not in nodes_conectados:
+        return jsonify({"erro": "Node não encontrado"}), 404
+    return jsonify({"intervalo_s": 10, "amostras": list(historico.get(ip, []))})
+
+
 @app.route('/api/node_sync', methods=['POST'])
 def node_sync():
     dados = request.get_json()
@@ -211,6 +240,8 @@ def node_sync():
         nodes_conectados[ip_node]["cpu_termux"] = dados.get("cpu_termux")
         nodes_conectados[ip_node]["cpu_workers"] = dados.get("cpu_workers", {})
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
+
+    _registrar_amostra(ip_node, dados)
 
     # Notifica os painéis abertos para atualizarem sem precisar recarregar a página
     socketio.emit('node_updated', {'ip': ip_node})

@@ -164,6 +164,8 @@
             back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
             plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
             chevron: '<path d="m5 8 6 6 6-6"/>',
+            arrowRight: '<path d="m9 6 6 6-6 6"/>',
+            close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
             terminal: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m7 15 5-5 5 5"/>',
             trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
             copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
@@ -214,6 +216,135 @@
         // =====================================================================
         const socket = io();
         let cleanup = () => { };
+
+        // =====================================================================
+        // Gráfico de uso (CPU DroidServer + RAM) — SVG puro, sem biblioteca.
+        // Paleta validada (dataviz) contra o fundo #111c33: todas as checagens ok.
+        // =====================================================================
+        const SERIES = [
+            { chave: 'cpu', nome: 'CPU DroidServer', cor: '#6366f1' },
+            { chave: 'ram', nome: 'RAM', cor: '#0b9fb3' },
+        ];
+        const JANELA_S = 600; // últimos 10 minutos
+        const graficosAbertos = new Set(); // IPs com o card de gráfico aberto
+        const ultimoHistorico = new Map();  // última série recebida, para redesenhar sem piscar
+        const idDoIp = (ip) => 'g-' + String(ip).replace(/[^A-Za-z0-9]/g, '-');
+
+        function cardGrafico(ip) {
+            const id = idDoIp(ip);
+            const legenda = SERIES.map(s => `
+                <span class="flex items-center gap-1.5 text-[11.5px] text-muted">
+                    <span class="inline-block w-3 h-[3px] rounded-full" style="background:${s.cor}"></span>${s.nome}
+                </span>`).join('');
+            return `
+            <article class="card relative p-5 flex flex-col gap-3" id="${id}" aria-label="Uso em tempo real do node ${esc(ip)}">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-[14px] font-bold">Uso em tempo real</h3>
+                        <p class="text-[11.5px] text-muted mt-0.5">${esc(ip)} · últimos 10 min · % do aparelho</p>
+                    </div>
+                    <button type="button" class="btn btn-ghost !px-2 !py-1.5" data-grafico="${esc(ip)}" aria-label="Fechar gráfico">${svg(ICON.close)}</button>
+                </div>
+                <div class="flex gap-4">${legenda}</div>
+                <div class="relative" data-area>
+                    <div class="h-[150px] grid place-items-center text-[12px] text-muted">Carregando…</div>
+                </div>
+            </article>`;
+        }
+
+        function desenharGrafico(ip, amostras) {
+            const area = document.querySelector(`#${idDoIp(ip)} [data-area]`);
+            if (!area) return;
+            const pts = (amostras || []).filter(a => a && typeof a.t === 'number');
+            if (pts.length < 2) {
+                area.innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted text-center px-4">Aguardando amostras — o node envia uma a cada 10 s.</div>';
+                return;
+            }
+            const W = 320, H = 150, L = 34, R = 58, T = 8, B = 20;
+            const tMax = pts[pts.length - 1].t, tMin = tMax - JANELA_S;
+            const vis = pts.filter(a => a.t >= tMin);
+            const x = (t) => L + (t - tMin) / JANELA_S * (W - L - R);
+            const y = (v) => T + (1 - Math.max(0, Math.min(100, v)) / 100) * (H - T - B);
+
+            // Linha de cada série; um valor nulo quebra a linha em vez de cair a zero
+            const caminho = (chave) => {
+                let d = '', caneta = false;
+                for (const a of vis) {
+                    const v = a[chave];
+                    if (v == null) { caneta = false; continue; }
+                    d += `${caneta ? 'L' : 'M'}${x(a.t).toFixed(1)},${y(v).toFixed(1)}`;
+                    caneta = true;
+                }
+                return d;
+            };
+            const grade = [0, 50, 100].map(v => `
+                <line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(148,163,184,.14)" stroke-width="1"/>
+                <text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="#8aa0bf">${v}%</text>`).join('');
+
+            // Rótulo direto do valor atual de cada série, afastados se colidirem
+            const ultimo = vis[vis.length - 1];
+            const rotulos = SERIES.filter(s => ultimo[s.chave] != null)
+                .map(s => ({ ...s, v: ultimo[s.chave], yy: y(ultimo[s.chave]) }))
+                .sort((a, b) => a.yy - b.yy);
+            for (let i = 1; i < rotulos.length; i++) {
+                if (rotulos[i].yy - rotulos[i - 1].yy < 13) rotulos[i].yy = rotulos[i - 1].yy + 13;
+            }
+            const marcas = rotulos.map(s => `
+                <circle cx="${x(ultimo.t)}" cy="${y(s.v)}" r="4" fill="${s.cor}" stroke="#111c33" stroke-width="2"/>
+                <text x="${x(ultimo.t) + 8}" y="${s.yy + 3.5}" font-size="11" font-weight="700" fill="#e2e8f0">${s.v}%</text>`).join('');
+
+            const resumo = SERIES.map(s => `${s.nome} ${ultimo[s.chave] ?? 'indisponível'}${ultimo[s.chave] != null ? '%' : ''}`).join(', ');
+            area.innerHTML = `
+                <svg viewBox="0 0 ${W} ${H}" class="w-full h-[150px] overflow-visible" role="img" aria-label="Últimos 10 minutos: ${esc(resumo)}">
+                    ${grade}
+                    <text x="${L}" y="${H - 4}" font-size="10" fill="#8aa0bf">−10 min</text>
+                    <text x="${W - R}" y="${H - 4}" font-size="10" fill="#8aa0bf" text-anchor="end">agora</text>
+                    ${SERIES.map(s => `<path d="${caminho(s.chave)}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
+                    ${marcas}
+                    <line data-mira x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#8aa0bf" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
+                    <rect data-alvo x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
+                </svg>
+                <div data-dica class="hidden absolute top-0 pointer-events-none px-2.5 py-1.5 rounded-lg border border-slate-400/20 bg-[#0d1730]/95 text-[11.5px] leading-snug shadow-card whitespace-nowrap"></div>
+                <details class="mt-1 text-[11.5px] text-muted">
+                    <summary class="cursor-pointer select-none">Ver como tabela</summary>
+                    <table class="mt-2 w-full text-left">
+                        <thead><tr><th class="font-semibold">Hora</th>${SERIES.map(s => `<th class="font-semibold">${s.nome}</th>`).join('')}</tr></thead>
+                        <tbody>${vis.slice(-6).reverse().map(a => `<tr><td>${new Date(a.t * 1000).toLocaleTimeString('pt-BR')}</td>${SERIES.map(s => `<td>${a[s.chave] ?? '—'}${a[s.chave] != null ? '%' : ''}</td>`).join('')}</tr>`).join('')}</tbody>
+                    </table>
+                </details>`;
+
+            // Mira + dica: amostra mais próxima do ponteiro
+            const svgEl = area.querySelector('svg'), alvo = area.querySelector('[data-alvo]');
+            const mira = area.querySelector('[data-mira]'), dica = area.querySelector('[data-dica]');
+            const mover = (ev) => {
+                const r = svgEl.getBoundingClientRect();
+                const px = (ev.clientX - r.left) / r.width * W;
+                const t = tMin + (px - L) / (W - L - R) * JANELA_S;
+                let a = vis[0];
+                for (const p of vis) if (Math.abs(p.t - t) < Math.abs(a.t - t)) a = p;
+                const ax = x(a.t);
+                mira.setAttribute('x1', ax); mira.setAttribute('x2', ax); mira.setAttribute('visibility', 'visible');
+                dica.innerHTML = `<div class="text-muted mb-0.5">${new Date(a.t * 1000).toLocaleTimeString('pt-BR')}</div>` +
+                    SERIES.map(s => `<div class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${s.cor}"></span><span class="text-slate-200">${s.nome}: <strong>${a[s.chave] ?? '—'}${a[s.chave] != null ? '%' : ''}</strong></span></div>`).join('');
+                dica.classList.remove('hidden');
+                const left = ax / W * r.width;
+                dica.style.left = Math.min(Math.max(left - dica.offsetWidth / 2, 0), r.width - dica.offsetWidth) + 'px';
+            };
+            alvo.addEventListener('mousemove', mover);
+            alvo.addEventListener('mouseleave', () => { mira.setAttribute('visibility', 'hidden'); dica.classList.add('hidden'); });
+        }
+
+        async function atualizarGraficos() {
+            for (const ip of graficosAbertos) {
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}/historico`);
+                    if (!res.ok) continue;
+                    const amostras = (await res.json()).amostras;
+                    ultimoHistorico.set(ip, amostras);
+                    desenharGrafico(ip, amostras);
+                } catch (e) { /* falha momentânea de rede */ }
+            }
+        }
 
         // =====================================================================
         // Roteador (mesmas rotas do routes.py, via History API)
@@ -344,6 +475,11 @@
                     <div class="flex flex-wrap gap-2 min-h-6 items-center">${chips}</div>
                     <div class="flex gap-2.5 mt-auto">
                         <a href="/node/${esc(ip)}" data-link class="btn btn-primary">${svg(ICON.chevron)}Gerenciar Workers</a>
+                        <button type="button" data-grafico="${esc(ip)}" aria-expanded="${graficosAbertos.has(ip)}"
+                            title="${graficosAbertos.has(ip) ? 'Fechar' : 'Abrir'} o gráfico de CPU e RAM"
+                            class="btn btn-ghost !px-3 ml-auto ${graficosAbertos.has(ip) ? '!text-slate-200 !bg-accent/20' : ''}">
+                            ${svg(ICON.arrowRight, 'transition-transform ' + (graficosAbertos.has(ip) ? 'rotate-180' : ''))}
+                        </button>
                     </div>
                 </article>`;
             };
@@ -365,7 +501,12 @@
 
                 if (!entries.length) { grid.innerHTML = emptyState(); return; }
                 entries.sort((a, b) => isOnline(b[1]) - isOnline(a[1]));
-                grid.innerHTML = entries.map(([ip, info]) => nodeCard(ip, info)).join('');
+                // O card do gráfico entra logo depois do card do node: no grid ele fica ao lado
+                grid.innerHTML = entries.map(([ip, info]) =>
+                    nodeCard(ip, info) + (graficosAbertos.has(ip) ? cardGrafico(ip) : '')).join('');
+                // Redesenha na hora com a série já conhecida e depois busca a nova
+                for (const ip of graficosAbertos) if (ultimoHistorico.has(ip)) desenharGrafico(ip, ultimoHistorico.get(ip));
+                atualizarGraficos();
             }
 
             async function fetchNodes() {
@@ -378,6 +519,15 @@
             }
 
             $('btnRefresh').addEventListener('click', () => { grid.innerHTML = skeletons; fetchNodes(); });
+
+            // Seta do card do node: abre/fecha o gráfico ao lado
+            grid.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-grafico]');
+                if (!btn) return;
+                const ip = btn.dataset.grafico;
+                if (graficosAbertos.has(ip)) graficosAbertos.delete(ip); else graficosAbertos.add(ip);
+                fetchNodes();
+            });
 
             fetchNodes();
             const timer = setInterval(fetchNodes, 5000);
