@@ -2,8 +2,9 @@
 #
 # DroidServer — inicia o agente do node (android/node.py)
 #
-# Carrega as configurações salvas pelo setup.sh (IP/porta/token), garante que o
-# Supervisor esteja de pé e mantém o agente em execução (reinicia se cair).
+# Garante que o Supervisor esteja de pé e mantém o agente em execução (reinicia
+# se cair). O host é definido pelo painel (pareamento); a configuração antiga em
+# ~/.config/droidserver/env (DROID_HOST_IP), se existir, ainda é aceita.
 #
 # Uso:
 #   bash run.sh          # roda em primeiro plano (Ctrl+C encerra)
@@ -76,13 +77,14 @@ if [ -f "$ENV_FILE" ]; then
     . "$ENV_FILE"
 fi
 
-if [ -z "${DROID_HOST_IP:-}" ]; then
-    echo "[!] Configuração não encontrada. Rode primeiro: bash $DIR/setup.sh"
-    exit 1
+if [ -f "$CONF_DIR/pareamento.json" ]; then
+    DESTINO="host definido pelo painel (pareamento.json)"
+elif [ -n "${DROID_HOST_IP:-}" ]; then
+    DESTINO="host: ${DROID_HOST_IP}:${DROID_HOST_PORT:-5050} (configuração antiga)"
+    export DROID_HOST_IP DROID_HOST_PORT="${DROID_HOST_PORT:-5050}" DROID_TOKEN="${DROID_TOKEN:-}"
+else
+    DESTINO="aguardando pareamento — adicione este celular pelo painel"
 fi
-DROID_HOST_PORT="${DROID_HOST_PORT:-5050}"
-export DROID_HOST_IP DROID_HOST_PORT
-export DROID_TOKEN="${DROID_TOKEN:-}"
 
 if command -v python3 >/dev/null 2>&1; then PY=python3
 elif command -v python >/dev/null 2>&1; then PY=python
@@ -161,14 +163,14 @@ fi
 
 case "$MODO" in
     fg)
-        echo "[*] Iniciando Node Agent -> host: $DROID_HOST_IP:$DROID_HOST_PORT"
+        echo "[*] Iniciando Node Agent -> $DESTINO"
         echo "[*] Log do agente: $LOG_DIR/node.log"
         loop_agente
         ;;
     daemon)
         nohup bash "$DIR/run.sh" _loop >> "$LOG_DIR/agent.out" 2>&1 &
         sleep 1
-        echo "[+] Node Agent iniciado em segundo plano -> host: $DROID_HOST_IP:$DROID_HOST_PORT"
+        echo "[+] Node Agent iniciado em segundo plano -> $DESTINO"
         echo "    Acompanhar:  tail -f $LOG_DIR/node.log"
         echo "    Encerrar:    bash $DIR/run.sh stop"
         ;;

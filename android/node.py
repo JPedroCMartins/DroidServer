@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import pty
@@ -9,6 +10,7 @@ import socket
 import subprocess
 import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
 
 import requests
@@ -18,8 +20,14 @@ from sysinfo import ProcessCPUMonitor, SystemMonitor
 
 log = logging.getLogger("node")
 
-DEFAULT_HOST_IP = "192.168.1.10"
 DEFAULT_HOST_PORT = 5050
+# Porta em que o node se anuncia para a varredura do painel e recebe o pareamento.
+DESCOBERTA_PORTA = int(os.getenv("DROID_NODE_PORT", "5051"))
+# Onde o pareamento feito pelo painel é salvo (host, porta e token deste node).
+PAREAMENTO_ARQUIVO = os.getenv("DROID_PAREAMENTO_FILE") or os.path.join(
+    os.path.expanduser("~"), ".config", "droidserver", "pareamento.json")
+# Token gerado pelo host: hexadecimal, 32 a 128 caracteres.
+TOKEN_RE = re.compile(r"^[0-9a-f]{32,128}$")
 POLL_INTERVAL = 10
 # Distribuições do proot-distro aceitas pelo painel (deve espelhar o host).
 # Alpine é a recomendada (rootfs pequeno, instala em segundos); Debian é a
@@ -75,20 +83,170 @@ def _configurar_logging():
     return log_file
 
 
-class Config:
-    """Configurações de conexão do agente, lidas de variáveis de ambiente.
+def ler_pareamento(arquivo=None):
+    """Lê o pareamento salvo. Devolve {host_ip, host_port, token} ou None."""
+    try:
+        with open(arquivo or PAREAMENTO_ARQUIVO) as f:
+            dados = json.load(f)
+        if dados.get("host_ip") and TOKEN_RE.fullmatch(dados.get("token", "")):
+            return dados
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
 
-    DROID_HOST_IP   -> IP do servidor host
-    DROID_HOST_PORT -> porta do servidor host
-    DROID_TOKEN     -> token opcional, exigido pelo host se DROID_API_TOKEN estiver definido
+
+def salvar_pareamento(dados, arquivo=None):
+    arquivo = arquivo or PAREAMENTO_ARQUIVO
+    os.makedirs(os.path.dirname(arquivo), exist_ok=True)
+    tmp = arquivo + ".tmp"
+    with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump(dados, f)
+    os.replace(tmp, arquivo)  # o token só fica legível pelo usuário do Termux
+
+
+class Config:
+    """Para qual host o agente sincroniza.
+
+    Ordem de prioridade:
+    1. argumentos explícitos (testes);
+    2. o pareamento feito pelo painel (pareamento.json);
+    3. variáveis de ambiente DROID_HOST_IP / DROID_HOST_PORT / DROID_TOKEN
+       (modo antigo, configurado à mão).
+    Sem nenhum deles, o node fica "não pareado" e só aguarda o painel.
     """
 
-    def __init__(self, host_ip=None, port=None, token=None):
-        self.host_ip = host_ip or os.getenv("DROID_HOST_IP", DEFAULT_HOST_IP)
-        self.port = int(port or os.getenv("DROID_HOST_PORT", DEFAULT_HOST_PORT))
-        self.token = token if token is not None else os.getenv("DROID_TOKEN", "")
+    def __init__(self, host_ip=None, port=None, token=None, arquivo_pareamento=None, usar_env=True):
+        par = None if host_ip else ler_pareamento(arquivo_pareamento)
+        # origem: "pareamento" (feito pelo painel), "env" (modo antigo) ou "manual"
+        if par:
+            self.origem = "pareamento"
+            self.host_ip = par["host_ip"]
+            self.port = int(par.get("host_port") or DEFAULT_HOST_PORT)
+            self.token = par["token"]
+        else:
+            self.origem = "manual" if host_ip else "env"
+            self.host_ip = host_ip or (os.getenv("DROID_HOST_IP", "") if usar_env else "")
+            self.port = int(port or os.getenv("DROID_HOST_PORT", DEFAULT_HOST_PORT))
+            self.token = token if token is not None else os.getenv("DROID_TOKEN", "")
         self.http_url = f"http://{self.host_ip}:{self.port}/api/node_sync"
         self.ws_url = f"http://{self.host_ip}:{self.port}"
+
+    @property
+    def pareado(self):
+        return bool(self.host_ip)
+
+
+def _getprop(nome):
+    try:
+        return subprocess.run(["getprop", nome], capture_output=True, text=True, timeout=3).stdout.strip()
+    except Exception:
+        return ""
+
+
+class Descoberta:
+    """Respostas do node à varredura e ao pareamento feitos pelo painel.
+
+    A lógica fica aqui (testável sem rede); o servidor HTTP só a repassa.
+      GET  /droidserver -> identificação do node
+      POST /parear      -> {host_port, token}: o IP do host é o de quem pediu
+      POST /desparear   -> {token}: só o host pareado pode desfazer
+    Um node já pareado só aceita novo pareamento vindo do mesmo host, para
+    que outra máquina da rede não "sequestre" o node.
+    """
+
+    def __init__(self, agente):
+        self.agente = agente
+
+    def info(self):
+        cfg = self.agente.config
+        return 200, {
+            "droidserver": True,
+            "versao": 1,
+            "ip": self.agente.meu_ip,
+            "modelo": f"{_getprop('ro.product.manufacturer')} {_getprop('ro.product.model')}".strip() or socket.gethostname(),
+            "android": _getprop("ro.build.version.release"),
+            # Só conta como pareado o que foi feito por um painel; a configuração
+            # antiga por variável de ambiente não impede o pareamento.
+            "pareado": cfg.origem == "pareamento" and cfg.pareado,
+            "host": f"{cfg.host_ip}:{cfg.port}" if cfg.origem == "pareamento" and cfg.pareado else None,
+        }
+
+    def parear(self, ip_cliente, dados):
+        cfg = self.agente.config
+        # Só um pareamento feito pelo painel protege o node; a configuração
+        # antiga por variável de ambiente (sem token) pode ser substituída.
+        if cfg.origem == "pareamento" and cfg.host_ip != ip_cliente:
+            return 409, {"ok": False, "erro": f"Node já pareado com {cfg.host_ip}. Desfaça o pareamento por lá."}
+        token = str(dados.get("token", ""))
+        try:
+            porta = int(dados.get("host_port", DEFAULT_HOST_PORT))
+        except (TypeError, ValueError):
+            porta = 0
+        if not TOKEN_RE.fullmatch(token) or not 1 <= porta <= 65535:
+            return 400, {"ok": False, "erro": "Token ou porta inválidos."}
+        salvar_pareamento({"host_ip": ip_cliente, "host_port": porta, "token": token,
+                           "pareado_em": time.strftime("%Y-%m-%d %H:%M:%S")})
+        self.agente.recarregar_config()
+        log.info("[+] Pareado com o host %s:%s pelo painel.", ip_cliente, porta)
+        return 200, {"ok": True, "ip": self.agente.meu_ip}
+
+    def desparear(self, ip_cliente, dados):
+        cfg = self.agente.config
+        if not cfg.pareado:
+            return 200, {"ok": True}
+        if ip_cliente != cfg.host_ip or str(dados.get("token", "")) != cfg.token:
+            return 403, {"ok": False, "erro": "Só o host pareado pode desfazer o pareamento."}
+        try:
+            os.remove(PAREAMENTO_ARQUIVO)
+        except OSError:
+            pass
+        self.agente.recarregar_config(sem_host=True)
+        log.info("[*] Pareamento desfeito pelo host %s.", ip_cliente)
+        return 200, {"ok": True}
+
+
+def iniciar_servidor_descoberta(descoberta, porta=None):
+    """Sobe o servidor HTTP de descoberta numa thread daemon."""
+    class Handler(BaseHTTPRequestHandler):
+        def _responder(self, status, corpo):
+            dados = json.dumps(corpo).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(dados)))
+            self.end_headers()
+            self.wfile.write(dados)
+
+        def do_GET(self):
+            if self.path.rstrip("/") == "/droidserver":
+                self._responder(*descoberta.info())
+            else:
+                self._responder(404, {"erro": "não encontrado"})
+
+        def do_POST(self):
+            try:
+                tamanho = min(int(self.headers.get("Content-Length", 0)), 4096)
+                dados = json.loads(self.rfile.read(tamanho) or b"{}")
+                if not isinstance(dados, dict):
+                    raise ValueError
+            except ValueError:
+                return self._responder(400, {"ok": False, "erro": "JSON inválido"})
+            rota = self.path.rstrip("/")
+            if rota == "/parear":
+                self._responder(*descoberta.parear(self.client_address[0], dados))
+            elif rota == "/desparear":
+                self._responder(*descoberta.desparear(self.client_address[0], dados))
+            else:
+                self._responder(404, {"erro": "não encontrado"})
+
+        def log_message(self, fmt, *args):
+            log.debug("descoberta %s - %s", self.address_string(), fmt % args)
+
+    # porta=0 pede ao sistema uma porta livre (usado nos testes)
+    servidor = ThreadingHTTPServer(("0.0.0.0", DESCOBERTA_PORTA if porta is None else porta), Handler)
+    servidor.daemon_threads = True
+    threading.Thread(target=servidor.serve_forever, daemon=True).start()
+    log.info("[*] Aguardando o painel na porta %d (descoberta e pareamento).", servidor.server_address[1])
+    return servidor
 
 
 class WorkerManager:
@@ -616,6 +774,20 @@ class NodeAgent:
                     return
                 self.terminal.redimensionar(alias, dados.get('cols'), dados.get('rows'))
 
+    def recarregar_config(self, sem_host=False):
+        """Relê o pareamento (chamado quando o painel pareia ou despareia).
+
+        Depois de um despareamento, as variáveis DROID_HOST_IP do modo antigo
+        são ignoradas: o node fica aguardando o painel.
+        """
+        self.config = Config(usar_env=not sem_host)
+        # Força o WebSocket a reconectar no host novo no próximo ciclo
+        if self.sio.connected:
+            try:
+                self.sio.disconnect()
+            except Exception:
+                pass
+
     def _conectar_ws(self):
         """Mantém a conexão WebSocket ativa; não bloqueia se já estiver conectado.
 
@@ -624,6 +796,8 @@ class NodeAgent:
         """
         if self.sio.connected:
             return True
+        if not self.config.pareado:
+            return False
         try:
             self.sio.connect(self.config.ws_url)
             return True
@@ -667,7 +841,11 @@ class NodeAgent:
                          payload.get("cpu"), payload.get("cpu_termux"), mem_pct,
                          payload.get("cpu_workers"), len(tarefas))
                 return tarefas
-            log.warning("[-] Host respondeu com status %s.", resposta.status_code)
+            if resposta.status_code == 401:
+                log.warning("[-] O host %s não reconhece este node (token inválido ou node removido). "
+                            "Adicione-o de novo pelo painel.", self.config.host_ip)
+            else:
+                log.warning("[-] Host respondeu com status %s.", resposta.status_code)
         except requests.exceptions.RequestException as e:
             log.warning("[-] Erro ao sincronizar com o host: %s", e)
         return []
@@ -736,9 +914,18 @@ class NodeAgent:
 
     def _loop(self):
         """Loop principal de Polling e manutenção da conexão WebSockets."""
-        log.info("[*] Node Agent iniciado. IP: %s | Host: %s", self.meu_ip, self.config.http_url)
+        log.info("[*] Node Agent iniciado. IP: %s | Host: %s", self.meu_ip,
+                 self.config.http_url if self.config.pareado else "nenhum (aguardando pareamento)")
 
+        avisou = False
         while True:
+            if not self.config.pareado:
+                if not avisou:
+                    log.info("[*] Node não pareado. Adicione o IP %s pelo painel do DroidServer.", self.meu_ip)
+                    avisou = True
+                time.sleep(POLL_INTERVAL)
+                continue
+            avisou = False
             self._conectar_ws()
             tarefas = self._poll_once()
             for tarefa in tarefas:
@@ -747,6 +934,10 @@ class NodeAgent:
             time.sleep(POLL_INTERVAL)
 
     def iniciar(self):
+        try:
+            self.servidor_descoberta = iniciar_servidor_descoberta(Descoberta(self))
+        except OSError as e:
+            log.error("[-] Não foi possível abrir a porta %d de descoberta: %s", DESCOBERTA_PORTA, e)
         self._loop()
 
 

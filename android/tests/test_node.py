@@ -8,8 +8,19 @@ import requests
 from requests.exceptions import ConnectionError
 
 from node import Config, NodeAgent, TerminalManager, WorkerManager
+import node
 import sysinfo
 from sysinfo import SystemMonitor
+
+
+@pytest.fixture(autouse=True)
+def _pareamento_isolado(monkeypatch, tmp_path_factory):
+    """Nenhum teste lê ou grava o pareamento real (~/.config/droidserver)."""
+    arquivo = tmp_path_factory.mktemp("pareamento") / "pareamento.json"
+    monkeypatch.setattr(node, "PAREAMENTO_ARQUIVO", str(arquivo))
+    for nome in ("DROID_HOST_IP", "DROID_HOST_PORT", "DROID_TOKEN"):
+        monkeypatch.delenv(nome, raising=False)
+    return arquivo
 
 
 # ---------- Config ----------
@@ -33,7 +44,8 @@ def test_config_usa_padroes(monkeypatch):
     monkeypatch.delenv("DROID_TOKEN", raising=False)
 
     c = Config()
-    assert c.host_ip == "192.168.1.10"
+    assert c.host_ip == ""          # sem pareamento e sem env: aguarda o painel
+    assert c.pareado is False
     assert c.port == 5050
     assert c.token == ""
 
@@ -638,6 +650,7 @@ def test_executar_tarefa_desconhecida_nao_falha():
 
 def test_conectar_ws_retenta_apos_falha(monkeypatch):
     agente = NodeAgent()
+    agente.config = Config(host_ip="10.0.0.1")
     agente.sio.connected = False
 
     tentativas = [Exception("boom")]
@@ -944,3 +957,117 @@ def test_criar_rejeita_archlinux(monkeypatch, tmp_path):
     monkeypatch.setenv("PREFIX", str(tmp_path))
     ok, msg = WorkerManager.criar("w1", "archlinux")
     assert ok is False and "não suportada" in msg
+
+
+# ---------- Pareamento pelo painel ----------
+
+TOKEN = "ab" * 24
+
+
+def test_config_prefere_pareamento_ao_env(monkeypatch, _pareamento_isolado):
+    monkeypatch.setenv("DROID_HOST_IP", "10.9.9.9")
+    node.salvar_pareamento({"host_ip": "192.168.1.10", "host_port": 5050, "token": TOKEN})
+    c = Config()
+    assert (c.host_ip, c.port, c.token) == ("192.168.1.10", 5050, TOKEN)
+    assert oct(os.stat(_pareamento_isolado).st_mode & 0o777) == "0o600"
+
+
+def test_descoberta_info_identifica_o_node(monkeypatch):
+    monkeypatch.setattr(node, "_getprop", lambda nome: {"ro.product.manufacturer": "Xiaomi",
+                                                       "ro.product.model": "2311DRK48G",
+                                                       "ro.build.version.release": "16"}[nome])
+    agente = NodeAgent()
+    status, corpo = node.Descoberta(agente).info()
+    assert status == 200 and corpo["droidserver"] is True
+    assert corpo["modelo"] == "Xiaomi 2311DRK48G" and corpo["android"] == "16"
+    assert corpo["pareado"] is False and corpo["host"] is None
+
+
+def test_parear_usa_o_ip_de_quem_pediu_e_recarrega(monkeypatch):
+    agente = NodeAgent()
+    status, corpo = node.Descoberta(agente).parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
+    assert status == 200 and corpo["ok"] is True
+    assert agente.config.host_ip == "192.168.1.10" and agente.config.token == TOKEN
+    assert node.ler_pareamento()["host_ip"] == "192.168.1.10"
+
+
+def test_parear_recusa_outro_host_quando_ja_pareado():
+    agente = NodeAgent()
+    d = node.Descoberta(agente)
+    d.parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
+    status, corpo = d.parear("192.168.1.66", {"host_port": 5050, "token": "cd" * 24})
+    assert status == 409 and "192.168.1.10" in corpo["erro"]
+    assert agente.config.host_ip == "192.168.1.10"
+    # o mesmo host pode parear de novo (ex.: depois de remover e adicionar)
+    assert d.parear("192.168.1.10", {"host_port": 5050, "token": "cd" * 24})[0] == 200
+    assert agente.config.token == "cd" * 24
+
+
+@pytest.mark.parametrize("dados", [{"token": "curto"}, {"token": "zz" * 20}, {"token": TOKEN, "host_port": 0},
+                                   {"token": TOKEN, "host_port": "x"}])
+def test_parear_valida_token_e_porta(dados):
+    agente = NodeAgent()
+    assert node.Descoberta(agente).parear("192.168.1.10", dados)[0] == 400
+    assert agente.config.pareado is False
+
+
+def test_desparear_so_pelo_host_com_token_e_ignora_env(monkeypatch):
+    monkeypatch.setenv("DROID_HOST_IP", "10.9.9.9")  # modo antigo não pode "ressuscitar"
+    agente = NodeAgent()
+    d = node.Descoberta(agente)
+    d.parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
+
+    assert d.desparear("192.168.1.66", {"token": TOKEN})[0] == 403
+    assert d.desparear("192.168.1.10", {"token": "00" * 24})[0] == 403
+    assert d.desparear("192.168.1.10", {"token": TOKEN})[0] == 200
+    assert agente.config.pareado is False
+    assert node.ler_pareamento() is None
+
+
+def test_loop_nao_sincroniza_sem_pareamento(monkeypatch):
+    agente = NodeAgent()
+    chamadas = []
+    monkeypatch.setattr(agente, "_poll_once", lambda: chamadas.append(1) or [])
+
+    def parar(_):
+        raise SystemExit
+
+    monkeypatch.setattr(node.time, "sleep", parar)
+    with pytest.raises(SystemExit):
+        agente._loop()
+    assert chamadas == []
+
+
+def test_servidor_de_descoberta_responde_por_http(monkeypatch):
+    agente = NodeAgent()
+    monkeypatch.setattr(node, "_getprop", lambda nome: "")
+    servidor = node.iniciar_servidor_descoberta(node.Descoberta(agente), porta=0)
+    try:
+        url = f"http://127.0.0.1:{servidor.server_address[1]}"
+        assert requests.get(url + "/droidserver", timeout=3).json()["droidserver"] is True
+        r = requests.post(url + "/parear", json={"host_port": 5050, "token": TOKEN}, timeout=3)
+        assert r.status_code == 200 and agente.config.host_ip == "127.0.0.1"
+        assert requests.post(url + "/parear", data=b"[1,2]", timeout=3).status_code == 400
+    finally:
+        servidor.shutdown()
+
+
+def test_parear_substitui_configuracao_antiga_por_env(monkeypatch):
+    """Node configurado à mão (DROID_HOST_IP, sem token) aceita o pareamento do painel."""
+    monkeypatch.setenv("DROID_HOST_IP", "10.9.9.9")
+    agente = NodeAgent()
+    assert agente.config.origem == "env"
+    status, _ = node.Descoberta(agente).parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
+    assert status == 200
+    assert (agente.config.origem, agente.config.host_ip) == ("pareamento", "192.168.1.10")
+
+
+def test_info_nao_mostra_configuracao_antiga_como_pareada(monkeypatch):
+    monkeypatch.setenv("DROID_HOST_IP", "192.168.1.10")
+    monkeypatch.setattr(node, "_getprop", lambda nome: "")
+    agente = NodeAgent()
+    _, corpo = node.Descoberta(agente).info()
+    assert corpo["pareado"] is False and corpo["host"] is None
+    node.Descoberta(agente).parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
+    _, corpo = node.Descoberta(agente).info()
+    assert corpo["pareado"] is True and corpo["host"] == "192.168.1.10:5050"

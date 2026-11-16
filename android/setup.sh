@@ -11,7 +11,7 @@
 #   3. Instala o Supervisor (pip como fonte primária; pkg do Termux como fallback)
 #   4. Gera/ajusta o supervisord.conf e inicia o supervisord
 #   5. Instala as dependências Python do agente (python-socketio, requests)
-#   6. Salva a conexão com o host em ~/.config/droidserver/env e testa o contato
+#   6. Mostra o IP deste celular para adicioná-lo pelo painel (pareamento)
 #   7. (Opcional) instala um container Alpine de teste
 #   8. (Opcional) inicia o agente automaticamente ao ligar o celular (Termux:Boot)
 #
@@ -327,60 +327,21 @@ else
     warn "Se o erro citar psutil, instale com: pkg install python-psutil"
 fi
 
-# --- 6. conexão com o host ------------------------------------------------------------
+# --- 6. pareamento com o painel ----------------------------------------------------
+# O celular não precisa saber o IP do host: o painel encontra este node pela
+# varredura de rede (porta 5051 do agente) e envia o próprio endereço e um
+# token exclusivo ao adicioná-lo. Não há nada a configurar aqui.
 mkdir -p "$CONF_DIR"
-
-# Valores atuais (se já configurado) viram o padrão
-ATUAL_IP=""; ATUAL_PORT=""; ATUAL_TOKEN=""
-if [ -f "$ENV_FILE" ]; then
-    # shellcheck disable=SC1090
-    . "$ENV_FILE"
-    ATUAL_IP="${DROID_HOST_IP:-}"; ATUAL_PORT="${DROID_HOST_PORT:-}"; ATUAL_TOKEN="${DROID_TOKEN:-}"
-fi
-
-read -rp "IP do servidor host [${ATUAL_IP:-192.168.1.10}]: " HOST_IP
-HOST_IP="${HOST_IP:-${ATUAL_IP:-192.168.1.10}}"
-read -rp "Porta do host [${ATUAL_PORT:-5050}]: " HOST_PORT
-HOST_PORT="${HOST_PORT:-${ATUAL_PORT:-5050}}"
-if [ -n "$ATUAL_TOKEN" ]; then
-    read -rp "Token (Enter mantém o atual; '-' remove): " HOST_TOKEN
-    case "$HOST_TOKEN" in
-        "") HOST_TOKEN="$ATUAL_TOKEN" ;;
-        "-") HOST_TOKEN="" ;;
-    esac
+MEU_IP="$("$PY" -c 'import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    s.connect(("10.255.255.255", 1)); print(s.getsockname()[0])
+except OSError:
+    print("?")' 2>/dev/null)"
+if [ -f "$CONF_DIR/pareamento.json" ]; then
+    ok "Este node já está pareado com um painel (pareamento.json)."
 else
-    read -rp "Token (opcional; deixe vazio se o host não exigir): " HOST_TOKEN
-fi
-
-# Validação básica antes de gravar
-if ! [[ "$HOST_IP" =~ ^[A-Za-z0-9._-]+$ ]]; then
-    fail_exit "IP/host inválido: '$HOST_IP'"
-fi
-if ! [[ "$HOST_PORT" =~ ^[0-9]+$ ]] || [ "$HOST_PORT" -lt 1 ] || [ "$HOST_PORT" -gt 65535 ]; then
-    fail_exit "Porta inválida: '$HOST_PORT'"
-fi
-
-# printf %q escapa aspas, $ e espaços — o token pode ter qualquer caractere
-{
-    printf 'export DROID_HOST_IP=%q\n' "$HOST_IP"
-    printf 'export DROID_HOST_PORT=%q\n' "$HOST_PORT"
-    printf 'export DROID_TOKEN=%q\n' "$HOST_TOKEN"
-} > "$ENV_FILE"
-chmod 600 "$ENV_FILE"
-ok "Configuração salva em $ENV_FILE"
-
-# Testa o contato com o host (não aborta: o host pode ainda não estar no ar)
-info "Testando conexão com http://$HOST_IP:$HOST_PORT ..."
-if "$PY" - "$HOST_IP" "$HOST_PORT" <<'PY' 2>/dev/null
-import sys, requests
-r = requests.get(f"http://{sys.argv[1]}:{sys.argv[2]}/api/nodes", timeout=5)
-sys.exit(0 if r.status_code == 200 else 1)
-PY
-then
-    ok "Host respondeu."
-else
-    warn "Não consegui falar com o host. Verifique se ele está rodando, se o IP/porta estão"
-    warn "certos e se o celular está na mesma rede. A configuração foi salva mesmo assim."
+    info "Depois de iniciar o agente, abra o painel e use 'Adicionar node' (ou 'Varrer rede')."
+    info "IP deste celular: ${MEU_IP:-?} (o painel o encontra na porta 5051)."
 fi
 
 # --- 7. teste opcional do proot-distro ------------------------------------------------
@@ -419,13 +380,12 @@ esac
 echo
 ok "Instalação concluída!"
 echo
-echo "  Para iniciar o agente (registra este celular no dashboard do host):"
+echo "  Para iniciar o agente (depois adicione este celular pelo painel):"
 echo "      bash $SCRIPT_DIR/run.sh        # em primeiro plano"
 echo "      bash $SCRIPT_DIR/run.sh -d     # em segundo plano"
 echo "      bash $SCRIPT_DIR/run.sh stop   # encerrar"
 echo
-echo "  Painel do host:"
-echo "      http://$HOST_IP:$HOST_PORT"
+echo "  No painel do host: 'Adicionar node' -> IP ${MEU_IP:-deste celular} (ou 'Varrer rede')."
 echo
 echo "  Logs (para análise futura):"
 echo "      - Setup deste run:      $LOG_FILE"

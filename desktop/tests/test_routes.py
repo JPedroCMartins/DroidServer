@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import sys
@@ -17,16 +18,30 @@ def _routes():
 def app_instance():
     app = create_app()
     app.config["TESTING"] = True
+    # Os testes do protocolo de sync não passam pelo cadastro; os testes de
+    # pareamento ligam a exigência explicitamente (fixture "cadastro_on").
+    app.config["CADASTRO_OBRIGATORIO"] = False
     return app
 
 
 @pytest.fixture
-def client(app_instance):
-    _routes().nodes_conectados.clear()
-    _routes().historico.clear()
+def client(app_instance, monkeypatch, tmp_path):
+    r = _routes()
+    monkeypatch.setattr(r, "CADASTRO_ARQUIVO", str(tmp_path / "nodes.json"))
+    r.nodes_conectados.clear()
+    r.historico.clear()
+    r.cadastro.clear()
     yield app_instance.test_client()
-    _routes().nodes_conectados.clear()
-    _routes().historico.clear()
+    r.nodes_conectados.clear()
+    r.historico.clear()
+    r.cadastro.clear()
+
+
+@pytest.fixture
+def cadastro_on(app_instance):
+    app_instance.config["CADASTRO_OBRIGATORIO"] = True
+    yield
+    app_instance.config["CADASTRO_OBRIGATORIO"] = False
 
 
 @pytest.fixture
@@ -254,22 +269,6 @@ def test_node_volta_a_online_apos_novo_sync(client):
     assert nodes["10.0.0.5"]["status"] == "Online"
 
 
-def test_node_sync_sem_token_funciona(client):
-    os.environ.pop("DROID_API_TOKEN", None)
-    resp = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
-    assert resp.status_code == 200
-
-
-def test_node_sync_com_token_obrigatorio(client, monkeypatch):
-    monkeypatch.setenv("DROID_API_TOKEN", "segredo")
-
-    resp = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
-    assert resp.status_code == 401
-
-    resp2 = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": [], "token": "segredo"})
-    assert resp2.status_code == 200
-
-
 def test_terminal_input_repassa_evento(app_ctx):
     receiver = socketio.test_client(app_ctx)
     sender = socketio.test_client(app_ctx)
@@ -414,3 +413,135 @@ def test_historico_tem_limite_e_404(client, monkeypatch):
     amostras = client.get("/api/node/10.0.0.5/historico").get_json()["amostras"]
     assert [a["cpu"] for a in amostras] == [7.0, 8.0, 9.0, 10.0, 11.0]
     assert client.get("/api/node/10.0.0.99/historico").status_code == 404
+
+
+# ---------- Cadastro de nodes (pareamento pelo painel) ----------
+
+TOKEN = "ab" * 24
+
+
+def _cadastrar(ip="192.168.1.7", token=TOKEN):
+    _routes().cadastro[ip] = {"token": token, "modelo": "Xiaomi 2311DRK48G"}
+
+
+def test_sync_recusado_para_node_nao_cadastrado(client, cadastro_on):
+    resp = client.post("/api/node_sync", json={"ip": "192.168.1.7", "workers": []})
+    assert resp.status_code == 401
+    resp = client.post("/api/node_sync", json={"ip": "192.168.1.7", "token": TOKEN})
+    assert resp.status_code == 401
+    assert client.get("/api/nodes").get_json() == {}
+
+
+def test_sync_aceito_com_token_do_cadastro(client, cadastro_on):
+    _cadastrar()
+    assert client.post("/api/node_sync", json={"ip": "192.168.1.7", "token": "cd" * 24}).status_code == 401
+    assert client.post("/api/node_sync", json={"ip": "192.168.1.7", "token": TOKEN}).status_code == 200
+    node = client.get("/api/nodes").get_json()["192.168.1.7"]
+    assert node["status"] == "Online" and node["cadastrado"] is True and node["modelo"] == "Xiaomi 2311DRK48G"
+
+
+def test_node_que_muda_de_ip_e_reconhecido_pelo_token(client, cadastro_on):
+    """Reboot com DHCP: o celular volta com outro IP e o mesmo token."""
+    _cadastrar("192.168.1.7")
+    client.post("/api/node_sync", json={"ip": "192.168.1.7", "token": TOKEN, "cpu_termux": 1.0, "mem": {"percent": 50}})
+    client.post("/api/node_sync", json={"ip": "192.168.1.4", "token": TOKEN, "cpu_termux": 2.0, "mem": {"percent": 51}})
+
+    nodes = client.get("/api/nodes").get_json()
+    assert list(nodes) == ["192.168.1.4"]
+    assert list(_routes().cadastro) == ["192.168.1.4"]
+    amostras = client.get("/api/node/192.168.1.4/historico").get_json()["amostras"]
+    assert [a["cpu"] for a in amostras] == [1.0, 2.0]  # histórico acompanha
+    salvo = json.loads(open(_routes().CADASTRO_ARQUIVO).read())
+    assert list(salvo) == ["192.168.1.4"]
+
+
+def test_cadastrado_sem_contato_aparece_como_aguardando(client, cadastro_on):
+    _cadastrar()
+    node = client.get("/api/nodes").get_json()["192.168.1.7"]
+    assert node["status"] == "Aguardando" and node["aguardando"] is True
+    assert client.get("/api/node/192.168.1.7").status_code == 200
+
+
+def _node_falso(monkeypatch, parear=(200, {"ok": True}), responde=True):
+    """Simula o agente na porta de descoberta; registra as requisições."""
+    chamadas = []
+
+    def fake_http(metodo, url, dados=None, timeout=3.0):
+        chamadas.append((metodo, url, dados))
+        if url.endswith("/droidserver"):
+            if not responde:
+                return None, {"erro": "timeout"}
+            return 200, {"droidserver": True, "modelo": "Xiaomi 2311DRK48G", "android": "16", "pareado": False}
+        if url.endswith("/parear"):
+            return parear
+        if url.endswith("/desparear"):
+            return 200, {"ok": True}
+        return 404, {}
+
+    monkeypatch.setattr(_routes(), "_http_json", fake_http)
+    return chamadas
+
+
+def test_adicionar_node_pareia_e_salva_cadastro(client, monkeypatch):
+    chamadas = _node_falso(monkeypatch)
+    resp = client.post("/api/nodes/adicionar", json={"ip": "192.168.1.7"})
+    assert resp.status_code == 200 and resp.get_json()["modelo"] == "Xiaomi 2311DRK48G"
+
+    metodo, url, dados = chamadas[-1]
+    assert (metodo, url) == ("POST", "http://192.168.1.7:5051/parear")
+    assert dados["host_port"] == 5050 and len(dados["token"]) == 48
+    entrada = _routes().cadastro["192.168.1.7"]
+    assert entrada["token"] == dados["token"]  # o mesmo token enviado ao node
+    salvo = json.loads(open(_routes().CADASTRO_ARQUIVO).read())
+    assert salvo["192.168.1.7"]["token"] == dados["token"]
+    assert oct(os.stat(_routes().CADASTRO_ARQUIVO).st_mode & 0o777) == "0o600"
+
+
+def test_adicionar_node_erros(client, monkeypatch):
+    _node_falso(monkeypatch, responde=False)
+    assert client.post("/api/nodes/adicionar", json={"ip": "192.168.1.7"}).status_code == 404
+    for ip in ("8.8.8.8", "abc", "", "192.168.1.300"):
+        assert client.post("/api/nodes/adicionar", json={"ip": ip}).status_code == 400
+
+    _node_falso(monkeypatch, parear=(409, {"ok": False, "erro": "Node já pareado com 192.168.1.20."}))
+    resp = client.post("/api/nodes/adicionar", json={"ip": "192.168.1.7"})
+    assert resp.status_code == 409 and "192.168.1.20" in resp.get_json()["erro"]
+    assert _routes().cadastro == {}
+
+
+def test_remover_node_despareia_e_apaga(client, monkeypatch):
+    chamadas = _node_falso(monkeypatch)
+    _cadastrar()
+    client.post("/api/node_sync", json={"ip": "192.168.1.7", "token": TOKEN})
+    resp = client.post("/api/nodes/192.168.1.7/remover")
+    assert resp.get_json() == {"ok": True, "despareado": True}
+    assert chamadas[-1] == ("POST", "http://192.168.1.7:5051/desparear", {"token": TOKEN})
+    assert client.get("/api/nodes").get_json() == {}
+    assert client.post("/api/nodes/192.168.1.7/remover").status_code == 404
+
+
+def test_varredura_encontra_nodes(client, monkeypatch):
+    sondados = []
+
+    def fake_sondar(ip, timeout=0.8):
+        sondados.append(ip)
+        if ip == "192.168.50.3":
+            return {"droidserver": True, "modelo": "Xiaomi", "android": "16", "pareado": True, "host": "192.168.50.1:5050"}
+        return None
+
+    monkeypatch.setattr(_routes(), "_sondar_node", fake_sondar)
+    _cadastrar("192.168.50.3")
+    data = client.post("/api/varredura", json={"rede": "192.168.50.0/29"}).get_json()
+    assert data["ok"] is True and data["enderecos"] == 6 and len(sondados) == 6
+    assert data["nodes"] == [{"ip": "192.168.50.3", "modelo": "Xiaomi", "android": "16",
+                              "pareado": True, "host": "192.168.50.1:5050", "cadastrado": True}]
+
+
+@pytest.mark.parametrize("rede", ["8.8.8.0/24", "10.0.0.0/16", "banana", "fe80::/64"])
+def test_varredura_recusa_redes_invalidas(client, rede):
+    assert client.post("/api/varredura", json={"rede": rede}).status_code == 400
+
+
+def test_api_rede_sugere_a_24_do_host(client, monkeypatch):
+    monkeypatch.setattr(_routes(), "_ip_local", lambda: "192.168.1.10")
+    assert client.get("/api/rede").get_json() == {"ip_host": "192.168.1.10", "rede": "192.168.1.0/24"}

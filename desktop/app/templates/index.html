@@ -163,6 +163,8 @@
             refresh: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/>',
             back: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
             plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+            radar: '<path d="M19.07 4.93A10 10 0 1 0 22 12"/><path d="M16.24 7.76A6 6 0 1 0 18 12"/><circle cx="12" cy="12" r="2"/><path d="m13.4 10.6 6.6-6.6"/>',
+            unlink: '<path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="m5.17 11.75-1.71 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/><path d="m8 2 0 3"/><path d="m2 8 3 0"/><path d="m16 22 0-3"/><path d="m22 16-3 0"/>',
             chevron: '<path d="m5 8 6 6 6-6"/>',
             arrowRight: '<path d="m9 6 6 6-6 6"/>',
             close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
@@ -414,7 +416,35 @@
                         <span class="w-2 h-2 rounded-full bg-ok animate-pulseDot"></span>
                         Atualizado em <span id="updatedAt">—</span>
                     </span>
-                    <button class="btn btn-ghost" id="btnRefresh">${svg(ICON.refresh)}Atualizar</button>`)}
+                    <button class="btn btn-ghost" id="btnRefresh">${svg(ICON.refresh)}Atualizar</button>
+                    <button class="btn btn-primary" id="btnAdicionar" aria-expanded="false">${svg(ICON.plus)}Adicionar node</button>`)}
+
+                <section id="painelAdicionar" class="hidden card p-5 mb-7">
+                    <div class="flex items-start justify-between gap-3 mb-4">
+                        <div>
+                            <h3 class="text-[15px] font-bold">Adicionar node</h3>
+                            <p class="text-[12.5px] text-muted mt-1">Informe o IP do celular ou varra a rede. O agente precisa estar rodando no Termux (<code>bash android/run.sh -d</code>); ele responde na porta 5051.</p>
+                        </div>
+                        <button type="button" class="btn btn-ghost !px-2 !py-1.5" id="btnFecharAdicionar" aria-label="Fechar">${svg(ICON.close)}</button>
+                    </div>
+                    <div class="grid gap-5 md:grid-cols-2">
+                        <form id="formAdicionarIp" class="flex flex-col gap-2">
+                            <label for="ipNovo" class="label-xs">IP do node</label>
+                            <div class="flex gap-2">
+                                <input class="input" id="ipNovo" placeholder="ex: 192.168.1.4" inputmode="decimal" autocomplete="off" required>
+                                <button type="submit" class="btn btn-success shrink-0">${svg(ICON.plus)}Adicionar</button>
+                            </div>
+                        </form>
+                        <form id="formVarredura" class="flex flex-col gap-2">
+                            <label for="redeVarredura" class="label-xs">Varrer rede</label>
+                            <div class="flex gap-2">
+                                <input class="input font-mono" id="redeVarredura" placeholder="192.168.1.0/24" autocomplete="off">
+                                <button type="submit" class="btn btn-dark shrink-0" id="btnVarrer">${svg(ICON.radar)}Varrer</button>
+                            </div>
+                        </form>
+                    </div>
+                    <div id="resultadoVarredura" class="mt-4"></div>
+                </section>
 
                 <section class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-9">
                     ${statCard('bg-accent/15 text-indigo-300', ICON.server, 'statNodes', 'Nodes totais')}
@@ -438,6 +468,7 @@
                 const workers = info.workers || [];
                 const status = info.status || 'Offline';
                 const online = isOnline(info);
+                const aguardando = !!info.aguardando;
                 const processando = (info.tarefas_pendentes || []).length > 0 || info.tarefa_atual;
                 const mem = info.mem || {};
                 const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : null;
@@ -450,12 +481,15 @@
                     <div class="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-accent to-accent2 opacity-80"></div>
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2.5">
-                            <span class="dot ${online ? 'dot-online' : 'dot-offline'}"></span>
-                            <span class="text-base font-bold tracking-wide">${esc(ip)}</span>
+                            <span class="dot ${online ? 'dot-online' : aguardando ? 'dot-idle' : 'dot-offline'}"></span>
+                            <div class="flex flex-col leading-tight">
+                                <span class="text-base font-bold tracking-wide">${esc(ip)}</span>
+                                ${info.modelo ? `<span class="text-[11px] text-muted">${esc(info.modelo)}</span>` : ''}
+                            </div>
                         </div>
                         <div class="flex items-center gap-2">
                             ${processando ? '<span class="pill pill-warn">processando</span>' : ''}
-                            <span class="pill ${online ? 'pill-online' : 'pill-offline'}">${esc(status)}</span>
+                            <span class="pill ${online ? 'pill-online' : aguardando ? 'pill-warn' : 'pill-offline'}">${esc(aguardando ? 'Aguardando contato' : status)}</span>
                         </div>
                     </div>
                     <div class="grid grid-cols-2 gap-3 p-3.5 bg-slate-950/35 border border-slate-400/15 rounded-xl">
@@ -480,6 +514,8 @@
                             class="btn btn-ghost !px-3 ml-auto ${graficosAbertos.has(ip) ? '!text-slate-200 !bg-accent/20' : ''}">
                             ${svg(ICON.arrowRight, 'transition-transform ' + (graficosAbertos.has(ip) ? 'rotate-180' : ''))}
                         </button>
+                        <button type="button" data-remover="${esc(ip)}" title="Remover este node do painel"
+                            aria-label="Remover node ${esc(ip)}" class="btn btn-danger !px-3">${svg(ICON.unlink)}</button>
                     </div>
                 </article>`;
             };
@@ -488,7 +524,8 @@
                 <div class="col-span-full text-center py-16 px-5 border border-dashed border-slate-400/15 rounded-2xl text-muted">
                     ${svg(ICON.server, 'w-11 h-11 opacity-50 mx-auto mb-3.5')}
                     <h3 class="text-base font-semibold text-slate-200 mb-1.5">Nenhum node conectado</h3>
-                    <p class="text-[13px]">Rode o agente <strong>node.py</strong> em um dispositivo Android para vê-lo aqui.</p>
+                    <p class="text-[13px] mb-4">Inicie o agente no celular (<code>bash android/run.sh -d</code>) e adicione-o pelo IP ou pela varredura de rede.</p>
+                    <button type="button" class="btn btn-primary" data-abrir-adicionar>${svg(ICON.plus)}Adicionar node</button>
                 </div>`;
 
             function render(nodes) {
@@ -520,8 +557,99 @@
 
             $('btnRefresh').addEventListener('click', () => { grid.innerHTML = skeletons; fetchNodes(); });
 
+            // ---- Adicionar node: por IP ou pela varredura de rede ----
+            const painel = $('painelAdicionar');
+            async function abrirAdicionar(abrir = true) {
+                painel.classList.toggle('hidden', !abrir);
+                $('btnAdicionar').setAttribute('aria-expanded', String(abrir));
+                if (abrir && !$('redeVarredura').value) {
+                    try { $('redeVarredura').value = (await (await fetch('/api/rede')).json()).rede; } catch (e) { }
+                }
+                if (abrir) $('ipNovo').focus();
+            }
+            $('btnAdicionar').addEventListener('click', () => abrirAdicionar(painel.classList.contains('hidden')));
+            $('btnFecharAdicionar').addEventListener('click', () => abrirAdicionar(false));
+            $('view').addEventListener('click', (e) => { if (e.target.closest('[data-abrir-adicionar]')) abrirAdicionar(true); });
+
+            async function adicionar(ip, botao) {
+                if (botao) { botao.disabled = true; botao.innerHTML = '<span class="spinner"></span>Pareando…'; }
+                try {
+                    const res = await fetch('/api/nodes/adicionar', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ip }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (!res.ok) { toast(data.erro || 'Falha ao adicionar'); return false; }
+                    toast(`Node ${ip} adicionado`);
+                    fetchNodes();
+                    return true;
+                } catch (e) { toast('Falha ao adicionar'); return false; }
+                finally { if (botao) { botao.disabled = false; botao.innerHTML = `${svg(ICON.plus)}Adicionar`; } }
+            }
+
+            $('formAdicionarIp').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const ip = $('ipNovo').value.trim();
+                if (await adicionar(ip, e.submitter)) $('ipNovo').value = '';
+            });
+
+            $('formVarredura').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const alvo = $('resultadoVarredura'), btn = $('btnVarrer');
+                btn.disabled = true;
+                alvo.innerHTML = '<div class="flex items-center gap-2.5 text-[13px] text-muted"><span class="spinner"></span>Procurando agentes DroidServer na rede (porta 5051)…</div>';
+                try {
+                    const res = await fetch('/api/varredura', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rede: $('redeVarredura').value.trim() }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) { alvo.innerHTML = `<p class="text-[13px] text-bad">${esc(data.erro || 'Falha na varredura')}</p>`; return; }
+                    const cab = `<p class="text-[12px] text-muted mb-2">${data.enderecos} endereços de ${esc(data.rede)} em ${data.duracao_s}s · ${data.nodes.length} node(s) encontrado(s)</p>`;
+                    if (!data.nodes.length) {
+                        alvo.innerHTML = cab + '<p class="text-[13px] text-muted">Nenhum agente respondeu. Confira se o agente está rodando e se o celular está nesta rede.</p>';
+                        return;
+                    }
+                    alvo.innerHTML = cab + '<div class="flex flex-col gap-2">' + data.nodes.map(n => {
+                        const estado = n.cadastrado ? '<span class="pill pill-online">neste painel</span>'
+                            : n.pareado ? `<span class="pill pill-warn" title="Pareado com ${esc(n.host || '?')}">pareado com ${esc(n.host || 'outro host')}</span>`
+                                : '<span class="pill pill-muted">disponível</span>';
+                        const acao = n.cadastrado ? ''
+                            : `<button type="button" class="btn btn-success !py-2" data-adicionar-ip="${esc(n.ip)}">${svg(ICON.plus)}Adicionar</button>`;
+                        return `
+                        <div class="flex items-center justify-between gap-3 flex-wrap px-3.5 py-3 rounded-xl border border-slate-400/15 bg-slate-950/35">
+                            <div class="flex items-center gap-3 min-w-0">
+                                ${svg(ICON.server, 'w-5 h-5 text-cyan-300 shrink-0')}
+                                <div class="min-w-0">
+                                    <div class="text-[14px] font-bold">${esc(n.ip)}</div>
+                                    <div class="text-[11.5px] text-muted truncate">${esc(n.modelo || 'Android')}${n.android ? ' · Android ' + esc(n.android) : ''}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2.5">${estado}${acao}</div>
+                        </div>`;
+                    }).join('') + '</div>';
+                } catch (err) {
+                    alvo.innerHTML = '<p class="text-[13px] text-bad">Falha ao consultar o host.</p>';
+                } finally { btn.disabled = false; }
+            });
+
+            $('resultadoVarredura').addEventListener('click', async (e) => {
+                const b = e.target.closest('[data-adicionar-ip]');
+                if (b && await adicionar(b.dataset.adicionarIp, b)) $('formVarredura').requestSubmit();
+            });
+
             // Seta do card do node: abre/fecha o gráfico ao lado
-            grid.addEventListener('click', (e) => {
+            grid.addEventListener('click', async (e) => {
+                const rem = e.target.closest('[data-remover]');
+                if (rem) {
+                    const ip = rem.dataset.remover;
+                    if (!confirm(`Remover o node ${ip} do painel? O celular deixa de sincronizar até ser adicionado de novo. Os workers no aparelho não são apagados.`)) return;
+                    try {
+                        const data = await (await fetch(`/api/nodes/${encodeURIComponent(ip)}/remover`, { method: 'POST' })).json();
+                        toast(data.despareado ? `Node ${ip} removido` : `Node ${ip} removido do painel (o celular não respondeu)`);
+                    } catch (err) { toast('Falha ao remover'); }
+                    graficosAbertos.delete(ip);
+                    return fetchNodes();
+                }
                 const btn = e.target.closest('[data-grafico]');
                 if (!btn) return;
                 const ip = btn.dataset.grafico;
