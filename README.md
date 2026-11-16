@@ -131,6 +131,8 @@ uv run python main.py
 
 O painel fica em `http://<ip-do-host>:5050`. Libere a porta 5050 no firewall, se houver.
 
+O Host também sobe sem terminal interativo (systemd, `nohup`), pois o servidor Werkzeug é iniciado com `allow_unsafe_werkzeug=True`. Isso é suficiente para um protótipo em LAN; em produção, prefira gunicorn com eventlet ou gevent.
+
 ### 2. Node (no Termux)
 
 ```bash
@@ -194,6 +196,10 @@ Para rodar sua aplicação, entre no terminal do Worker, instale o necessário e
 | `DROID_ULIMIT_NOFILE` | Node | `4096` | Limite de arquivos abertos por Worker (`0` desativa) |
 | `DROID_ULIMIT_NPROC` | Node | `1024` | Limite de processos por Worker (`0` desativa) |
 | `DROID_API_TOKEN` | Host | vazio | Se definido, só aceita Nodes que enviem o mesmo token |
+| `DROID_BIND` | Host | `0.0.0.0` | Endereço em que o Host escuta |
+| `DROID_PORT` | Host | `5050` | Porta do Host |
+| `DROID_DEBUG` | Host | `0` | `1` liga o modo debug — só aceito com `DROID_BIND=127.0.0.1` |
+| `DROID_SECRET_KEY` | Host | aleatória | Chave de sessão do Flask |
 | `DROID_LOG_DIR` | Host | `desktop/logs/` | Diretório de logs do Host |
 
 No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e são carregadas pelo `run.sh`.
@@ -268,14 +274,14 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 78 testes (30 no Host e 48 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 86 testes (34 no Host e 52 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
 O DroidServer é um protótipo acadêmico para uso **em rede local confiável**:
 
 - o painel **não tem autenticação** — qualquer pessoa na rede pode criar ou apagar Workers e abrir terminais;
-- o Host roda com `debug=True` em `0.0.0.0` e com `cors_allowed_origins="*"`; o token trafega sem TLS;
+- o Host aceita qualquer origem no Socket.IO (`cors_allowed_origins="*"`) e o token trafega sem TLS. O modo debug fica desligado por padrão e só pode ser ligado escutando em `127.0.0.1`;
 - os eventos de terminal são enviados a todos os clientes Socket.IO conectados;
 - o PRoot isola apenas o sistema de arquivos: Workers compartilham rede, processos, CPU e memória com o aparelho (sem `cgroups`), e o `ptrace` adiciona sobrecarga em operações de E/S;
 - o Node é identificado pelo IP; mudanças de DHCP geram registros duplicados;

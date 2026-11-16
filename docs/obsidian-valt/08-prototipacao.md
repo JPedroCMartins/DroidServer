@@ -144,7 +144,7 @@ autorestart=true
 startsecs=5
 ```
 
-A remoção segue o caminho inverso: encerra a sessão de terminal, para o serviço, remove o `.conf`, executa `proot-distro remove` e apaga os *logs*.
+A remoção segue o caminho inverso: encerra a sessão de terminal, para o serviço, remove o `.conf`, encerra as sessões restantes do container (`proot-distro kill`), executa `proot-distro remove` — com novas tentativas, pois o comando falha de imediato se alguma sessão ainda segura o *lock* do container — e apaga os *logs*.
 
 ## 8.5 Decisões de projeto
 
@@ -161,7 +161,7 @@ A remoção segue o caminho inverso: encerra a sessão de terminal, para o servi
 
 ## 8.6 Garantia de qualidade
 
-O projeto possui 78 testes automatizados com `pytest` (30 no Host e 48 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 86 testes automatizados com `pytest` (34 no Host e 52 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
 ## 8.7 Interface
 

@@ -27,14 +27,27 @@ Revisão feita em 15/11/2026 sobre todo o repositório (código, scripts, testes
 | 2.3 | **Tarefas entregues no máximo uma vez.** O Host esvazia a fila ao responder o sync; se a resposta se perder (timeout depois de o Host processar), a tarefa some. | `desktop/app/routes.py:189-190` | Criação/remoção "esquecida" |
 | 2.4 | ✅ **Corrigido.** **`supervisorctl` sem `-c`** em `criar` e `deletar`, mas com `-c` em `get_workers_status`. No modo HTTP com senha (Python sem `os.link()`), se o `supervisorctl` não achar o conf certo, o `reread/update` falha em silêncio (`check=False`) e o Worker não vira serviço. | `node.py:229-234, 258-259, 319-328` | Worker criado mas "sem serviço" |
 | 2.5 | ✅ **Corrigido.** **Vazamento de PTY:** `encerrar()` e `_ler_saida()` nunca chamam `os.close(fd)` nem `os.waitpid(pid)`. Cada sessão encerrada deixa um descritor aberto e um processo zumbi. | `node.py:389-439` | Em sessões longas, esgota descritores e polui a tabela de processos |
-| 2.6 | **Debugger do Werkzeug exposto na rede** (`debug=True` + `host='0.0.0.0'`). Na prática, é execução remota de código para quem estiver na mesma rede. | `desktop/main.py` | Crítico se a rede não for 100% confiável |
+| 2.6 | ✅ **Corrigido.** **Debugger do Werkzeug exposto na rede** (`debug=True` + `host='0.0.0.0'`). Na prática, é execução remota de código para quem estiver na mesma rede. | `desktop/main.py` | Crítico se a rede não for 100% confiável |
 | 2.7 | **Terminais difundidos para todos:** `socketio.emit(evento)` sem `to=`/`room=` manda a saída de todos os terminais para todos os navegadores e Nodes conectados, e qualquer cliente pode emitir `terminal_output` falso. | `routes.py:203-242` | Vazamento de dados entre sessões |
 | 2.8 | **Delete via `GET`** — pré-carregamento do navegador, *crawlers* ou um `<img src>` malicioso podem apagar Workers (CSRF). | `routes.py:81` | Perda de dados |
 | 2.9 | **Node identificado pelo IP.** DHCP muda o IP → Node duplicado no painel e Workers "órfãos"; dois Nodes atrás do mesmo NAT colidem; o IP também entra no nome de eventos. | `node.py`, `routes.py` | Confusão no painel |
-| 2.10 | `SECRET_KEY` fixo no código e `cors_allowed_origins="*"`. | `desktop/app/__init__.py` | Má prática |
+| 2.10 | 🟡 **Parcial:** a `SECRET_KEY` agora vem de `DROID_SECRET_KEY` ou é aleatória; o CORS `*` continua. `SECRET_KEY` fixo no código e `cors_allowed_origins="*"`. | `desktop/app/__init__.py` | Má prática |
+| 2.15 | ✅ **Corrigido.** **CPU falsa de 0% no Android 16:** o `/proc/stat` é bloqueado pelo SELinux e o `top` do toybox também não enxerga a CPU (mostra `800%idle` e tudo zerado). O agente reportava 0,0% como se fosse medição. Agora devolve `None` e o painel mostra "—". | `android/sysinfo.py` | O painel e os dados do TCC mostrariam a CPU sempre ociosa |
+| 2.16 | ✅ **Corrigido (confirmado no aparelho).** **Remover um Worker falhava:** o `proot-distro remove` exige o lock exclusivo do container e falha na hora se uma sessão `login` (o serviço do Supervisor ou o terminal) ainda está terminando — o que sempre acontecia logo após parar o serviço. Agora o agente encerra as sessões com `proot-distro kill`, tenta o remove até 5 vezes e relata a mensagem real de erro. | `android/node.py` (`_remover_container`) | O container ficava no disco e o painel mostrava ✗ |
+| 2.14 | ✅ **Corrigido.** **O Host não subia sem terminal interativo:** o Flask-SocketIO recusa o Werkzeug sem TTY, então não dava para rodar o Host como serviço (systemd, `nohup`). Agora usa `allow_unsafe_werkzeug=True`, com debug desligado por padrão e permitido só em localhost (`DROID_BIND`/`DROID_PORT`/`DROID_DEBUG`). | `desktop/main.py`, `desktop/app/__init__.py` | Encontrado ao testar com um aparelho real |
 | 2.11 | ✅ **Corrigido.** `proot-distro remove` em `deletar` sem `timeout`; pode travar a fila de tarefas inteira. | `node.py:332` | Node "preso" processando |
 | 2.12 | O conteúdo do `.conf` do Supervisor é gerado com indentação herdada da f-string. Funciona com o `configparser` atual, mas é frágil. | `node.py:214-221` | Usar `textwrap.dedent` |
-| 2.13 | O PTY só abre na primeira tecla e o handler faz `time.sleep(0.5)` dentro do callback do Socket.IO; o usuário vê um terminal vazio até digitar. | `node.py:378-382` | UX ruim; abrir a sessão num evento `terminal_open` |
+| 2.13 | ✅ **Corrigido (confirmado no aparelho).** O PTY só abre na primeira tecla e o handler faz `time.sleep(0.5)` dentro do callback do Socket.IO; o usuário vê um terminal vazio até digitar. | `node.py:378-382` | UX ruim; abrir a sessão num evento `terminal_open` |
+
+### Validação em aparelho real (15/11/2026)
+
+Xiaomi 2311DRK48G, Android 16, aarch64, 8 núcleos, 7,5 GB de RAM, Termux + `proot-distro` com o layout `containers/`:
+
+- `setup.sh` concluído sem intervenção; suíte do agente **52/52** no próprio celular;
+- Node registrado no Host; Worker Alpine criado pelo painel em ~10 s (rootfs já em cache) e em `RUNNING` no Supervisor;
+- terminal: `--isolated` confirmado (`/sdcard` não existe dentro do Worker); após `exit`, o descritor do PTY é fechado e não restam processos-filho nem zumbis (correção 2.5 confirmada);
+- remoção pelo painel com o terminal aberto: container, `.conf`, logs e sessão removidos, sem zumbis (correção 2.16; antes falhava com `exit status 1`);
+- **pendência para o TCC:** sem *root* não há como medir a CPU do aparelho inteiro no Android 16. Alternativa: somar a CPU dos processos do próprio Termux (agente e Workers) via `/proc/<pid>/stat`, que continua acessível.
 
 ## 3. Improdutivo ou redundante
 
