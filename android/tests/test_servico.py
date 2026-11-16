@@ -101,10 +101,10 @@ def test_migra_run_server_personalizado_para_run_sh(termux, comandos):
     assert not (app / "run_server.sh").exists()
     assert (app / ".droidserver/lancador.sh").exists()
     assert servico.ler_opcoes("w1") == {"isolado": True, "autostart": True, "autorestart": True, "atual": True}
-    assert ["reread"] in _sup(comandos) and ["update"] in _sup(comandos)
+    assert ["reread"] in _sup(comandos) and ["update", "w1"] in _sup(comandos)
     # o serviço antigo é parado e as sessões encerradas ANTES do update
     ordem = [" ".join(c[3:]) if c[0] == "supervisorctl" else " ".join(c) for c in comandos]
-    assert ordem.index("stop w1") < ordem.index("proot-distro kill w1") < ordem.index("update")
+    assert ordem.index("stop w1") < ordem.index("proot-distro kill w1") < ordem.index("update w1")
 
 
 def test_migra_descarta_script_ocioso_e_nao_sobrescreve_run_sh(termux, comandos):

@@ -623,3 +623,20 @@ def test_node_sync_guarda_estado_dos_servicos(client):
 
 def test_rota_do_terminal_serve_a_spa(client):
     assert client.get("/node/10.0.0.5/worker/w1/terminal").status_code == 200
+
+
+def test_sync_reconcilia_logs_depois_de_o_agente_reiniciar(ambiente_servico, client):
+    node, nav_a, _ = ambiente_servico
+    nav_a.emit("logs_assinar", {"ip": "10.0.0.5", "alias": "w1"})
+    node.get_received()
+
+    # agente reiniciou: não acompanha mais nada, e ainda lê um log que ninguém vê
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1", "w2"], "logs_ativos": ["w2"]})
+    pedidos = _eventos(node, "logs_to_10.0.0.5")
+    assert {"alias": "w1", "acao": "assinar"} in pedidos
+    assert {"alias": "w2", "acao": "cancelar"} in pedidos
+
+    # já alinhado: nada a fazer; agente antigo (sem o campo): idem
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"], "logs_ativos": ["w1"]})
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    assert _eventos(node, "logs_to_10.0.0.5") == []

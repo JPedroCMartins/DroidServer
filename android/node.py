@@ -363,7 +363,7 @@ class WorkerManager:
                 os.remove(arquivo_conf)
                 log.info("[+] Removida configuração de serviço antiga: %s", arquivo_conf)
             WorkerManager._supervisorctl("reread")
-            WorkerManager._supervisorctl("update")
+            WorkerManager._supervisorctl("update", alias)
             subprocess.run(["proot-distro", "remove", alias], check=False, capture_output=True, timeout=120)
 
             # 1. Instala o proot-distro
@@ -388,7 +388,7 @@ class WorkerManager:
 
             # 4. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
             WorkerManager._supervisorctl("reread")
-            WorkerManager._supervisorctl("update")
+            WorkerManager._supervisorctl("update", alias)
             log.info("[+] Serviço '%s' registrado no Supervisor (aguardando /app/run.sh).", alias)
 
             return True, f"Container '{alias}' criado com sucesso. Crie o /app/run.sh pela aba Serviço."
@@ -452,7 +452,7 @@ class WorkerManager:
 
             # 3. Atualiza o Supervisor para remover o serviço da memória
             WorkerManager._supervisorctl("reread")
-            WorkerManager._supervisorctl("update")
+            WorkerManager._supervisorctl("update", alias)
 
             # 4. Remove o container proot-distro (se existir)
             if WorkerManager._existe(alias):
@@ -658,6 +658,19 @@ class NodeAgent:
             s.close()
         return ip
 
+    def _atualizar_ip(self):
+        """Detecta de novo o IP da rede (o DHCP pode trocá-lo, ex.: Wi-Fi religado).
+
+        O IP vai no sync e forma os nomes dos eventos (cmd_to_<ip>_...); com o IP
+        novo, o host reconhece o node pelo token e move o cadastro para ele.
+        """
+        novo = self._get_local_ip()
+        if novo != self.meu_ip and novo != "127.0.0.1":
+            log.info("[*] IP do node mudou: %s -> %s", self.meu_ip, novo)
+            self.meu_ip = novo
+            self.terminal.local_ip = novo
+        return self.meu_ip
+
     def _registrar_eventos_websocket(self):
         """Configura os listeners do SocketIO dinamicamente."""
         @self.sio.event
@@ -770,6 +783,9 @@ class NodeAgent:
             "worker_status": worker_status,
             "tarefa_atual": self._tarefa_atual,
             "resultados": enviados,
+            # logs que este agente está acompanhando: o host reconcilia com
+            # quem está assistindo (ex.: depois de o agente reiniciar)
+            "logs_ativos": sorted(self.logs.ativos()),
         }
         uso = self.monitor.sample()
         payload["cpu"] = uso["cpu"]
@@ -880,6 +896,7 @@ class NodeAgent:
                 time.sleep(POLL_INTERVAL)
                 continue
             avisou = False
+            self._atualizar_ip()
             self._conectar_ws()
             tarefas = self._poll_once()
             for tarefa in tarefas:

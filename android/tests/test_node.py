@@ -87,6 +87,10 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
 
     assert any("proot-distro" in c and "install" in c and "worker_bd" in c for c in comandos)
     assert any("supervisorctl" in c and "reread" in c for c in comandos)
+    # update só do worker criado: um update geral reiniciaria outros workers
+    # com alterações pendentes no .conf
+    updates = [c[c.index("update"):] for c in comandos if "supervisorctl" in c and "update" in c]
+    assert updates and all(u == ["update", "worker_bd"] for u in updates)
     # limpeza de artefatos residuais antes do install
     assert any("supervisorctl" in c and "stop" in c and "worker_bd" in c for c in comandos)
     assert any("proot-distro" in c and "remove" in c and "worker_bd" in c for c in comandos)
@@ -922,6 +926,7 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
         return {"total": 12.5, "grupos": {"w1": 10.0}}
 
     monkeypatch.setattr(agente.cpu_processos, "sample", fake_sample)
+    monkeypatch.setattr(agente.logs, "ativos", lambda: {"w1"})
     agente._poll_once()
 
     assert grupos_recebidos == {"w1": [200, 555]}
@@ -929,6 +934,7 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
     assert payload["cpu_workers"] == {"w1": 10.0}
     assert payload["worker_status"] == {"w1": "RUNNING"}
     assert payload["servicos"]["w1"]["estado"] == "RUNNING" and payload["servicos"]["w1"]["pid"] == 200
+    assert payload["logs_ativos"] == ["w1"]  # o host reconcilia com quem assiste
 
 
 # ---------- Ordem da criação ----------
@@ -1107,3 +1113,15 @@ def test_enviar_logs_emite_para_o_host(monkeypatch):
     monkeypatch.setattr(agente.sio, "emit", lambda ev, dados=None: emitidos.append((ev, dados)))
     agente._enviar_logs("w1", ["a", "b"], True)
     assert emitidos == [("logs_saida", {"ip": agente.meu_ip, "alias": "w1", "linhas": ["a", "b"], "inicial": True})]
+
+
+def test_node_acompanha_troca_de_ip(monkeypatch):
+    ips = iter(["192.168.1.7", "192.168.1.5", "127.0.0.1"])
+    monkeypatch.setattr(NodeAgent, "_get_local_ip", lambda self: next(ips))
+    agente = NodeAgent()
+    assert agente.meu_ip == "192.168.1.7"
+
+    assert agente._atualizar_ip() == "192.168.1.5"   # DHCP deu outro IP
+    assert agente.terminal.local_ip == "192.168.1.5"
+
+    assert agente._atualizar_ip() == "192.168.1.5"   # sem rede: mantém o último

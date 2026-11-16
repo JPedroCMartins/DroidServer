@@ -64,7 +64,14 @@ EXEMPLO = """#!/bin/sh
 #     (a rede não é isolada: dois workers não podem usar a mesma porta).
 cd /app
 
-# Exemplo: servidor HTTP simples na porta 8080 (Alpine: apk add python3)
+# Exemplo: servidor HTTP simples na porta 8080, servindo os arquivos de /app.
+# Na primeira execução instala o Python, se faltar (Alpine vem sem ele).
+if ! command -v python3 >/dev/null; then
+    echo "Instalando python3..."
+    if command -v apk >/dev/null; then apk add --no-cache python3
+    else apt-get update && apt-get install -y python3-minimal
+    fi
+fi
 exec python3 -m http.server 8080
 """
 
@@ -303,8 +310,10 @@ def migrar_todos(aliases):
         subprocess.run(["proot-distro", "kill", alias], check=False, capture_output=True, timeout=60)
     mudou = [a for a in pendentes if migrar(a)]
     if mudou:
+        # update só dos migrados: um "update" geral aplicaria também
+        # alterações pendentes de outros workers e os reiniciaria
         supervisorctl("reread")
-        supervisorctl("update")
+        supervisorctl("update", *mudou)
     return mudou
 
 

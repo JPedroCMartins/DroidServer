@@ -469,6 +469,7 @@ def node_sync():
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
 
     _registrar_amostra(ip_node, dados)
+    _reconciliar_logs(ip_node, dados.get("logs_ativos"))
 
     # Notifica os painéis abertos para atualizarem sem precisar recarregar a página
     socketio.emit('node_updated', {'ip': ip_node})
@@ -534,6 +535,23 @@ def handle_logs_assinar(data):
     join_room(_sala_logs(ip, alias))
     assinantes_logs.setdefault((ip, alias), set()).add(request.sid)
     socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
+
+
+def _reconciliar_logs(ip, ativos_no_node):
+    """Alinha os logs que o node acompanha com quem está assistindo no painel.
+
+    Se o agente reiniciou, ele esqueceu as assinaturas e os navegadores ficariam
+    sem logs novos; se um cancelamento se perdeu, ele leria o arquivo à toa.
+    """
+    if not isinstance(ativos_no_node, list):
+        return  # agente antigo, que não informa
+    no_node = {a for a in ativos_no_node if isinstance(a, str)}
+    assistidos = {alias for (ip_s, alias), sids in assinantes_logs.items() if ip_s == ip and sids}
+    for alias in sorted(assistidos - no_node):
+        socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
+    for alias in sorted(no_node - assistidos):
+        if _alias_valido(alias):
+            socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
 
 
 def _sair_dos_logs(sid, ip, alias):
