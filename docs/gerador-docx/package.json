@@ -1,0 +1,12 @@
+{
+  "name": "droidserver-gerador-docx",
+  "private": true,
+  "type": "module",
+  "description": "Gera o TCC em formato de artigo (.docx, ABNT) a partir do vault do Obsidian.",
+  "scripts": { "gerar": "node gerar.mjs" },
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "11.4.2",
+    "docx": "9.5.1",
+    "marked": "15.0.12"
+  }
+}

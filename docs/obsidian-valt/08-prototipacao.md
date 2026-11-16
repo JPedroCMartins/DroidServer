@@ -77,7 +77,7 @@ sequenceDiagram
     A->>H: Adicionar 192.168.1.7
     H->>H: gera token exclusivo (secrets.token_hex(24))
     H->>N: POST /parear {host_port, token}
-    N->>N: host = IP de origem do pedido; salva pareamento.json (0600)
+    N->>N: host = IP de origem do pedido, salva pareamento.json (0600)
     N-->>H: ok
     H->>H: salva nodes.json (0600)
     loop a cada 10 s
@@ -167,9 +167,9 @@ sequenceDiagram
     N->>H: POST /api/node_sync
     H-->>N: tarefas: [criar_worker]
     N->>N: fila interna (thread) — não bloqueia o polling
-    N->>N: limpa resíduos do alias; proot-distro install <imagem> --override-alias <alias>
+    N->>N: limpa resíduos do alias, proot-distro install <imagem> --override-alias <alias>
     N->>N: grava /app/.droidserver/lancador.sh direto no rootfs
-    N->>S: grava conf.d/<alias>.conf; supervisorctl reread/update
+    N->>S: grava conf.d/<alias>.conf, supervisorctl reread/update
     N->>H: próximo sync: resultados [✓ criado], serviço "aguardando run.sh"
 ```
 

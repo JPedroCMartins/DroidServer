@@ -13,6 +13,9 @@
 
 Manaus - AM, 2026
 
+> [!tip] Versão em Word
+> `docs/DroidServer_TCC_artigo.docx` é gerado a partir destas notas (`cd docs/gerador-docx && npm install && npm run gerar`), no formato ABNT de artigo. Edite aqui no vault e gere de novo; o que estiver destacado em amarelo no Word é lacuna a preencher.
+
 > [!note] Título
 > O mesmo título está na capa e na folha de rosto do `docs/artigo_nao_finalizado.odt`. "Servidor virtual privado" é usado no sentido do **modelo de serviço** (um ambiente Linux próprio, acessível pela rede e administrado como um servidor), e não no de virtualização de *hardware*: ver a definição na seção 1.1 e o glossário.
 

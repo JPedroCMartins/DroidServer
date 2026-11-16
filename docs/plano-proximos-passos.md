@@ -153,7 +153,7 @@ Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatu
 | 4.4 | Conclusão: responder às QP1–QP3 e dizer se a hipótese H1 foi confirmada | 3 h |
 | 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) | 4 h |
 | 4.6 | Capturas de tela para a seção 8.8 (Dashboard, Node, terminal, CPU por Worker) | 30 min |
-| 4.7 | Gerar o documento ABNT: instalar Pandoc e converter o vault para `.odt`/`.docx` com o modelo da Uninorte, ou colar no `.odt` existente | 4 h |
+| 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final | 4 h |
 | 4.8 | Revisão do orientador | — |
 
 ## Fora do escopo (vai para "trabalhos futuros")
