@@ -1,0 +1,21 @@
+distro,cache,repeticao,alias,ok,total_s,entrega_s,instalacao_s,registro_s,disco_mb,remocao_s,mensagem,carimbo
+alpine,com,1,e1_alpine_com_1_50383,True,17.18,5.91,1.93,2.65,9,19.72,Container 'e1_alpine_com_1_50383' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:33:49
+alpine,com,2,e1_alpine_com_2_50429,True,19.18,7.49,1.96,2.68,9,20.7,Container 'e1_alpine_com_2_50429' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:34:32
+alpine,com,3,e1_alpine_com_3_50472,True,12.64,1.18,1.89,2.59,9,20.72,Container 'e1_alpine_com_3_50472' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:35:14
+alpine,com,4,e1_alpine_com_4_50514,True,16.19,4.73,1.98,2.69,9,20.21,Container 'e1_alpine_com_4_50514' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:35:57
+alpine,com,5,e1_alpine_com_5_50557,True,11.64,-0.35,1.95,2.68,9,20.23,Container 'e1_alpine_com_5_50557' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:36:41
+debian,com,1,e1_debian_com_1_50601,True,19.22,8.2,4.36,5.09,153,20.74,Container 'e1_debian_com_1_50601' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:37:24
+debian,com,2,e1_debian_com_2_50644,True,20.21,8.17,4.25,4.96,153,20.23,Container 'e1_debian_com_2_50644' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:38:07
+debian,com,3,e1_debian_com_3_50687,True,19.21,7.64,4.24,4.96,153,20.25,Container 'e1_debian_com_3_50687' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:38:51
+debian,com,4,e1_debian_com_4_50731,True,16.19,4.79,4.21,4.93,153,19.21,Container 'e1_debian_com_4_50731' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:39:34
+debian,com,5,e1_debian_com_5_50774,True,12.64,1.71,5.7,6.49,153,20.72,Container 'e1_debian_com_5_50774' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:40:16
+alpine,sem,1,e1_alpine_sem_1_50816,True,15.17,4.06,8.31,9.03,9,19.22,Container 'e1_alpine_sem_1_50816' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:41:00
+alpine,sem,2,e1_alpine_sem_2_50860,True,12.14,0.72,7.33,8.05,9,19.23,Container 'e1_alpine_sem_2_50860' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:41:42
+alpine,sem,3,e1_alpine_sem_3_50902,True,24.78,3.05,10.67,11.37,9,20.74,Container 'e1_alpine_sem_3_50902' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:42:36
+alpine,sem,4,e1_alpine_sem_4_50956,True,18.2,7.01,8.72,9.42,9,20.72,Container 'e1_alpine_sem_4_50956' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:43:19
+alpine,sem,5,e1_alpine_sem_5_50999,True,31.84,10.23,14.12,14.82,9,20.74,Container 'e1_alpine_sem_5_50999' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:44:23
+debian,sem,1,e1_debian_sem_1_51063,True,39.41,6.86,22.87,23.61,153,20.22,Container 'e1_debian_sem_1_51063' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:45:27
+debian,sem,2,e1_debian_sem_2_51127,True,23.76,1.63,16.78,17.5,153,20.24,Container 'e1_debian_sem_2_51127' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:46:21
+debian,sem,3,e1_debian_sem_3_51181,True,26.31,4.52,18.28,18.99,153,20.74,Container 'e1_debian_sem_3_51181' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:47:15
+debian,sem,4,e1_debian_sem_4_51235,True,24.78,2.86,17.04,17.74,153,20.22,Container 'e1_debian_sem_4_51235' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:48:08
+debian,sem,5,e1_debian_sem_5_51288,True,21.76,-0.54,16.87,17.56,153,20.74,Container 'e1_debian_sem_5_51288' criado com sucesso. Crie o /app/run.sh pela aba Serviço.,2026-11-16T13:49:02
