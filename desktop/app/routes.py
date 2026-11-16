@@ -111,7 +111,9 @@ def _autorizar_node(dados):
         return None
     for ip_cadastrado, entrada in list(cadastro.items()):
         if hmac.compare_digest(str(entrada.get("token", "")), token):
-            if ip_cadastrado != ip and ip:
+            # Só migra para um IPv4 de rede local válido: o IP vira chave do
+            # cadastro, nome de evento e URL do painel.
+            if ip and ip != ip_cadastrado and _ip_valido(ip):
                 _mover_node(ip_cadastrado, ip)
                 return ip
             return ip_cadastrado

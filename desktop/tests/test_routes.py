@@ -489,6 +489,16 @@ def test_node_que_muda_de_ip_e_reconhecido_pelo_token(client, cadastro_on):
     assert list(salvo) == ["192.168.1.4"]
 
 
+@pytest.mark.parametrize("ip_invalido", ["teste", "8.8.8.8", "192.168.1.5/../x", "::1"])
+def test_ip_invalido_nao_move_o_cadastro(client, cadastro_on, ip_invalido):
+    """Mesmo com o token certo, o cadastro só migra para um IPv4 de rede local."""
+    _cadastrar("192.168.1.7")
+    resp = client.post("/api/node_sync", json={"ip": ip_invalido, "token": TOKEN})
+    assert resp.status_code == 200
+    assert list(_routes().cadastro) == ["192.168.1.7"]
+    assert list(client.get("/api/nodes").get_json()) == ["192.168.1.7"]
+
+
 def test_cadastrado_sem_contato_aparece_como_aguardando(client, cadastro_on):
     _cadastrar()
     node = client.get("/api/nodes").get_json()["192.168.1.7"]

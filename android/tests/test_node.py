@@ -652,9 +652,9 @@ def test_conectar_ws_retenta_apos_falha(monkeypatch):
     agente.config = Config(host_ip="10.0.0.1")
     agente.sio.connected = False
 
-    tentativas = [Exception("boom")]
+    tentativas = [Exception("sem websocket"), Exception("sem polling")]  # 1º ciclo: os dois falham
 
-    def fake_connect(url, auth=None):
+    def fake_connect(url, auth=None, transports=None):
         if tentativas:
             raise tentativas.pop(0)
 
@@ -668,7 +668,7 @@ def test_conectar_ws_ja_conectado_nao_refaz(monkeypatch):
     agente = NodeAgent()
     agente.sio.connected = True
 
-    def fake_connect(url, auth=None):
+    def fake_connect(url, auth=None, transports=None):
         raise AssertionError("não deveria reconectar")
 
     monkeypatch.setattr(agente.sio, "connect", fake_connect)
@@ -1165,8 +1165,27 @@ def test_websocket_se_autentica_com_o_token_do_pareamento(monkeypatch):
     agente.config = Config(host_ip="10.0.0.1", token=TOKEN)
     agente.sio.connected = False
     chamadas = []
-    monkeypatch.setattr(agente.sio, "connect", lambda url, auth=None: chamadas.append((url, auth)))
+    monkeypatch.setattr(agente.sio, "connect",
+                        lambda url, auth=None, transports=None: chamadas.append((url, auth, transports)))
     assert agente._conectar_ws() is True
-    url, auth = chamadas[0]
+    url, auth, transportes = chamadas[0]
+    assert transportes == ["websocket"]  # direto, sem começar pelo long-polling
     assert url == "http://10.0.0.1:5050"
     assert auth == {"papel": "node", "ip": agente.meu_ip, "token": TOKEN}
+
+
+def test_websocket_cai_para_polling_se_preciso(monkeypatch):
+    agente = NodeAgent()
+    agente.config = Config(host_ip="10.0.0.1", token=TOKEN)
+    agente.sio.connected = False
+    usados = []
+
+    def fake_connect(url, auth=None, transports=None):
+        usados.append(transports[0])
+        if transports == ["websocket"]:
+            raise ConnectionError("websocket bloqueado")
+
+    monkeypatch.setattr(agente.sio, "connect", fake_connect)
+    monkeypatch.setattr(agente.sio, "disconnect", lambda: None)
+    assert agente._conectar_ws() is True
+    assert usados == ["websocket", "polling"]

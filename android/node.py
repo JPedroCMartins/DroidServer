@@ -773,17 +773,27 @@ class NodeAgent:
             return True
         if not self.config.pareado:
             return False
-        try:
-            # Identifica o socket como este node (o mesmo token do sync): o host
-            # só manda comandos a sockets autenticados e só aceita deles a saída
-            # do terminal, os logs e as respostas de serviço.
-            self.sio.connect(self.config.ws_url, auth={
-                "papel": "node", "ip": self.meu_ip, "token": self.config.token or "",
-            })
-            return True
-        except Exception as e:
-            log.warning("[-] WebSocket indisponível (%s). Nova tentativa no próximo ciclo.", e)
-            return False
+        # Identifica o socket como este node (o mesmo token do sync): o host
+        # só manda comandos a sockets autenticados e só aceita deles a saída
+        # do terminal, os logs e as respostas de serviço.
+        auth = {"papel": "node", "ip": self.meu_ip, "token": self.config.token or ""}
+        # WebSocket direto: começando pelo long-polling, o agente às vezes não
+        # fazia a troca e ficava em polling (~10 requisições/s ao host com o
+        # terminal em uso, latência alta e syncs com timeout). O polling fica
+        # só como reserva, se o WebSocket falhar.
+        for transportes in (["websocket"], ["polling"]):
+            try:
+                self.sio.connect(self.config.ws_url, auth=auth, transports=transportes)
+                log.info("[+] WebSocket conectado (%s).", transportes[0])
+                return True
+            except Exception as e:
+                erro = e
+                try:
+                    self.sio.disconnect()
+                except Exception:
+                    pass
+        log.warning("[-] WebSocket indisponível (%s). Nova tentativa no próximo ciclo.", erro)
+        return False
 
     def _poll_once(self):
         """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
