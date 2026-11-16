@@ -60,6 +60,17 @@ Toda conexão é **iniciada pelo Node**: o Host nunca precisa alcançar o celula
 
 A cada 10 s o Node faz `POST /api/node_sync` com IP, Workers instalados, status de cada serviço (`supervisorctl status`), tarefa em execução, resultado das últimas operações e uso de CPU/memória. O Host responde com as **tarefas pendentes** daquele Node. A lista de Workers é **autoritativa do Node** — o painel apenas exibe o que o aparelho reporta.
 
+### Métricas
+
+| Métrica | Fonte | Observação |
+|---|---|---|
+| **CPU DroidServer** | soma de `utime+stime` de `/proc/<pid>/stat` de todos os processos do Termux | Sempre disponível; em % do aparelho inteiro (100% = todos os núcleos) |
+| **CPU por Worker** | mesma soma, restrita ao processo do serviço no Supervisor, à sessão de terminal e a seus descendentes | Processos iniciados fora do DroidServer (ex.: um `proot-distro login` manual) não entram |
+| **CPU aparelho** | `/proc/stat` (ou `top`) | Só aparece se o Android permitir; no Android 16 sem root é negado |
+| **RAM** | `/proc/meminfo` | `MemTotal − MemAvailable` |
+
+A CPU do DroidServer não enxerga outros aplicativos do celular.
+
 O Host marca um Node como **Offline** após 25 s sem contato e o remove do painel após 180 s (se não houver tarefas pendentes para ele).
 
 ### Criação de um Worker
@@ -274,7 +285,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 86 testes (34 no Host e 52 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 93 testes (35 no Host e 58 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 

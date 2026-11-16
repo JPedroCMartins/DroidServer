@@ -28,9 +28,9 @@ Recomenda-se ao menos três aparelhos de gerações diferentes (ex.: 2016, 2019,
 | E5 | QP2 | **Latência de entrega de tarefa** (s) | Tempo entre o enfileiramento no Host e o início da execução no Node; esperado ≈ U(0, 10 s) | 50 |
 | E6 | QP2 | **Tempo de detecção de falha** (s) e falsos positivos | Desligar o Wi-Fi do Node e medir até o painel mostrar *Offline*; contar transições *Offline* indevidas em 24 h | 20 / 24 h |
 | E7 | QP3 | **Disponibilidade** (%) | Worker com um servidor HTTP simples; um *script* no Host faz `GET` a cada 10 s por 24–72 h; disponibilidade = respostas OK / total. Registrar cada `signal 9` e reinício | 1 rodada por configuração |
-| E8 | QP3 | **Vazão de um microsserviço** (req/s) | `wrk` ou `hey` contra uma API leve (Flask/FastAPI ou Go) no Worker; comparar com o mesmo serviço em uma VPS básica ou num Raspberry Pi, se disponível | 5 |
+| E8 | QP3 | **Vazão de um microsserviço** (req/s) e CPU do Worker (`cpu_workers`) | `wrk` ou `hey` contra uma API leve (Flask/FastAPI ou Go) no Worker; comparar com o mesmo serviço em uma VPS básica ou num Raspberry Pi, se disponível | 5 |
 | E9 | QP3 | **Temperatura e energia** | Ler `/sys/class/thermal/*/temp` e `/sys/class/power_supply/battery/*` (quando acessíveis) ou usar um medidor USB na tomada, em repouso e sob carga E8 | Contínuo durante E7/E8 |
-| E10 | QP3 | **Consumo do agente** | CPU e RSS do `node.py` e do `supervisord` em repouso | 1 h |
+| E10 | QP3 | **Consumo do agente** | CPU (métrica `cpu_termux` com os Workers parados) e RSS do `node.py` e do `supervisord` em repouso | 1 h |
 
 ### Fatores e configurações para E7
 

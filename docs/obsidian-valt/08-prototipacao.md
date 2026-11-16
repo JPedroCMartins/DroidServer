@@ -71,7 +71,9 @@ POST /api/node_sync
   "worker_status": {"alpine_api": "RUNNING", "debian_bd": "STARTING"},
   "tarefa_atual": {"acao": "criar_worker", "alias": "arch_dev", "imagem": "archlinux"},
   "resultados": [{"acao": "deletar_worker", "alias": "teste", "ok": true, "msg": "...", "ts": "14:02:11"}],
-  "cpu": 23.4,
+  "cpu": null,
+  "cpu_termux": 25.0,
+  "cpu_workers": {"alpine_api": 24.9, "debian_bd": 0.0},
   "mem": {"total": 3876544512, "usado": 2147483648, "percent": 55.4},
   "token": "opcional"
 }
@@ -146,7 +148,26 @@ startsecs=5
 
 A remoção segue o caminho inverso: encerra a sessão de terminal, para o serviço, remove o `.conf`, encerra as sessões restantes do container (`proot-distro kill`), executa `proot-distro remove` — com novas tentativas, pois o comando falha de imediato se alguma sessão ainda segura o *lock* do container — e apaga os *logs*.
 
-## 8.5 Decisões de projeto
+## 8.5 Monitoramento de recursos
+
+No aparelho de testes (Android 16, sem *root*), o SELinux nega a leitura de `/proc/stat` e `/proc/loadavg`, de temperatura e de bateria, e o `top` do sistema exibe 100% ocioso. Duas fontes permanecem acessíveis e foram avaliadas com cargas controladas (laços infinitos em 2, 4 e 8 núcleos, janelas de 6 s):
+
+| Carga gerada | `cpuidle` (tempo ocioso por núcleo) | Soma dos processos do Termux |
+|---|---|---|
+| 0% | 39–45% | 0,1% |
+| 25% | 93% | 22,9% |
+| 50% | 84% | 49,8% |
+| 100% | 100% | 87,5% |
+
+*Tabela 1 — Fontes de CPU acessíveis sem root. Fonte: medição do autor (Xiaomi 2311DRK48G, 15/11/2026).*
+
+O tempo ocioso exposto em `cpuidle` foi descartado por não ser monotônico com a carga. Adotou-se a soma de `utime + stime` dos processos visíveis (mesmo UID do Termux), normalizada pelo número de núcleos e pelo intervalo entre amostras:
+
+$$\text{CPU}_\%=100\cdot\frac{\sum_p \Delta(\text{utime}_p+\text{stime}_p)}{\text{CLK\_TCK}\cdot\Delta t\cdot N_\text{núcleos}}$$
+
+A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID obtido do `supervisorctl status`), a sessão de terminal e seus descendentes. Com dois laços infinitos dentro de um Worker, o painel exibiu 25,0% no total e 24,9% no Worker. A métrica não inclui outros aplicativos do aparelho, e processos que nascem e morrem entre duas amostras não são contabilizados.
+
+## 8.6 Decisões de projeto
 
 | Decisão | Motivo | Consequência |
 |---|---|---|
@@ -159,10 +180,10 @@ A remoção segue o caminho inverso: encerra a sessão de terminal, para o servi
 | Estado do Host em memória | Simplicidade do protótipo | Reiniciar o Host apaga o registro (os Nodes se re-registram em 10 s) |
 | Token opcional (`DROID_API_TOKEN`) | Restringir quais Nodes se registram | Enviado em texto claro (sem TLS) |
 
-## 8.6 Garantia de qualidade
+## 8.7 Garantia de qualidade
 
-O projeto possui 86 testes automatizados com `pytest` (34 no Host e 52 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 93 testes automatizados com `pytest` (35 no Host e 58 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
-## 8.7 Interface
+## 8.8 Interface
 
 *(Inserir capturas de tela: Dashboard com os Nodes e as barras de CPU/RAM; página do Node com o formulário de criação e os cartões de Workers; terminal com `htop` em execução dentro de um Worker.)*
