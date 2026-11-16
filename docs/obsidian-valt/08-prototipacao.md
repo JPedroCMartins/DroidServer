@@ -168,9 +168,9 @@ sequenceDiagram
     H-->>N: tarefas: [criar_worker]
     N->>N: fila interna (thread) — não bloqueia o polling
     N->>N: limpa resíduos do alias; proot-distro install <imagem> --override-alias <alias>
+    N->>N: grava /app/.droidserver/lancador.sh direto no rootfs
     N->>S: grava conf.d/<alias>.conf; supervisorctl reread/update
-    N->>N: injeta /app/run_server.sh (base64)
-    N->>H: próximo sync: resultados [✓ criado], worker_status RUNNING
+    N->>H: próximo sync: resultados [✓ criado], serviço "aguardando run.sh"
 ```
 
 *Figura 4 — Criação de um Worker.*
@@ -179,11 +179,41 @@ O serviço gerado para o Supervisor tem a forma:
 
 ```ini
 [program:alpine_api]
-command=sh -c 'ulimit -n 4096 2>/dev/null; ulimit -u 1024 2>/dev/null; exec proot-distro login --isolated alpine_api -- /app/run_server.sh'
+; droidserver-conf: 3
+command=sh -c 'ulimit -n 4096 2>/dev/null; ulimit -u 1024 2>/dev/null; exec proot-distro login --isolated alpine_api -- /bin/sh /app/.droidserver/lancador.sh'
 autostart=true
 autorestart=true
 startsecs=5
+startretries=5
+stopasgroup=true
+killasgroup=true
+redirect_stderr=true
+stdout_logfile=$PREFIX/var/log/droidserver_alpine_api.log
+stdout_logfile_maxbytes=1MB
+stdout_logfile_backups=3
 ```
+
+### 8.4.1 O serviço do Worker
+
+Cada Worker executa **um serviço: o arquivo `/app/run.sh`**. O Supervisor roda um lançador que espera o `run.sh` existir e o executa com `exec`, em primeiro plano. Assim, o processo vigiado pelo Supervisor é o do próprio serviço, e criar o arquivo basta para o serviço subir. Como o *rootfs* do container pertence ao usuário do Termux, o agente lê e grava o `run.sh`, o lançador e o log **diretamente no sistema de arquivos**, sem abrir uma sessão do PRoot, que levaria segundos.
+
+O administrador controla o serviço pela aba **Serviço** do painel:
+
+| Necessidade | Recurso | Implementação |
+|---|---|---|
+| O que roda | Editor do `/app/run.sh` | gravação atômica, até 64 KB, `chmod 755` |
+| Como | Iniciar / Parar / Reiniciar | `supervisorctl start/stop/restart`; um `.conf` alterado é aplicado com `update` |
+| Quando | "Iniciar junto com o celular" / "Reiniciar se cair" | `autostart` / `autorestart` no `.conf` |
+| Diagnóstico | Logs ao vivo, aviso de `&`/`nohup`, explicação de `FATAL` | log único com rotação; o agente lê só o que foi acrescentado, 1×/s, enquanto alguém assiste |
+
+Os comandos e os logs usam o WebSocket já aberto pelo Node, e não o *sync* de 10 s: a resposta de um botão chega em menos de 1 s. As respostas vão só ao navegador que pediu e os logs só à sala Socket.IO daquele Worker.
+
+Dois problemas apareceram na validação no aparelho e moldaram o desenho:
+
+- **Processo antigo segurando a porta.** Na migração dos Workers antigos, o Supervisor sinalizava apenas o `proot-distro`, e o servidor do usuário sobrevivia alguns segundos. O serviço novo falhava com *"Address in use"* e, após 3 tentativas, ficava `FATAL`. Correções: `stopasgroup/killasgroup`, `startretries=5` e, na migração, parar o serviço e encerrar as sessões do container (`proot-distro kill`) antes de trocar o `.conf`.
+- **Saída ambígua do `supervisorctl`.** Um `restart` sobre um serviço `FATAL` imprime `ERROR (not running)` seguido de `started`. Tratar qualquer `ERROR` como falha fazia o painel acusar erro num reinício bem-sucedido.
+
+Validação (Xiaomi 2311DRK48G, Android 16): migração dos 5 Workers existentes (3 scripts próprios preservados como `run.sh`), escrita de um `run.sh` do zero pelo painel com "Salvar e reiniciar", logs ao vivo, Parar/Iniciar e o caso de falha (comando inexistente → estado "Falhou", com a causa exata no log).
 
 A remoção segue o caminho inverso: encerra a sessão de terminal, para o serviço, remove o `.conf`, encerra as sessões restantes do container (`proot-distro kill`), executa `proot-distro remove` — com novas tentativas, pois o comando falha de imediato se alguma sessão ainda segura o *lock* do container — e apaga os *logs*.
 
@@ -222,7 +252,7 @@ A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID 
 
 ## 8.7 Garantia de qualidade
 
-O projeto possui 124 testes automatizados com `pytest` (51 no Host e 73 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 157 testes automatizados com `pytest` (58 no Host e 99 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
 ## 8.8 Interface
 

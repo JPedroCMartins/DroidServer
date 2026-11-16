@@ -34,6 +34,64 @@ Objetivo: na defesa, criar um Worker pelo painel e abrir no navegador um serviç
 - Cadastro de Nodes pelo painel: varredura de rede, pareamento com token, remoção; o `setup.sh` não pergunta mais o IP do Host.
 - Campos de pacotes/comando de inicialização: implementados e **retirados** a pedido (a aplicação de demonstração é instalada pelo terminal).
 
+## Fase 1B — Serviço do Worker controlado pelo painel ✅ (feito e validado no aparelho em 16/11)
+
+Objetivo: a pessoa controla **pelo painel** o que roda em cada Worker, **como** e **quando**, e vê os **logs**, sem precisar de terminal nem SSH.
+
+### Como fica para o usuário
+
+Na página do Worker, ao lado da aba **Terminal**, uma aba **Serviço**:
+
+```
+┌ Serviço ─────────────────────────────────────────────────────────────┐
+│ ● RUNNING  pid 18919 · no ar há 37 min        [■ Parar] [⟳ Reiniciar] │
+│ ☑ Iniciar junto com o celular   ☑ Reiniciar automaticamente se cair  │
+├ /app/run.sh ─────────────────────────────────────────────────────────┤
+│ #!/bin/sh                                                            │
+│ cd /app                                                              │
+│ exec python3 app.py                                                  │
+│                               [Inserir exemplo] [Salvar] [Salvar e reiniciar] │
+├ Logs (ao vivo) ────────────────────────── [⏸ Pausar] [Limpar] [Baixar] ┤
+│ 23:41:02  [demo] escutando em 0.0.0.0:8080                           │
+│ 23:41:09  192.168.1.10 - "GET / HTTP/1.1" 200 -                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+- **O quê:** o serviço é sempre o arquivo **`/app/run.sh`** do Worker, editável no painel.
+- **Como:** botões Iniciar / Parar / Reiniciar; "Salvar e reiniciar" aplica a edição na hora.
+- **Quando:** "Iniciar junto com o celular" (padrão: ligado) e "Reiniciar automaticamente se cair" (padrão: ligado).
+- **Logs:** saída e erros do serviço ao vivo, com as últimas 200 linhas ao abrir.
+- **Ajuda:** sem `run.sh`, o Worker aparece como **"Aguardando /app/run.sh"**. Se o serviço morre logo depois de iniciar, o painel explica a causa mais comum (*"o run.sh terminou; o serviço precisa ficar em primeiro plano, sem `&`"*) e mostra as últimas linhas do log.
+
+### Recomendações (decididas)
+
+| Decisão | Escolha | Motivo |
+|---|---|---|
+| Onde fica o serviço | Um arquivo por Worker: `/app/run.sh` | Convenção única e visível; para dois serviços, dois Workers |
+| Reiniciar ao editar | **Não** automático: botão "Salvar e reiniciar" | Evita reinício no meio de uma edição; a pessoa decide quando |
+| Canal dos comandos e logs | **WebSocket** já existente (Host ↔ Node) | O sync é a cada 10 s; botões e logs precisam responder na hora |
+| Quem recebe os logs | Só o navegador que abriu a aba (*room* do Socket.IO) | Já resolve, para esta função, o problema 2.1 da Fase 2 |
+| Leitura/escrita do `run.sh` e dos logs | Direto no `rootfs` pelo agente | O rootfs pertence ao Termux; não precisa abrir sessão `proot` |
+
+### Etapas
+
+| # | Tarefa | Onde | Esforço |
+|---|---|---|---|
+| B1 | **Lançador** no lugar do `run_server.sh`: um script interno (`/app/.droidserver/lancador.sh`) que espera o `/app/run.sh` existir, avisa no log enquanto espera e executa o `run.sh` em primeiro plano (`exec`). O Supervisor passa a rodar o lançador; saída e erro num único log com rotação (1 MB × 3) | agente | 1 h |
+| B2 | **Migração dos Workers existentes** ao iniciar o agente: reescreve o `.conf` para o lançador e, se houver um `run_server.sh` personalizado (ex.: `demo_api`), o renomeia para `run.sh`; o script ocioso padrão é descartado | agente | 45 min |
+| B3 | **Comandos do serviço** pelo WebSocket: `iniciar`, `parar`, `reiniciar` (via `supervisorctl`), `ler_script`, `salvar_script` (até 64 KB, gravação atômica, `chmod +x`), `configurar` (liga/desliga `autostart` e `autorestart` no `.conf` + `reread/update`), com resposta de sucesso ou erro | agente + Host | 2 h |
+| B4 | **Logs ao vivo:** ao abrir a aba, o agente manda as últimas 200 linhas e passa a enviar as novas a cada ~1 s enquanto alguém estiver assistindo; para quando ninguém está vendo | agente + Host | 1,5 h |
+| B5 | **Estado detalhado no sync:** estado do Supervisor, pid, tempo no ar, se o `run.sh` existe, `autostart`/`autorestart` e o motivo da última falha | agente + Host | 45 min |
+| B6 | **Aba Serviço no painel** (layout acima), com o botão "Inserir exemplo" (servidor HTTP simples) e o aviso de erro comum | painel | 2 h |
+| B7 | **Testes** (lançador, migração, comandos, logs, configurações) e **validação no celular**: migrar os 4 Workers, editar o `run.sh` pelo painel, parar/reiniciar, desligar "iniciar com o celular" e reiniciar o aparelho para conferir | todos | 1,5 h |
+| B8 | **Documentação:** README (seção "Rodando seu serviço"), vault 8.4 (ciclo de vida do serviço) e overview | docs | 45 min |
+
+**Total: ≈ 10 h.** Ordem: B1 → B2 → B5 → B3 → B4 → B6 → B7 → B8, com um commit por etapa estável.
+
+### Fora desta fase
+
+Mais de um serviço por Worker, variáveis de ambiente pelo painel, agendamento por horário (cron), upload de arquivos para `/app` e reinício automático ao editar o arquivo.
+
 ## Fase 2 — Segurança mínima para não ser questionado (≈ 1 dia)
 
 Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitações.

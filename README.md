@@ -87,10 +87,34 @@ O Host marca um Node como **Offline** após 25 s sem contato e o remove do paine
 
 1. O painel envia `POST /deploy_worker`; o Host valida o alias e a distribuição e enfileira `criar_worker`.
 2. No próximo sync, o Node recebe a tarefa e a executa numa thread separada (instalar pode levar minutos sem travar o polling).
-3. O Node limpa resíduos do mesmo alias, roda `proot-distro install <distro> --override-alias <alias>`, grava `$PREFIX/etc/supervisor/conf.d/<alias>.conf` e recarrega o Supervisor.
-4. O Supervisor mantém o Worker rodando com `proot-distro login [--isolated] <alias> -- /app/run_server.sh`, aplicando limites `ulimit` (arquivos abertos e processos).
-5. O agente cria um `/app/run_server.sh` padrão (um loop ocioso) — **substitua-o pelo seu aplicativo**.
+3. O Node limpa resíduos do mesmo alias, roda `proot-distro install <distro> --override-alias <alias>`, grava o **lançador** do serviço no container, cria `$PREFIX/etc/supervisor/conf.d/<alias>.conf` e recarrega o Supervisor.
+4. O Supervisor roda `proot-distro login [--isolated] <alias> -- /bin/sh /app/.droidserver/lancador.sh`, com limites `ulimit` (arquivos abertos e processos).
+5. O Worker fica em **"Aguardando run.sh"** até você escrever o serviço na aba **Serviço** (veja abaixo).
 6. O resultado (✓/✗) aparece no painel no sync seguinte.
+
+### Serviço do Worker (`/app/run.sh`)
+
+Cada Worker tem **um serviço: o arquivo `/app/run.sh`** dentro do container. O Supervisor não o executa diretamente, e sim um lançador (`/app/.droidserver/lancador.sh`) que **espera o `run.sh` existir** e então o executa em primeiro plano. Basta criar o arquivo para o serviço subir.
+
+Na página do Worker, aba **Serviço**:
+
+| O quê | Como |
+|---|---|
+| **O que roda** | Editor do `/app/run.sh` (com "Inserir exemplo"; `Ctrl+S` salva). "Salvar e reiniciar" aplica na hora |
+| **Controle** | Iniciar · Parar · Reiniciar, com estado, pid e tempo no ar |
+| **Quando** | "Iniciar junto com o celular" (`autostart`) e "Reiniciar automaticamente se cair" (`autorestart`); valem a partir da próxima reinicialização do serviço |
+| **Logs** | Saída e erros ao vivo (últimas 200 linhas ao abrir), com pausar, limpar e baixar |
+| **Ajuda** | Aviso se o `run.sh` manda o serviço para segundo plano (`&`, `nohup`) e explicação quando o serviço falha logo ao iniciar |
+
+Regras do `run.sh`: o serviço precisa ficar em **primeiro plano**, use `exec` no último comando e lembre que a rede não é isolada (a porta aberta fica em `http://<ip-do-celular>:<porta>`; dois Workers não podem usar a mesma). Exemplo:
+
+```sh
+#!/bin/sh
+cd /app
+exec python3 -m http.server 8080
+```
+
+Os comandos e os logs passam pelo WebSocket já aberto entre o Host e o Node (resposta imediata, sem esperar o sync), e os logs vão só para o navegador que está com a aba aberta. Workers criados por versões anteriores são migrados ao iniciar o agente: um `/app/run_server.sh` próprio vira `/app/run.sh`.
 
 ### Terminal (WebSocket)
 
@@ -199,10 +223,9 @@ O Android encerra processos em segundo plano agressivamente. Para um Node estáv
 1. Acesse `http://<host>:5050`. O **Dashboard** mostra os Nodes, se estão online e o uso de CPU/RAM de cada um.
 2. Clique em **Gerenciar Workers** para abrir a página do Node.
 3. Escolha a distribuição (**Alpine**, recomendada: ~50 MB e pronta em segundos; ou **Debian**, ~150 MB, quando o software exigir glibc/`apt`), informe um alias (`[A-Za-z0-9_-]`, até 64 caracteres) e clique em **Criar Container**. A opção **Isolar do host** (`--isolated`, ativada por padrão) impede o Worker de enxergar o *home* do Termux e o armazenamento do aparelho.
-4. Acompanhe "Em processamento" e "Últimas operações"; o Worker aparece como `RUNNING` quando o Supervisor o inicia.
-5. Clique em **Abrir terminal** para uma sessão interativa dentro do Worker, ou no ícone de lixeira para removê-lo.
-
-Para rodar sua aplicação, entre no terminal do Worker, instale o necessário e substitua `/app/run_server.sh` por um script que inicie seu serviço em primeiro plano (sem `&`), para que o Supervisor consiga monitorá-lo.
+4. Acompanhe "Em processamento" e "Últimas operações"; o Worker aparece como **Aguardando run.sh**.
+5. Clique em **Serviço**: escreva o `/app/run.sh` e use **Salvar e reiniciar**. Instale o que o serviço precisa pelo **Terminal** (ícone ao lado; ex.: `apk add python3`).
+6. Acompanhe os logs na mesma aba. O ícone de lixeira remove o Worker.
 
 ## Configuração
 
@@ -267,6 +290,12 @@ No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{ho
 | `cmd_to_<ip>_<alias>` | Host → Node | `{input}` |
 | `resize_to_<ip>_<alias>` | Host → Node | `{cols, rows}` |
 | `output_for_<ip>_<alias>` | Host → Navegador | `{output}` |
+| `servico` | Navegador → Host | `{ip, alias, acao, dados, req}` — `acao`: iniciar, parar, reiniciar, ler_script, salvar_script, configurar, exemplo |
+| `servico_to_<ip>` | Host → Node | `{alias, acao, dados, sid, req}` |
+| `servico_resposta` | Node → Host → navegador que pediu | `{alias, acao, req, ok, msg, dados, servico}` |
+| `logs_assinar` / `logs_cancelar` | Navegador → Host | `{ip, alias}` (entra/sai da sala `logs:<ip>:<alias>`) |
+| `logs_to_<ip>` | Host → Node | `{alias, acao: assinar\|cancelar}` — o node só lê o log enquanto alguém assiste |
+| `logs_saida` | Node → Host → sala do Worker | `{alias, linhas, inicial}` |
 
 ## Logs e diagnóstico
 
@@ -276,7 +305,7 @@ No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{ho
 | Agente | `~/.config/droidserver/logs/node.log` (rotativo, 2 MB × 5) |
 | Agente em segundo plano (stdout) | `~/.config/droidserver/logs/agent.out` |
 | Supervisor | `$PREFIX/var/log/supervisor/supervisord.log` |
-| Cada Worker | `$PREFIX/var/log/supervisor_<alias>_{out,err}.log` |
+| Serviço de cada Worker | `$PREFIX/var/log/droidserver_<alias>.log` (saída e erros juntos; rotação 1 MB × 3) — também na aba Serviço |
 | Host | `desktop/logs/droidserver.log` (rotativo, 2 MB × 5) |
 
 Para coletar tudo de uma vez no celular:
@@ -303,7 +332,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 124 testes (51 no Host e 73 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 157 testes (58 no Host e 99 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
