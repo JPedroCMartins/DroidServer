@@ -9,7 +9,7 @@
 - **Distribuições disponíveis:** o `proot-distro` recente baixa imagens do Docker Hub, e a imagem oficial do Arch Linux só é publicada para `amd64`. Há imagens comunitárias do Arch Linux ARM (ex.: `menci/archlinuxarm`), mas, por não serem oficiais, o protótipo oferece apenas Alpine (recomendada) e Debian.
 - **Políticas do Android:** Doze, `lmkd` e *phantom process killer* podem encerrar o agente ou os Workers; as mitigações exigem configuração manual (e, para o *phantom process killer*, ADB ou opções de desenvolvedor).
 - **Segurança:** o painel não tem autenticação; o token dos Nodes trafega sem TLS; o servidor roda com `debug=True` e `cors_allowed_origins="*"`; os eventos de terminal são difundidos a todos os clientes conectados. O protótipo deve ficar restrito a uma rede confiável.
-- **Identidade por IP:** o Node é identificado pelo endereço IP; mudanças de DHCP geram registros duplicados e dois Nodes atrás do mesmo NAT colidiriam.
+- **Pareamento sem confirmação no aparelho:** um Node ainda não pareado aceita o pareamento de qualquer máquina da rede local; não há código de confirmação exibido no celular. Depois de pareado, só o mesmo Host pode parear de novo ou desfazer. O token trafega sem TLS.
 - **Estado volátil e ponto único de falha:** o Host guarda tudo em memória e não é replicado.
 - **Sem escalonamento:** o administrador escolhe manualmente em qual Node cada Worker roda.
 - **Serviços não expostos:** não há mapeamento de portas nem *proxy* reverso para acessar, a partir do Host, os serviços que rodam nos Workers.
@@ -24,7 +24,7 @@
 ## 10.3 Trabalhos futuros
 
 1. Autenticação no painel, TLS e salas (*rooms*) por sessão no Socket.IO.
-2. Identificador estável por Node (UUID gerado no `setup.sh`) em vez do IP.
+2. Código de confirmação exibido no celular durante o pareamento (como no Bluetooth) e TLS entre Host e Nodes.
 3. Persistência do estado do Host (SQLite) e reconciliação de estado desejado × real, ao estilo Kubernetes.
 4. Escalonador automático que escolha o Node com base em CPU, memória, temperatura e nível de bateria.
 5. *Proxy* reverso no Host para expor os serviços dos Workers (ex.: `http://host/w/<node>/<alias>/`).

@@ -58,6 +58,45 @@ flowchart LR
 
 ## 8.3 Protocolo de comunicação
 
+### 8.3.0 Cadastro dos Nodes (iniciado pelo painel)
+
+Nas primeiras versões, cada celular precisava ser configurado com o IP do Host, e o Host aceitava qualquer Node que se apresentasse. Isso tinha dois problemas observados no aparelho de testes: o administrador precisava digitar o IP do Host em cada celular, e o celular mudava de IP a cada *reboot* (DHCP: `.7 → .4 → .7`), o que criava registros duplicados no painel.
+
+A versão atual inverte o cadastro: **o painel encontra e adiciona os Nodes**. O agente abre uma porta de descoberta (5051/TCP) que responde apenas à identificação (`GET /droidserver`) e ao pareamento (`POST /parear`, `POST /desparear`).
+
+```mermaid
+sequenceDiagram
+    participant A as Administrador
+    participant H as Host
+    participant N as Node (porta 5051)
+    A->>H: Varrer 192.168.1.0/24
+    loop 254 endereços, 64 em paralelo
+        H->>N: GET /droidserver
+        N-->>H: {modelo, android, pareado}
+    end
+    A->>H: Adicionar 192.168.1.7
+    H->>H: gera token exclusivo (secrets.token_hex(24))
+    H->>N: POST /parear {host_port, token}
+    N->>N: host = IP de origem do pedido; salva pareamento.json (0600)
+    N-->>H: ok
+    H->>H: salva nodes.json (0600)
+    loop a cada 10 s
+        N->>H: POST /api/node_sync {..., token}
+        H-->>N: tarefas (ou 401 se o token não for de um Node cadastrado)
+    end
+```
+
+*Figura 2 — Descoberta e pareamento de um Node.*
+
+Decisões:
+
+- **O endereço do Host vem do próprio pedido de pareamento** (IP de origem da conexão TCP), e não de um campo enviado: um terceiro não consegue apontar o Node para outra máquina.
+- **O Node é identificado pelo token, não pelo IP.** Se um sync chega com um token cadastrado e um IP diferente, o Host move o cadastro, o estado e o histórico para o novo IP.
+- **Um Node pareado só aceita novo pareamento do mesmo Host** e só o Host pareado, com o token, pode desfazê-lo.
+- **Depois do pareamento, a operação continua iniciada pelo Node** (sync e WebSocket), o que preserva a tolerância às restrições de energia do Android discutida em 5.6.
+
+Medições no aparelho (15/11/2026): a varredura de uma `/24` levou **3,2 s**; após "Adicionar", o Node apareceu *Online* com seus 4 Workers em ~10 s; reiniciar o Host não exigiu readicionar (cadastro persistido); um pedido de pareamento vindo de outro endereço foi recusado.
+
 ### 8.3.1 Sincronização (HTTP, iniciada pelo Node)
 
 A cada `POLL_INTERVAL = 10 s`, o agente envia:
@@ -113,7 +152,7 @@ sequenceDiagram
     H->>B: output_for_<ip>_<alias> {output}
 ```
 
-*Figura 2 — Fluxo de uma tecla no terminal remoto.*
+*Figura 3 — Fluxo de uma tecla no terminal remoto.*
 
 ## 8.4 Ciclo de vida de um Worker
 
@@ -134,7 +173,7 @@ sequenceDiagram
     N->>H: próximo sync: resultados [✓ criado], worker_status RUNNING
 ```
 
-*Figura 3 — Criação de um Worker.*
+*Figura 4 — Criação de um Worker.*
 
 O serviço gerado para o Supervisor tem a forma:
 
@@ -177,12 +216,13 @@ A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID 
 | `--isolated` por padrão | Evita que o Worker veja o *home* do Termux e o `/sdcard` | Requer `proot-distro` recente |
 | `ulimit` por Worker | Único limite disponível sem *cgroups* | Não limita CPU nem memória |
 | Validação do alias (`^[A-Za-z0-9_-]{1,64}$`) no Host e no Node | O alias vira caminho, nome de serviço e nome de evento | Previne injeção de comandos e de caminhos |
-| Estado do Host em memória | Simplicidade do protótipo | Reiniciar o Host apaga o registro (os Nodes se re-registram em 10 s) |
+| Cadastro de Nodes em disco; estado de operação em memória | O cadastro (tokens) precisa sobreviver a reinícios; o resto é refeito pelos syncs | Reiniciar o Host não exige readicionar Nodes |
+| Node identificado por token, cadastrado pelo painel | O IP muda a cada reboot (DHCP); o celular não precisa saber o IP do Host | Um Node ainda não pareado aceita pareamento de qualquer máquina da LAN |
 | Token opcional (`DROID_API_TOKEN`) | Restringir quais Nodes se registram | Enviado em texto claro (sem TLS) |
 
 ## 8.7 Garantia de qualidade
 
-O projeto possui 93 testes automatizados com `pytest` (35 no Host e 58 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 124 testes automatizados com `pytest` (51 no Host e 73 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
 ## 8.8 Interface
 

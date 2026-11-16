@@ -24,9 +24,15 @@ Objetivo: na defesa, criar um Worker pelo painel e abrir no navegador um serviç
 | 1.1 | **Rodar uma aplicação num Worker** (API Flask ou `python -m http.server`) via `/app/run_server.sh` e acessá-la em `http://192.168.1.7:<porta>` | É a promessa central ("VPS no celular"). O PRoot não isola a rede, então a porta do Worker deve abrir direto no IP do celular — **confirmar** | 2 h |
 | 1.2 | Criar um **template de aplicação**: campo opcional "comando de inicialização" no formulário, gravado no `run_server.sh` na criação | Hoje é preciso editar o arquivo pelo terminal; na demonstração isso confunde | 3 h |
 | 1.3 | ~~Testar **Debian e Arch** no aparelho~~ ✅ Debian ok (80 s com `apt`); Arch retirado (sem imagem arm64) | — | feito |
-| 1.4 | **Sobreviver a reboot e a horas de uso:** ativar o Termux:Boot, liberar o "Início automático" e o "Sem restrições" de bateria (Xiaomi/HyperOS é agressivo), desativar o *phantom process killer* e reiniciar o celular | Se o agente morrer durante a apresentação, nada funciona | 2 h |
-| 1.5 | **Reservar IP fixo** para o(s) celular(es) no roteador (DHCP *reservation*) | Contorna o Node identificado por IP (2.9) sem escrever código | 15 min |
+| 1.4 | ✅ *Reboot validado (Termux:Boot); falta o teste de horas de uso (E7).* **Sobreviver a reboot e a horas de uso:** ativar o Termux:Boot, liberar o "Início automático" e o "Sem restrições" de bateria (Xiaomi/HyperOS é agressivo), desativar o *phantom process killer* e reiniciar o celular | Se o agente morrer durante a apresentação, nada funciona | 2 h |
+| 1.5 | ~~Reservar IP fixo no roteador~~ — **desnecessário**: o painel identifica o Node pelo token e acompanha a troca de IP | Contorna o Node identificado por IP (2.9) sem escrever código | 15 min |
 | 1.6 | Segundo aparelho, **se houver um disponível** | "Cluster" com um nó só enfraquece a defesa | 1 h |
+
+### Feito além do plano (pedido em 15/11)
+
+- Gráfico em tempo real de CPU do DroidServer e RAM ao lado de cada Node.
+- Cadastro de Nodes pelo painel: varredura de rede, pareamento com token, remoção; o `setup.sh` não pergunta mais o IP do Host.
+- Campos de pacotes/comando de inicialização: implementados e **retirados** a pedido (a aplicação de demonstração é instalada pelo terminal).
 
 ## Fase 2 — Segurança mínima para não ser questionado (≈ 1 dia)
 

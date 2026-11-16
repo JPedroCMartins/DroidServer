@@ -54,7 +54,17 @@ Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em 
                          └───────────────────────────────────────────┘
 ```
 
-Toda conexão é **iniciada pelo Node**: o Host nunca precisa alcançar o celular, o que funciona atrás de NAT e tolera as restrições de energia do Android.
+### Cadastro dos Nodes (pareamento pelo painel)
+
+O celular **não precisa saber o IP do Host**. O agente abre a porta **5051**, que só responde a duas coisas: "quem é você?" (`GET /droidserver`) e "pareie comigo" (`POST /parear`).
+
+1. No Dashboard, **Adicionar node** → informe o IP do celular ou clique em **Varrer**. A varredura pergunta a cada endereço da rede (por padrão, a `/24` do Host) se há um agente na porta 5051, e lista modelo, versão do Android e se ele já está pareado.
+2. Ao adicionar, o Host gera um **token exclusivo** para aquele Node e o envia junto com a própria porta. O Node usa como endereço do Host o IP de quem fez o pedido e salva tudo em `~/.config/droidserver/pareamento.json` (modo 600).
+3. A partir daí, o Node sincroniza como descrito abaixo, e o Host **só aceita syncs de Nodes cadastrados**, com o token certo. O cadastro fica em `desktop/data/nodes.json` e sobrevive a reinícios do Host.
+
+O Node é identificado pelo **token**, não pelo IP: se o celular voltar de um reboot com outro IP (DHCP), o Host move o cadastro, o estado e o histórico para o IP novo. Um Node pareado por um painel só aceita novo pareamento vindo do mesmo Host; **Remover** no card do Node desfaz o pareamento no celular.
+
+Depois do pareamento, toda conexão de operação é **iniciada pelo Node** (sync e WebSocket do terminal), o que tolera as restrições de energia do Android.
 
 ### Sincronização (HTTP)
 
@@ -158,13 +168,13 @@ O `setup.sh` pode ser executado de novo sem problemas. Ele:
 1. instala os pacotes base e o Supervisor (via `pip`, com o `pkg` como alternativa);
 2. gera ou ajusta o `$PREFIX/etc/supervisord.conf` — usando HTTP em `127.0.0.1:9001` com senha quando o Python do Termux não tem `os.link()` — e inicia o `supervisord`;
 3. instala as dependências do agente e testa os imports;
-4. pergunta IP, porta e token do Host, salva em `~/.config/droidserver/env` (modo 600) e testa a conexão;
+4. mostra o IP do celular — não é preciso informar nada sobre o Host;
 5. opcionalmente cria um container Alpine de teste e configura o início automático com o Termux:Boot.
 
-Depois, inicie o agente:
+Depois, inicie o agente e **adicione o celular pelo painel** (Dashboard → Adicionar node → IP ou Varrer):
 
 ```bash
-bash android/run.sh
+bash android/run.sh -d
 ```
 
 | Comando | Efeito |
@@ -200,13 +210,14 @@ Para rodar sua aplicação, entre no terminal do Worker, instale o necessário e
 
 | Variável | Onde | Padrão | Descrição |
 |---|---|---|---|
-| `DROID_HOST_IP` | Node | `192.168.1.10` | IP do Host |
-| `DROID_HOST_PORT` | Node | `5050` | Porta do Host |
-| `DROID_TOKEN` | Node | vazio | Token enviado no sync |
+| `DROID_NODE_PORT` | Node | `5051` | Porta de descoberta e pareamento do agente |
+| `DROID_PAREAMENTO_FILE` | Node | `~/.config/droidserver/pareamento.json` | Onde o pareamento feito pelo painel é salvo |
+| `DROID_HOST_IP` / `DROID_HOST_PORT` / `DROID_TOKEN` | Node | vazio | Modo antigo (manual), usado só se não houver pareamento; o Host exige cadastro, então é preciso adicionar o Node pelo painel de qualquer forma |
 | `DROID_LOG_FILE` | Node | `~/.config/droidserver/logs/node.log` | Arquivo de log do agente |
 | `DROID_ULIMIT_NOFILE` | Node | `4096` | Limite de arquivos abertos por Worker (`0` desativa) |
 | `DROID_ULIMIT_NPROC` | Node | `1024` | Limite de processos por Worker (`0` desativa) |
-| `DROID_API_TOKEN` | Host | vazio | Se definido, só aceita Nodes que enviem o mesmo token |
+| `DROID_DATA_DIR` | Host | `desktop/data/` | Onde fica o cadastro de Nodes (`nodes.json`, com os tokens) |
+| `DROID_NODE_PORT` | Host | `5051` | Porta usada para sondar e parear os Nodes |
 | `DROID_BIND` | Host | `0.0.0.0` | Endereço em que o Host escuta |
 | `DROID_PORT` | Host | `5050` | Porta do Host |
 | `DROID_DEBUG` | Host | `0` | `1` liga o modo debug — só aceito com `DROID_BIND=127.0.0.1` |
@@ -234,7 +245,14 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 | `GET` | `/`, `/node/<ip>`, `/node/<ip>/worker/<alias>` | SPA (as telas são resolvidas no navegador) |
 | `GET` | `/api/nodes` | Estado de todos os Nodes |
 | `GET` | `/api/node/<ip>` | Estado de um Node (404 se desconhecido) |
-| `POST` | `/api/node_sync` | Sync do Node; responde `{"status": "ok", "tarefas": [...]}` |
+| `POST` | `/api/node_sync` | Sync do Node (exige o token do cadastro); responde `{"status": "ok", "tarefas": [...]}` ou 401 |
+| `GET` | `/api/node/<ip>/historico` | Série de CPU do DroidServer e RAM (até 30 min) para o gráfico |
+| `GET` | `/api/rede` | Rede sugerida para a varredura (a `/24` do Host) |
+| `POST` | `/api/varredura` | `{"rede": "192.168.1.0/24"}` → Nodes que respondem na porta 5051 (no máximo uma `/22`) |
+| `POST` | `/api/nodes/adicionar` | `{"ip": "..."}` → pareia o Node e o cadastra |
+| `POST` | `/api/nodes/<ip>/remover` | Remove do cadastro e desfaz o pareamento no celular |
+
+No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{host_port, token}`) e `POST /desparear` (`{token}`, só do Host pareado).
 | `POST` | `/deploy_worker` | Form `ip`, `alias`, `imagem`, `isolado` → enfileira `criar_worker` |
 | `GET` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` |
 
@@ -285,15 +303,15 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 93 testes (35 no Host e 58 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 124 testes (51 no Host e 73 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
 O DroidServer é um protótipo acadêmico para uso **em rede local confiável**:
 
 - o painel **não tem autenticação** — qualquer pessoa na rede pode criar ou apagar Workers e abrir terminais;
-- o Host aceita qualquer origem no Socket.IO (`cors_allowed_origins="*"`) e o token trafega sem TLS. O modo debug fica desligado por padrão e só pode ser ligado escutando em `127.0.0.1`;
+- o Host aceita qualquer origem no Socket.IO (`cors_allowed_origins="*"`) e o token de cada Node trafega sem TLS;
+- um Node **ainda não pareado** aceita o pareamento de qualquer máquina da rede (depois de pareado, só do mesmo Host); O modo debug fica desligado por padrão e só pode ser ligado escutando em `127.0.0.1`;
 - os eventos de terminal são enviados a todos os clientes Socket.IO conectados;
 - o PRoot isola apenas o sistema de arquivos: Workers compartilham rede, processos, CPU e memória com o aparelho (sem `cgroups`), e o `ptrace` adiciona sobrecarga em operações de E/S;
-- o Node é identificado pelo IP; mudanças de DHCP geram registros duplicados;
-- o estado do Host fica em memória e é perdido ao reiniciá-lo (os Nodes se registram de novo em até 10 s).
+- o cadastro de Nodes é persistido, mas o estado de operação (workers, métricas, histórico) fica em memória e é refeito pelos syncs em até 10 s após reiniciar o Host.
