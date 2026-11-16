@@ -59,23 +59,31 @@ def test_config_aceita_override_direto():
 
 # ---------- WorkerManager ----------
 
-def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
-    comandos = []
-
+def _install_falso(tmp_path, comandos=None):
+    """subprocess.run falso: `proot-distro install` cria o rootfs (layout novo)."""
     class RunResult:
         returncode = 0
         stdout = ""
         stderr = ""
 
     def fake_run(cmd, **kw):
-        comandos.append(cmd)
+        if comandos is not None:
+            comandos.append(cmd)
+        if cmd[:2] == ["proot-distro", "install"]:
+            alias = cmd[cmd.index("--override-alias") + 1]
+            (tmp_path / "var/lib/proot-distro/containers" / alias / "rootfs").mkdir(parents=True, exist_ok=True)
         return RunResult()
 
-    monkeypatch.setattr("subprocess.run", fake_run)
+    return fake_run
+
+
+def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
+    comandos = []
+    monkeypatch.setattr("subprocess.run", _install_falso(tmp_path, comandos))
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
     ok, msg = WorkerManager.criar("worker_bd", "alpine")
-    assert ok is True
+    assert ok is True and "run.sh" in msg
 
     assert any("proot-distro" in c and "install" in c and "worker_bd" in c for c in comandos)
     assert any("supervisorctl" in c and "reread" in c for c in comandos)
@@ -83,34 +91,21 @@ def test_worker_criar_instala_e_escreve_conf(monkeypatch, tmp_path):
     assert any("supervisorctl" in c and "stop" in c and "worker_bd" in c for c in comandos)
     assert any("proot-distro" in c and "remove" in c and "worker_bd" in c for c in comandos)
 
-    conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
-    assert conf.exists()
-    conteudo = conf.read_text()
+    conteudo = (tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf").read_text()
     assert "[program:worker_bd]" in conteudo
-    # isolado por padrão, com limites ulimit e exec para o supervisor controlar o proot
-    assert "exec proot-distro login --isolated worker_bd -- /app/run_server.sh" in conteudo
+    # isolado por padrão, com limites ulimit; o Supervisor roda o lançador
+    assert "exec proot-distro login --isolated worker_bd -- /bin/sh /app/.droidserver/lancador.sh" in conteudo
     assert "ulimit -n" in conteudo and "ulimit -u" in conteudo
+    assert "redirect_stderr=true" in conteudo and "droidserver_worker_bd.log" in conteudo
     # toda chamada ao supervisorctl aponta para o supervisord.conf do Termux
     sup = [c for c in comandos if c and c[0] == "supervisorctl"]
     assert sup and all(c[1:3] == ["-c", str(tmp_path / "etc" / "supervisord.conf")] for c in sup)
 
-    # injeção do run_server.sh acontece via base64 (sem depender de stdin)
-    import base64
-    injetor = [c for c in comandos if "run_server.sh" in " ".join(c)]
-    assert len(injetor) == 1
-    cmd_str = " ".join(injetor[0])
-    assert "base64" in cmd_str
-    script_b64 = None
-    for tok in cmd_str.split():
-        try:
-            dec = base64.b64decode(tok)
-        except Exception:
-            continue
-        if b"DroidServer" in dec:
-            script_b64 = dec
-            break
-    assert script_b64 is not None
-    assert b"sleep 30" in script_b64
+    # o lançador é gravado direto no rootfs (sem abrir sessão proot)
+    lancador = tmp_path / "var/lib/proot-distro/containers/worker_bd/rootfs/app/.droidserver/lancador.sh"
+    assert lancador.exists() and os.access(lancador, os.X_OK)
+    assert "exec sh /app/run.sh" in lancador.read_text()
+    assert not any("login" in c for c in comandos if c[:1] == ["proot-distro"])
 
 
 def test_worker_criar_rejeita_alias_invalido(monkeypatch, tmp_path):
@@ -137,7 +132,7 @@ def test_worker_criar_remove_conf_antigo(monkeypatch, tmp_path):
         stderr = ""
 
     comandos = []
-    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: (comandos.append(cmd), RunResult())[1])
+    monkeypatch.setattr("subprocess.run", _install_falso(tmp_path, comandos))
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
     conf = tmp_path / "etc" / "supervisor" / "conf.d" / "worker_bd.conf"
@@ -698,14 +693,14 @@ def test_worker_criar_sem_isolamento(monkeypatch, tmp_path):
         stdout = ""
         stderr = ""
 
-    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: RunResult())
+    monkeypatch.setattr("subprocess.run", _install_falso(tmp_path))
     monkeypatch.setenv("PREFIX", str(tmp_path))
 
     ok, _ = WorkerManager.criar("w1", "debian", isolado=False)
     assert ok is True
     conteudo = (tmp_path / "etc" / "supervisor" / "conf.d" / "w1.conf").read_text()
     assert "--isolated" not in conteudo
-    assert "exec proot-distro login w1 -- /app/run_server.sh" in conteudo
+    assert "exec proot-distro login w1 -- /bin/sh /app/.droidserver/lancador.sh" in conteudo
 
 
 def test_worker_criar_rejeita_imagem_nao_permitida(monkeypatch, tmp_path):
@@ -914,8 +909,8 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
             return {"tarefas": []}
 
     monkeypatch.setattr("requests.post", lambda url, json=None, timeout=None: (payload.update(json), RespostaFake())[1])
-    monkeypatch.setattr(WorkerManager, "get_workers_status_e_pids",
-                        staticmethod(lambda: ({"w1": "RUNNING"}, {"w1": 200})))
+    monkeypatch.setattr(node.servico, "status_supervisor",
+                        lambda: {"w1": {"estado": "RUNNING", "pid": 200, "uptime": "0:01:00", "detalhe": ""}})
     monkeypatch.setattr(WorkerManager, "get_installed_workers", staticmethod(lambda: ["w1"]))
 
     agente = NodeAgent()
@@ -933,24 +928,26 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
     assert payload["cpu_termux"] == 12.5
     assert payload["cpu_workers"] == {"w1": 10.0}
     assert payload["worker_status"] == {"w1": "RUNNING"}
+    assert payload["servicos"]["w1"]["estado"] == "RUNNING" and payload["servicos"]["w1"]["pid"] == 200
 
 
 # ---------- Ordem da criação ----------
 
-def test_criar_prepara_o_script_antes_de_registrar_o_servico(monkeypatch, tmp_path):
-    """O /app/run_server.sh precisa existir antes de o Supervisor subir o serviço."""
+def test_criar_instala_o_lancador_antes_de_registrar_o_servico(monkeypatch, tmp_path):
+    """O lançador precisa existir antes de o Supervisor subir o serviço."""
     conf = tmp_path / "etc" / "supervisor" / "conf.d" / "w1.conf"
-    comandos = []
-    monkeypatch.setattr("subprocess.run", lambda cmd, **kw: (comandos.append((cmd, conf.exists())), _Proc())[1])
+    ordem = []
+    monkeypatch.setattr("subprocess.run", _install_falso(tmp_path))
     monkeypatch.setenv("PREFIX", str(tmp_path))
+    original = node.servico.instalar_lancador
+    monkeypatch.setattr(node.servico, "instalar_lancador",
+                        lambda alias: (ordem.append(("lancador", conf.exists())), original(alias))[1])
 
     ok, _ = WorkerManager.criar("w1", "alpine")
 
     assert ok is True
-    script = next(existia for c, existia in comandos if "run_server.sh" in " ".join(c))
-    update = [existia for c, existia in comandos if c[0] == "supervisorctl" and "update" in c]
-    assert script is False      # .conf ainda não existia quando o script foi criado
-    assert update[-1] is True   # registro no supervisor só depois
+    assert ordem == [("lancador", False)]  # .conf ainda não existia
+    assert conf.exists()
 
 
 def test_criar_rejeita_archlinux(monkeypatch, tmp_path):
@@ -1071,3 +1068,42 @@ def test_info_nao_mostra_configuracao_antiga_como_pareada(monkeypatch):
     node.Descoberta(agente).parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
     _, corpo = node.Descoberta(agente).info()
     assert corpo["pareado"] is True and corpo["host"] == "192.168.1.10:5050"
+
+
+# ---------- Serviço do worker pelo WebSocket ----------
+
+def test_comando_servico_responde_ao_navegador_que_pediu(monkeypatch):
+    agente = NodeAgent()
+    emitidos = []
+    monkeypatch.setattr(agente.sio, "emit", lambda ev, dados=None: emitidos.append((ev, dados)))
+    monkeypatch.setattr(node.servico, "executar", lambda alias, acao, dados: (True, "Serviço reiniciado.", {"x": 1}))
+    monkeypatch.setattr(node.servico, "estado_servicos", lambda aliases: {"w1": {"estado": "RUNNING"}})
+
+    agente._comando_servico({"alias": "w1", "acao": "reiniciar", "sid": "abc", "req": 7})
+
+    ev, d = emitidos[-1]
+    assert ev == "servico_resposta"
+    assert (d["sid"], d["req"], d["ok"], d["msg"], d["dados"]) == ("abc", 7, True, "Serviço reiniciado.", {"x": 1})
+    assert d["servico"] == {"estado": "RUNNING"} and d["ip"] == agente.meu_ip
+
+
+def test_comando_servico_com_excecao_vira_resposta_de_erro(monkeypatch):
+    agente = NodeAgent()
+    emitidos = []
+    monkeypatch.setattr(agente.sio, "emit", lambda ev, dados=None: emitidos.append(dados))
+    monkeypatch.setattr(node.servico, "estado_servicos", lambda aliases: {})
+
+    def explode(*a):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(node.servico, "executar", explode)
+    agente._comando_servico({"alias": "w1", "acao": "parar", "sid": "s", "req": 1})
+    assert emitidos[-1]["ok"] is False and "boom" in emitidos[-1]["msg"]
+
+
+def test_enviar_logs_emite_para_o_host(monkeypatch):
+    agente = NodeAgent()
+    emitidos = []
+    monkeypatch.setattr(agente.sio, "emit", lambda ev, dados=None: emitidos.append((ev, dados)))
+    agente._enviar_logs("w1", ["a", "b"], True)
+    assert emitidos == [("logs_saida", {"ip": agente.meu_ip, "alias": "w1", "linhas": ["a", "b"], "inicial": True})]

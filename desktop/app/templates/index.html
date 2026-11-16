@@ -173,6 +173,12 @@
             copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
             paste: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/><path d="m9 14 2 2 4-4"/>',
             eraser: '<path d="m3 21 5-5"/><path d="m15 21 6-6"/><path d="M3 21h18"/><path d="m11.5 3.5 9 9-8 8h-1l-9-9z"/>',
+            play: '<path d="M6 4v16l14-8z"/>',
+            stop: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
+            save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/>',
+            pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
+            download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
+            gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
             full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
         };
 
@@ -201,6 +207,31 @@
         }
 
         const fmtPct = (v) => (v == null ? '—' : `${v}%`);
+
+        // Estado do serviço de um worker -> tom e rótulo exibidos no painel
+        function estadoServico(sv, stSupervisor) {
+            const st = (sv && sv.estado) || stSupervisor || null;
+            if (sv && sv.gerenciado && !sv.tem_script && st === 'RUNNING')
+                return { tone: 'warn', label: 'Aguardando run.sh', st };
+            if (st === 'RUNNING') return { tone: 'ok', label: 'Rodando', st };
+            if (st === 'STARTING') return { tone: 'warn', label: 'Iniciando', st };
+            if (st === 'BACKOFF') return { tone: 'bad', label: 'Reiniciando após falha', st };
+            if (st === 'FATAL') return { tone: 'bad', label: 'Falhou', st };
+            if (st === 'STOPPED' || st === 'EXITED') return { tone: 'muted', label: 'Parado', st };
+            if (st === 'STOPPING') return { tone: 'warn', label: 'Parando', st };
+            return { tone: 'muted', label: st || 'Sem serviço', st };
+        }
+
+        // Abas da página do worker
+        function abasWorker(ip, alias, ativa) {
+            const aba = (id, href, icone, texto) => `
+                <a href="${href}" data-link class="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition
+                    ${ativa === id ? 'bg-accent/20 text-white shadow-[inset_0_-2px_0_#6366f1]' : 'text-muted hover:text-slate-200 hover:bg-slate-400/10'}">
+                    ${svg(icone, 'w-4 h-4')}${texto}</a>`;
+            const base = `/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}`;
+            return `<nav class="flex gap-1 p-1 rounded-xl bg-surface border border-slate-400/15 w-fit">
+                ${aba('servico', base, ICON.gear, 'Serviço')}${aba('terminal', base + '/terminal', ICON.terminal, 'Terminal')}</nav>`;
+        }
 
         function topbar(title, subtitle, actions = '') {
             return `
@@ -381,8 +412,11 @@
             cleanup = () => { };
             const path = location.pathname.replace(/\/+$/, '') || '/';
             let m;
-            if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)$/))) {
+            if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)\/terminal$/))) {
                 return viewTerminal(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+            }
+            if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)$/))) {
+                return viewServico(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
             }
             if ((m = path.match(/^\/node\/([^/]+)$/))) {
                 return viewNode(decodeURIComponent(m[1]));
@@ -815,13 +849,17 @@
                     ok: { bar: 'from-ok to-emerald-300', pill: 'pill-online', dot: 'bg-ok' },
                     warn: { bar: 'from-warn to-amber-300', pill: 'pill-warn', dot: 'bg-warn' },
                     muted: { bar: 'from-slate-500 to-slate-400', pill: 'pill-muted', dot: 'bg-slate-400' },
+                    bad: { bar: 'from-bad to-rose-300', pill: 'pill-offline', dot: 'bg-bad' },
                 };
 
+                const servicos = n.servicos || {};
                 const cards = workers.map(w => {
-                    const st = ws[w] || null;
+                    const sv = servicos[w] || null;
                     const apagando = removendo.has(w);
-                    const tone = apagando ? 'warn' : st === 'RUNNING' ? 'ok' : st ? 'warn' : 'muted';
-                    const label = apagando ? 'Removendo' : st === 'RUNNING' ? 'Running' : st ? st : 'Sem serviço';
+                    const e = estadoServico(sv, ws[w]);
+                    const st = e.st;
+                    const tone = apagando ? 'warn' : e.tone;
+                    const label = apagando ? 'Removendo' : e.label;
                     const t = TONES[tone];
 
                     return `
@@ -846,12 +884,12 @@
 
                         <div class="grid grid-cols-3 gap-3 p-3 bg-slate-950/35 border border-slate-400/15 rounded-xl">
                             <div class="flex flex-col gap-1 min-w-0">
-                                <span class="label-xs tracking-wider">Runtime</span>
-                                <span class="text-[13px] font-semibold truncate">proot-distro</span>
+                                <span class="label-xs tracking-wider">Serviço</span>
+                                <span class="text-[13px] font-semibold truncate font-mono">${sv && sv.tem_script ? '/app/run.sh' : '—'}</span>
                             </div>
                             <div class="flex flex-col gap-1 min-w-0">
-                                <span class="label-xs tracking-wider">Serviço</span>
-                                <span class="text-[13px] font-semibold truncate">${st ? esc(st) : '—'}</span>
+                                <span class="label-xs tracking-wider">No ar há</span>
+                                <span class="text-[13px] font-semibold truncate">${sv && sv.uptime ? esc(sv.uptime) : '—'}</span>
                             </div>
                             <div class="flex flex-col gap-1 min-w-0" title="CPU do worker (serviço + terminal) em % do aparelho">
                                 <span class="label-xs tracking-wider">CPU</span>
@@ -860,7 +898,8 @@
                         </div>
 
                         <div class="flex gap-2 mt-auto">
-                            <a href="/node/${esc(ip)}/worker/${esc(w)}" data-link class="btn btn-primary flex-1">${svg(ICON.terminal)}Abrir terminal</a>
+                            <a href="/node/${esc(ip)}/worker/${esc(w)}" data-link class="btn btn-primary flex-1">${svg(ICON.gear)}Serviço</a>
+                            <a href="/node/${esc(ip)}/worker/${esc(w)}/terminal" data-link class="btn btn-dark !px-3" title="Abrir terminal" aria-label="Abrir terminal do worker ${esc(w)}">${svg(ICON.terminal)}</a>
                             <button type="button" data-delete="${esc(w)}" ${apagando ? 'disabled' : ''} title="Apagar worker" aria-label="Apagar worker ${esc(w)}" class="btn btn-danger !px-3">${svg(ICON.trash)}</button>
                         </div>
                     </article>`;
@@ -935,6 +974,283 @@
         //   emit  terminal_input / terminal_resize
         //   on    output_for_<ip>_<alias>
         // =====================================================================
+        // =====================================================================
+        // VIEW: Serviço do worker (o que roda, como, quando e os logs)
+        //   emit servico {ip, alias, acao, dados, req} -> on servico_resposta
+        //   emit logs_assinar / logs_cancelar        -> on logs_saida
+        // =====================================================================
+        let reqSeq = 0;
+        function viewServico(ip, alias) {
+            setNav(ip);
+            setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Logs ao vivo</div>`);
+            const MAX_LINHAS = 2000;
+
+            $('view').innerHTML = `
+            <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14 flex flex-col gap-6">
+                <header class="flex items-end justify-between gap-4 flex-wrap">
+                    <div>
+                        <h1 class="text-[26px] font-extrabold tracking-tight flex items-center gap-2.5">Worker <span class="chip">${esc(alias)}</span></h1>
+                        <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — o serviço é o arquivo <code class="text-slate-300">/app/run.sh</code>, executado e vigiado pelo DroidServer.</p>
+                        <div class="mt-3">${abasWorker(ip, alias, 'servico')}</div>
+                    </div>
+                    <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao node</a>
+                </header>
+
+                <section class="card p-5 flex flex-col gap-4">
+                    <div class="flex items-center justify-between gap-4 flex-wrap">
+                        <div class="flex items-center gap-3">
+                            <span class="dot dot-idle" id="svDot"></span>
+                            <div>
+                                <div class="text-[16px] font-bold" id="svEstado">Carregando…</div>
+                                <div class="text-[12px] text-muted" id="svInfo">—</div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button class="btn btn-success !py-2" data-acao="iniciar">${svg(ICON.play)}Iniciar</button>
+                            <button class="btn btn-danger" data-acao="parar">${svg(ICON.stop)}Parar</button>
+                            <button class="btn btn-primary" data-acao="reiniciar">${svg(ICON.refresh)}Reiniciar</button>
+                        </div>
+                    </div>
+                    <div id="svAlerta"></div>
+                    <div class="flex gap-6 flex-wrap pt-3 border-t border-slate-400/15 text-[13px]">
+                        <label class="flex items-center gap-2.5 cursor-pointer select-none" title="Quando o celular (ou o Supervisor) liga, o serviço sobe sozinho.">
+                            <input type="checkbox" id="optAutostart" class="w-4 h-4 accent-indigo-500 cursor-pointer"> Iniciar junto com o celular
+                        </label>
+                        <label class="flex items-center gap-2.5 cursor-pointer select-none" title="Se o run.sh terminar ou o processo cair, o DroidServer o executa de novo.">
+                            <input type="checkbox" id="optAutorestart" class="w-4 h-4 accent-indigo-500 cursor-pointer"> Reiniciar automaticamente se cair
+                        </label>
+                        <span class="text-[11.5px] text-muted self-center" id="optNota"></span>
+                    </div>
+                </section>
+
+                <section class="card p-5 flex flex-col gap-3">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2.5">
+                            <h2 class="text-[15px] font-bold font-mono">/app/run.sh</h2>
+                            <span class="pill pill-warn hidden" id="edSujo">alterações não salvas</span>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button class="btn btn-ghost" id="btnExemplo">Inserir exemplo</button>
+                            <button class="btn btn-dark" id="btnSalvar">${svg(ICON.save)}Salvar</button>
+                            <button class="btn btn-primary" id="btnSalvarReiniciar">${svg(ICON.refresh)}Salvar e reiniciar</button>
+                        </div>
+                    </div>
+                    <textarea id="editor" spellcheck="false" rows="14" disabled
+                        class="w-full font-mono text-[13px] leading-relaxed px-4 py-3 rounded-xl bg-term border border-slate-400/15 text-slate-200 outline-none focus:border-accent resize-y"
+                        placeholder="Carregando o /app/run.sh…"></textarea>
+                    <div id="edAvisos" class="flex flex-col gap-2"></div>
+                    <p class="text-[11.5px] text-muted">O serviço precisa ficar em <strong>primeiro plano</strong> (sem <code>&amp;</code>); use <code>exec</code> no último comando. Portas abertas aqui ficam em <code>http://${esc(ip)}:&lt;porta&gt;</code>. Instale programas pelo <a class="underline" href="/node/${esc(ip)}/worker/${esc(alias)}/terminal" data-link>Terminal</a> (ex.: <code>apk add python3</code>).</p>
+                </section>
+
+                <section class="card p-5 flex flex-col gap-3">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2.5">
+                            <h2 class="text-[15px] font-bold">Logs</h2>
+                            <span class="flex items-center gap-1.5 text-[11.5px] text-muted"><span class="w-2 h-2 rounded-full bg-ok animate-pulseDot" id="logsDot"></span><span id="logsEstado">ao vivo</span></span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-ghost" id="btnPausar">${svg(ICON.pause)}Pausar</button>
+                            <button class="btn btn-ghost" id="btnLimparLogs">${svg(ICON.eraser)}Limpar</button>
+                            <button class="btn btn-ghost" id="btnBaixarLogs">${svg(ICON.download)}Baixar</button>
+                        </div>
+                    </div>
+                    <pre id="logs" class="h-[340px] overflow-auto px-4 py-3 rounded-xl bg-term border border-slate-400/15 font-mono text-[12.5px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all" aria-live="polite">Carregando logs…</pre>
+                </section>
+            </div>`;
+
+            // ---- Comandos (com resposta casada pelo req) ----
+            const pendentes = new Map();
+            function comando(acao, dados = {}) {
+                return new Promise((resolve) => {
+                    const req = ++reqSeq;
+                    const timer = setTimeout(() => {
+                        pendentes.delete(req);
+                        resolve({ ok: false, msg: 'O node não respondeu (está online?).' });
+                    }, 30000);
+                    pendentes.set(req, (r) => { clearTimeout(timer); resolve(r); });
+                    socket.emit('servico', { ip, alias, acao, dados, req });
+                });
+            }
+            const onResposta = (r) => {
+                const fn = pendentes.get(r.req);
+                if (!fn) return;
+                pendentes.delete(r.req);
+                if (r.servico) mostrarEstado(r.servico);
+                fn(r);
+            };
+            socket.on('servico_resposta', onResposta);
+
+            // ---- Estado ----
+            let ultimoEstado = null;
+            const TOM_DOT = { ok: 'dot-online', warn: 'dot-idle', bad: 'dot-offline', muted: 'dot-idle' };
+            const TOM_TXT = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad', muted: 'text-muted' };
+            function mostrarEstado(sv) {
+                ultimoEstado = sv;
+                const e = estadoServico(sv);
+                $('svDot').className = 'dot ' + TOM_DOT[e.tone];
+                $('svEstado').className = 'text-[16px] font-bold ' + TOM_TXT[e.tone];
+                $('svEstado').textContent = e.label;
+                const partes = [];
+                if (sv.pid) partes.push(`pid ${sv.pid}`);
+                if (sv.uptime) partes.push(`no ar há ${sv.uptime}`);
+                if (sv.estado && e.tone !== 'ok') partes.push(`Supervisor: ${sv.estado}`);
+                $('svInfo').textContent = partes.join(' · ') || '—';
+
+                const rodando = ['RUNNING', 'STARTING', 'BACKOFF'].includes(sv.estado);
+                document.querySelector('[data-acao="iniciar"]').disabled = rodando;
+                document.querySelector('[data-acao="parar"]').disabled = !rodando;
+
+                let alerta = '';
+                if (!sv.gerenciado) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-warn/30 bg-warn/10 text-[13px]">Este worker ainda não usa o lançador do DroidServer. Reinicie o agente no celular para migrá-lo.</div>`;
+                } else if (!sv.tem_script) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-accent2/30 bg-accent2/10 text-[13px]"><strong>Nenhum /app/run.sh ainda.</strong> Escreva o serviço abaixo (ou use “Inserir exemplo”) e clique em <strong>Salvar e reiniciar</strong> — ele sobe sozinho.</div>`;
+                } else if (['FATAL', 'BACKOFF'].includes(sv.estado)) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-bad/30 bg-bad/10 text-[13px]">
+                        <strong>O serviço termina logo depois de iniciar.</strong> Causas comuns: um comando que não existe no worker (instale pelo Terminal), um erro no programa (veja os logs abaixo) ou o serviço indo para segundo plano com <code>&amp;</code>/<code>nohup</code>.
+                        ${sv.detalhe ? `<div class="mt-1 text-muted">Supervisor: ${esc(sv.detalhe)}</div>` : ''}</div>`;
+                }
+                $('svAlerta').innerHTML = alerta;
+
+                if (document.activeElement !== $('optAutostart')) $('optAutostart').checked = sv.autostart !== false;
+                if (document.activeElement !== $('optAutorestart')) $('optAutorestart').checked = sv.autorestart !== false;
+            }
+
+            async function carregarEstado() {
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
+                    if (!res.ok) return;
+                    const n = await res.json();
+                    const sv = (n.servicos || {})[alias];
+                    if (sv) mostrarEstado(sv);
+                    else if (!(n.workers || []).includes(alias)) {
+                        $('svEstado').textContent = 'Worker não encontrado neste node';
+                    }
+                } catch (e) { }
+            }
+
+            document.querySelectorAll('[data-acao]').forEach(b => b.addEventListener('click', async () => {
+                const acao = b.dataset.acao;
+                b.disabled = true;
+                const r = await comando(acao);
+                toast(r.msg || (r.ok ? 'Feito' : 'Falhou'));
+                b.disabled = false;
+                if (ultimoEstado) mostrarEstado(ultimoEstado);
+            }));
+
+            async function configurar(chave, valor) {
+                const r = await comando('configurar', { [chave]: valor });
+                toast(r.ok ? 'Configuração salva' : (r.msg || 'Falhou'));
+                $('optNota').textContent = r.ok ? 'Vale a partir da próxima reinicialização do serviço.' : '';
+            }
+            $('optAutostart').addEventListener('change', (e) => configurar('autostart', e.target.checked));
+            $('optAutorestart').addEventListener('change', (e) => configurar('autorestart', e.target.checked));
+
+            // ---- Editor do /app/run.sh ----
+            const ed = $('editor');
+            let salvo = '';
+            const marcarSujo = () => $('edSujo').classList.toggle('hidden', ed.value === salvo);
+            const mostrarAvisos = (avisos) => {
+                $('edAvisos').innerHTML = (avisos || []).map(a =>
+                    `<div class="px-3.5 py-2.5 rounded-xl border border-warn/30 bg-warn/10 text-[12.5px]">⚠ ${esc(a)}</div>`).join('');
+            };
+            ed.addEventListener('input', marcarSujo);
+            ed.addEventListener('keydown', (e) => {
+                if (e.key === 'Tab') {   // Tab insere espaços em vez de sair do campo
+                    e.preventDefault();
+                    const i = ed.selectionStart;
+                    ed.setRangeText('    ', i, ed.selectionEnd, 'end');
+                    marcarSujo();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); salvar(false); }
+            });
+
+            async function carregarScript() {
+                const r = await comando('ler_script');
+                ed.disabled = false;
+                if (!r.ok) { toast(r.msg || 'Não foi possível ler o run.sh'); return; }
+                salvo = (r.dados && r.dados.conteudo) || '';
+                ed.value = salvo;
+                ed.placeholder = '#!/bin/sh\ncd /app\nexec seu-programa';
+                mostrarAvisos(r.dados && r.dados.avisos);
+                marcarSujo();
+            }
+
+            async function salvar(reiniciar) {
+                const conteudo = ed.value;
+                if (!conteudo.trim() && !confirm('O run.sh está vazio. Salvar assim mesmo?')) return;
+                $('btnSalvar').disabled = $('btnSalvarReiniciar').disabled = true;
+                const r = await comando('salvar_script', { conteudo, reiniciar });
+                $('btnSalvar').disabled = $('btnSalvarReiniciar').disabled = false;
+                toast(r.msg || (r.ok ? 'Salvo' : 'Falhou'));
+                if (r.ok || (r.msg || '').startsWith('run.sh salvo')) { salvo = conteudo; marcarSujo(); }
+                mostrarAvisos(r.dados && r.dados.avisos);
+            }
+            $('btnSalvar').addEventListener('click', () => salvar(false));
+            $('btnSalvarReiniciar').addEventListener('click', () => salvar(true));
+            $('btnExemplo').addEventListener('click', async () => {
+                if (ed.value.trim() && !confirm('Substituir o conteúdo do editor pelo exemplo? (nada é salvo até você clicar em Salvar)')) return;
+                const r = await comando('exemplo');
+                if (r.ok) { ed.value = r.dados.conteudo; marcarSujo(); ed.focus(); }
+            });
+
+            // ---- Logs ao vivo ----
+            const pre = $('logs');
+            let linhas = [], pausado = false, pendentesLog = [];
+            function desenharLogs() {
+                const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+                pre.textContent = linhas.length ? linhas.join('\n') : 'Sem saída ainda. O que o serviço imprimir aparece aqui.';
+                if (noFim) pre.scrollTop = pre.scrollHeight;
+            }
+            const onLogs = (d) => {
+                if (!d || d.alias !== alias) return;
+                if (d.inicial) { linhas = d.linhas.slice(); pendentesLog = []; }
+                else if (pausado) { pendentesLog.push(...d.linhas); return; }
+                else linhas.push(...d.linhas);
+                if (linhas.length > MAX_LINHAS) linhas = linhas.slice(-MAX_LINHAS);
+                desenharLogs();
+                if (d.inicial) pre.scrollTop = pre.scrollHeight;
+            };
+            socket.on('logs_saida', onLogs);
+            const assinar = () => socket.emit('logs_assinar', { ip, alias });
+            const onConnect = () => { assinar(); carregarEstado(); };
+            socket.on('connect', onConnect);
+            assinar();
+
+            $('btnPausar').addEventListener('click', () => {
+                pausado = !pausado;
+                $('btnPausar').innerHTML = pausado ? `${svg(ICON.play)}Retomar` : `${svg(ICON.pause)}Pausar`;
+                $('logsEstado').textContent = pausado ? 'pausado' : 'ao vivo';
+                $('logsDot').className = 'w-2 h-2 rounded-full ' + (pausado ? 'bg-warn' : 'bg-ok animate-pulseDot');
+                if (!pausado && pendentesLog.length) { linhas.push(...pendentesLog); pendentesLog = []; desenharLogs(); }
+            });
+            $('btnLimparLogs').addEventListener('click', () => { linhas = []; pendentesLog = []; desenharLogs(); });
+            $('btnBaixarLogs').addEventListener('click', () => {
+                const blob = new Blob([linhas.join('\n') + '\n'], { type: 'text/plain' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${alias}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            // ---- Ciclo de vida da view ----
+            carregarEstado();
+            carregarScript();
+            const onUpd = (data) => { if (data && data.ip === ip) carregarEstado(); };
+            socket.on('node_updated', onUpd);
+            const timer = setInterval(carregarEstado, 10000);
+            cleanup = () => {
+                clearInterval(timer);
+                socket.emit('logs_cancelar', { ip, alias });
+                socket.off('logs_saida', onLogs);
+                socket.off('servico_resposta', onResposta);
+                socket.off('node_updated', onUpd);
+                socket.off('connect', onConnect);
+                pendentes.forEach(fn => fn({ ok: false, msg: 'cancelado' }));
+            };
+        }
+
         function viewTerminal(ip, alias) {
             setNav(ip);
             setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Sessão ao vivo</div>`);
@@ -948,16 +1264,17 @@
                 <header class="flex items-end justify-between gap-4 flex-wrap mb-3.5 shrink-0">
                     <div>
                         <h1 class="text-[26px] font-extrabold tracking-tight flex items-center gap-2.5">
-                            Terminal <span class="chip">${esc(alias)}</span>
+                            Worker <span class="chip">${esc(alias)}</span>
                         </h1>
                         <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — sessão interativa via WebSocket.</p>
+                        <div class="mt-3">${abasWorker(ip, alias, 'terminal')}</div>
                     </div>
                     <div class="flex items-center gap-3.5">
                         <span class="flex items-center gap-2 text-[12.5px] font-semibold">
                             <span class="dot dot-idle" id="statusDot"></span>
                             <span id="status" class="text-warn">Conectando...</span>
                         </span>
-                        <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Encerrar</a>
+                        <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao node</a>
                     </div>
                 </header>
 

@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 
 from flask import current_app as app
 from flask import render_template, request, jsonify
+from flask_socketio import join_room, leave_room
 from . import socketio
 
 logger = logging.getLogger("droidserver.routes")
@@ -229,6 +230,7 @@ def _estado_publico(ip, node):
 @app.route('/')
 @app.route('/node/<ip>')
 @app.route('/node/<ip>/worker/<alias>')
+@app.route('/node/<ip>/worker/<alias>/terminal')
 def spa(ip=None, alias=None):
     return render_template('index.html')
 
@@ -446,6 +448,7 @@ def node_sync():
             "cpu": dados.get("cpu"),
             "cpu_termux": dados.get("cpu_termux"),
             "cpu_workers": dados.get("cpu_workers", {}),
+            "servicos": dados.get("servicos", {}),
             "mem": dados.get("mem"),
         }
         logger.info("Novo node registrado: %s (workers=%s)", ip_node, dados.get("workers", []))
@@ -462,6 +465,7 @@ def node_sync():
         nodes_conectados[ip_node]["cpu"] = dados.get("cpu")
         nodes_conectados[ip_node]["cpu_termux"] = dados.get("cpu_termux")
         nodes_conectados[ip_node]["cpu_workers"] = dados.get("cpu_workers", {})
+        nodes_conectados[ip_node]["servicos"] = dados.get("servicos", {})
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
 
     _registrar_amostra(ip_node, dados)
@@ -476,6 +480,95 @@ def node_sync():
         logger.info("Enviadas %d tarefa(s) para o node %s", len(tarefas_para_enviar), ip_node)
 
     return jsonify({"status": "ok", "tarefas": tarefas_para_enviar}), 200
+
+
+# ---------------------------------------------------------------------------
+# Serviço do worker (aba Serviço): comandos e logs ao vivo
+#   navegador --servico--> host --servico_to_<ip>--> node
+#   node --servico_resposta--> host --servico_resposta--> só o navegador que pediu
+#   navegador --logs_assinar--> host (entra na sala) --logs_to_<ip>--> node
+#   node --logs_saida--> host --logs_saida--> só a sala logs:<ip>:<alias>
+# ---------------------------------------------------------------------------
+ACOES_SERVICO = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo"}
+# (ip, alias) -> sids dos navegadores com a aba de logs aberta
+assinantes_logs = {}
+
+
+def _sala_logs(ip, alias):
+    return f"logs:{ip}:{alias}"
+
+
+@socketio.on('servico')
+def handle_servico(data):
+    data = data if isinstance(data, dict) else {}
+    ip, alias, acao = data.get('ip'), data.get('alias'), data.get('acao')
+    if ip not in nodes_conectados or not _alias_valido(alias) or acao not in ACOES_SERVICO:
+        socketio.emit('servico_resposta', {'ip': ip, 'alias': alias, 'acao': acao, 'req': data.get('req'),
+                                           'ok': False, 'msg': 'Node offline ou comando inválido.'},
+                      to=request.sid)
+        return
+    logger.info("servico: node=%s worker=%s acao=%s", ip, alias, acao)
+    socketio.emit(f"servico_to_{ip}", {'alias': alias, 'acao': acao, 'dados': data.get('dados') or {},
+                                       'sid': request.sid, 'req': data.get('req')})
+
+
+@socketio.on('servico_resposta')
+def handle_servico_resposta(data):
+    data = data if isinstance(data, dict) else {}
+    sid = data.get('sid')
+    if not sid:
+        return
+    # Atualiza o estado guardado para o painel não esperar o próximo sync
+    ip, alias, est = data.get('ip'), data.get('alias'), data.get('servico')
+    if ip in nodes_conectados and _alias_valido(alias) and isinstance(est, dict):
+        nodes_conectados[ip].setdefault("servicos", {})[alias] = est
+    socketio.emit('servico_resposta', {k: v for k, v in data.items() if k != 'sid'}, to=sid)
+
+
+@socketio.on('logs_assinar')
+def handle_logs_assinar(data):
+    data = data if isinstance(data, dict) else {}
+    ip, alias = data.get('ip'), data.get('alias')
+    if ip not in nodes_conectados or not _alias_valido(alias):
+        return
+    join_room(_sala_logs(ip, alias))
+    assinantes_logs.setdefault((ip, alias), set()).add(request.sid)
+    socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
+
+
+def _sair_dos_logs(sid, ip, alias):
+    chave = (ip, alias)
+    sids = assinantes_logs.get(chave)
+    if not sids or sid not in sids:
+        return
+    sids.discard(sid)
+    leave_room(_sala_logs(ip, alias), sid=sid)
+    if not sids:
+        # Ninguém mais assistindo: o node para de ler o arquivo
+        assinantes_logs.pop(chave, None)
+        socketio.emit(f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
+
+
+@socketio.on('logs_cancelar')
+def handle_logs_cancelar(data):
+    data = data if isinstance(data, dict) else {}
+    _sair_dos_logs(request.sid, data.get('ip'), data.get('alias'))
+
+
+@socketio.on('logs_saida')
+def handle_logs_saida(data):
+    data = data if isinstance(data, dict) else {}
+    ip, alias = data.get('ip'), data.get('alias')
+    if not _alias_valido(alias):
+        return
+    socketio.emit('logs_saida', {'alias': alias, 'linhas': data.get('linhas') or [],
+                                 'inicial': bool(data.get('inicial'))}, to=_sala_logs(ip, alias))
+
+
+@socketio.on('disconnect')
+def handle_disconnect(*_):
+    for ip, alias in [chave for chave, sids in assinantes_logs.items() if request.sid in sids]:
+        _sair_dos_logs(request.sid, ip, alias)
 
 
 @socketio.on('connect')

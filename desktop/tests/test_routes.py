@@ -545,3 +545,81 @@ def test_varredura_recusa_redes_invalidas(client, rede):
 def test_api_rede_sugere_a_24_do_host(client, monkeypatch):
     monkeypatch.setattr(_routes(), "_ip_local", lambda: "192.168.1.10")
     assert client.get("/api/rede").get_json() == {"ip_host": "192.168.1.10", "rede": "192.168.1.0/24"}
+
+
+# ---------- Aba Serviço: comandos e logs ao vivo ----------
+
+def _eventos(cliente, nome):
+    return [e["args"][0] for e in cliente.get_received() if e["name"] == nome]
+
+
+@pytest.fixture
+def ambiente_servico(app_instance, client):
+    """Um node online (10.0.0.5) e três clientes Socket.IO: o node e dois navegadores."""
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    node = socketio.test_client(app_instance)
+    nav_a = socketio.test_client(app_instance)
+    nav_b = socketio.test_client(app_instance)
+    for c in (node, nav_a, nav_b):
+        c.get_received()
+    yield node, nav_a, nav_b
+    for c in (node, nav_a, nav_b):
+        if c.is_connected():
+            c.disconnect()
+    _routes().assinantes_logs.clear()
+
+
+def test_comando_de_servico_vai_ao_node_e_volta_so_para_quem_pediu(ambiente_servico):
+    node, nav_a, nav_b = ambiente_servico
+    nav_a.emit("servico", {"ip": "10.0.0.5", "alias": "w1", "acao": "reiniciar", "req": 3})
+
+    pedido = _eventos(node, "servico_to_10.0.0.5")[0]
+    assert (pedido["alias"], pedido["acao"], pedido["req"]) == ("w1", "reiniciar", 3)
+
+    node.emit("servico_resposta", {**pedido, "ip": "10.0.0.5", "ok": True, "msg": "Serviço reiniciado.",
+                                   "servico": {"estado": "RUNNING", "pid": 99}})
+    resposta = _eventos(nav_a, "servico_resposta")
+    assert len(resposta) == 1 and resposta[0]["ok"] is True and "sid" not in resposta[0]
+    assert _eventos(nav_b, "servico_resposta") == []
+    # o estado guardado já reflete a resposta, sem esperar o próximo sync
+    assert _routes().nodes_conectados["10.0.0.5"]["servicos"]["w1"]["pid"] == 99
+
+
+@pytest.mark.parametrize("pedido", [
+    {"ip": "10.0.0.99", "alias": "w1", "acao": "iniciar"},    # node offline
+    {"ip": "10.0.0.5", "alias": "../x", "acao": "iniciar"},   # alias inválido
+    {"ip": "10.0.0.5", "alias": "w1", "acao": "rm -rf"},      # ação desconhecida
+])
+def test_comando_de_servico_invalido_nao_chega_ao_node(ambiente_servico, pedido):
+    node, nav_a, _ = ambiente_servico
+    nav_a.emit("servico", {**pedido, "req": 1})
+    assert [e for e in node.get_received() if e["name"].startswith("servico_to_")] == []
+    assert _eventos(nav_a, "servico_resposta")[0]["ok"] is False
+
+
+def test_logs_so_para_quem_assina_e_cancelados_quando_todos_saem(ambiente_servico):
+    node, nav_a, nav_b = ambiente_servico
+    nav_a.emit("logs_assinar", {"ip": "10.0.0.5", "alias": "w1"})
+    assert _eventos(node, "logs_to_10.0.0.5") == [{"alias": "w1", "acao": "assinar"}]
+
+    node.emit("logs_saida", {"ip": "10.0.0.5", "alias": "w1", "linhas": ["oi"], "inicial": True})
+    assert _eventos(nav_a, "logs_saida") == [{"alias": "w1", "linhas": ["oi"], "inicial": True}]
+    assert _eventos(nav_b, "logs_saida") == []
+
+    nav_b.emit("logs_assinar", {"ip": "10.0.0.5", "alias": "w1"})
+    node.get_received()
+    nav_a.disconnect()                      # um sai: o node continua enviando
+    assert _eventos(node, "logs_to_10.0.0.5") == []
+    nav_b.emit("logs_cancelar", {"ip": "10.0.0.5", "alias": "w1"})  # o último sai
+    assert _eventos(node, "logs_to_10.0.0.5") == [{"alias": "w1", "acao": "cancelar"}]
+    assert _routes().assinantes_logs == {}
+
+
+def test_node_sync_guarda_estado_dos_servicos(client):
+    servicos = {"w1": {"estado": "RUNNING", "pid": 1, "tem_script": True, "autostart": True}}
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"], "servicos": servicos})
+    assert client.get("/api/node/10.0.0.5").get_json()["servicos"] == servicos
+
+
+def test_rota_do_terminal_serve_a_spa(client):
+    assert client.get("/node/10.0.0.5/worker/w1/terminal").status_code == 200

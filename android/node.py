@@ -16,6 +16,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 import socketio
 
+import servico
 from sysinfo import ProcessCPUMonitor, SystemMonitor
 
 log = logging.getLogger("node")
@@ -252,15 +253,6 @@ def iniciar_servidor_descoberta(descoberta, porta=None):
 class WorkerManager:
     """Classe utilitária para gerenciar as instâncias do proot-distro no sistema."""
 
-    # Script padrão executado pelo Supervisor dentro de cada worker.
-    # Substitua /app/run_server.sh dentro do container pelo seu aplicativo.
-    _SCRIPT_PADRAO = """#!/bin/sh
-# DroidServer - script padrao do worker.
-# Substitua este arquivo pelo seu aplicativo que deve rodar no container.
-echo "[DroidServer] Worker iniciado em $(date)"
-while true; do sleep 30; done
-"""
-
     @staticmethod
     def _alias_valido(alias):
         return bool(alias) and bool(ALIAS_RE.fullmatch(alias))
@@ -287,15 +279,6 @@ while true; do sleep 30; done
             return False
 
     @staticmethod
-    def _prefixo_ulimit():
-        partes = []
-        if ULIMIT_NOFILE > 0:
-            partes.append(f"ulimit -n {ULIMIT_NOFILE} 2>/dev/null;")
-        if ULIMIT_NPROC > 0:
-            partes.append(f"ulimit -u {ULIMIT_NPROC} 2>/dev/null;")
-        return " ".join(partes) + (" " if partes else "")
-
-    @staticmethod
     def _existe(alias):
         prefix = os.environ.get('PREFIX', '/data/data/com.termux/files/usr')
         base = os.path.join(prefix, 'var/lib/proot-distro')
@@ -311,15 +294,8 @@ while true; do sleep 30; done
 
     @staticmethod
     def _supervisorctl(*args, **kwargs):
-        """Executa o supervisorctl sempre apontando para o supervisord.conf do Termux.
-
-        Sem o `-c`, o supervisorctl procura o arquivo em caminhos padrão e, no modo
-        HTTP com usuário/senha (Python sem os.link()), falharia na autenticação.
-        """
-        kwargs.setdefault("check", False)
-        kwargs.setdefault("capture_output", True)
-        cmd = ["supervisorctl", "-c", WorkerManager._supervisor_conf(), *args]
-        return subprocess.run(cmd, **kwargs)
+        """supervisorctl sempre com o supervisord.conf do Termux (ver servico.py)."""
+        return servico.supervisorctl(*args, **kwargs)
 
     @staticmethod
     def get_installed_workers():
@@ -350,28 +326,10 @@ while true; do sleep 30; done
 
     @staticmethod
     def get_workers_status_e_pids():
-        """Devolve ({alias: status}, {alias: pid}) a partir do `supervisorctl status`.
-
-        O supervisorctl 4.x sai com código != 0 sempre que algum programa não
-        está RUNNING (ex.: um worker FATAL), mas a saída continua válida. Por
-        isso a saída é lida independentemente do código de retorno.
-        Linha típica: "web1   RUNNING   pid 123, uptime 0:01:00".
-        """
-        try:
-            proc = WorkerManager._supervisorctl("status", text=True, timeout=5)
-        except Exception:
-            return {}, {}
-
-        status, pids = {}, {}
-        for linha in (proc.stdout or "").splitlines():
-            partes = linha.split(None, 2)
-            if len(partes) < 2 or not WorkerManager._alias_valido(partes[0]):
-                continue  # linhas de erro ("unix:///... no such file") etc.
-            status[partes[0]] = partes[1]
-            m = PID_RE.search(partes[2] if len(partes) > 2 else "")
-            if m:
-                pids[partes[0]] = int(m.group(1))
-        return status, pids
+        """Devolve ({alias: status}, {alias: pid}) a partir do `supervisorctl status`."""
+        st = servico.status_supervisor()
+        return ({a: s["estado"] for a, s in st.items()},
+                {a: s["pid"] for a, s in st.items() if s["pid"]})
 
     @staticmethod
     def criar(alias, imagem, isolado=True):
@@ -393,22 +351,6 @@ while true; do sleep 30; done
         # Onde o arquivo de configuração do serviço vai ficar
         conf_dir = os.path.join(prefix, "etc", "supervisor", "conf.d")
         arquivo_conf = os.path.join(conf_dir, f"{alias}.conf")
-
-        # Onde os logs serão salvos (organizados por nome do container)
-        log_out = os.path.join(prefix, "var", "log", f"supervisor_{alias}_out.log")
-        log_err = os.path.join(prefix, "var", "log", f"supervisor_{alias}_err.log")
-
-        # Configuração no estilo "systemctl"
-        login = " ".join(WorkerManager.comando_login(alias, isolado))
-        limites = WorkerManager._prefixo_ulimit()
-        conteudo_conf = f"""[program:{alias}]
-            command=sh -c '{limites}exec {login} -- /app/run_server.sh'
-            autostart=true
-            autorestart=true
-            startsecs=5
-            stderr_logfile={log_err}
-            stdout_logfile={log_out}
-        """
 
         try:
             # 0. Limpa artefatos residuais do alias: para o serviço antigo,
@@ -435,27 +377,21 @@ while true; do sleep 30; done
                 return False, f"Falha ao instalar '{alias}': {erro}"
             log.info("[+] Container '%s' criado com sucesso!", alias)
 
-            # 2. Tudo o que o serviço precisa é preparado ANTES de registrá-lo
-            #    no Supervisor: se o serviço subir sem o /app/run_server.sh, ele
-            #    falha, esgota as tentativas e fica FATAL.
-            # 3. /app/run_server.sh dentro do container
-            WorkerManager._injetar_run_server(alias)
+            # 2. Lançador do serviço dentro do container, ANTES de registrar no
+            #    Supervisor: ele espera o /app/run.sh existir e o executa. Se o
+            #    serviço subisse sem ele, falharia e ficaria FATAL.
+            servico.instalar_lancador(alias)
 
-            # 4. Garante que as pastas de configuração e logs existam
-            os.makedirs(conf_dir, exist_ok=True)
-            os.makedirs(os.path.dirname(log_out), exist_ok=True)
-
-            # 5. Cria o arquivo de configuração do Supervisor
-            with open(arquivo_conf, "w") as f:
-                f.write(conteudo_conf)
+            # 3. Registra o serviço no Supervisor
+            servico.gravar_conf(alias, isolado=isolado, nofile=ULIMIT_NOFILE, nproc=ULIMIT_NPROC)
             log.info("[+] Arquivo de configuração criado: %s", arquivo_conf)
 
-            # 6. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
+            # 4. Avisa ao Supervisor que há um novo serviço (equivalente ao systemctl daemon-reload)
             WorkerManager._supervisorctl("reread")
             WorkerManager._supervisorctl("update")
-            log.info("[+] Serviço '%s' registrado e iniciado no Supervisor.", alias)
+            log.info("[+] Serviço '%s' registrado no Supervisor (aguardando /app/run.sh).", alias)
 
-            return True, f"Container '{alias}' criado com sucesso"
+            return True, f"Container '{alias}' criado com sucesso. Crie o /app/run.sh pela aba Serviço."
 
         except subprocess.CalledProcessError as e:
             log.error("[-] Erro ao criar o container '%s'.", alias)
@@ -463,30 +399,6 @@ while true; do sleep 30; done
         except Exception as e:
             log.error("[-] Erro inesperado: %s", e)
             return False, f"Erro ao criar '{alias}': {e}"
-
-    @staticmethod
-    def _injetar_run_server(alias):
-        """Cria /app/run_server.sh dentro do container.
-
-        Usa base64 embutido no comando (sem depender de stdin do proot-distro,
-        que falha quando o processo pai não tem TTY).
-        """
-        try:
-            import base64
-            script_b64 = base64.b64encode(WorkerManager._SCRIPT_PADRAO.encode()).decode()
-            cmd = [
-                "proot-distro", "login", alias, "--", "sh", "-c",
-                f"mkdir -p /app && echo {script_b64} | base64 -d > /app/run_server.sh"
-                " && chmod +x /app/run_server.sh",
-            ]
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if proc.returncode == 0:
-                log.info("[+] /app/run_server.sh criado no container '%s'.", alias)
-            else:
-                log.warning("[-] proot-distro retornou %s ao criar run_server.sh do '%s': %s",
-                            proc.returncode, alias, proc.stderr.strip()[:200])
-        except Exception as e:
-            log.warning("[-] Não foi possível criar /app/run_server.sh do '%s': %s", alias, e)
 
     @staticmethod
     def _remover_container(alias, tentativas=REMOVE_TENTATIVAS, espera=REMOVE_ESPERA):
@@ -529,9 +441,6 @@ while true; do sleep 30; done
 
         conf_dir = os.path.join(prefix, "etc", "supervisor", "conf.d")
         arquivo_conf = os.path.join(conf_dir, f"{alias}.conf")
-        log_out = os.path.join(prefix, "var", "log", f"supervisor_{alias}_out.log")
-        log_err = os.path.join(prefix, "var", "log", f"supervisor_{alias}_err.log")
-
         try:
             # 1. Para o serviço no Supervisor (se estiver rodando) para evitar processos zumbis
             WorkerManager._supervisorctl("stop", alias)
@@ -552,11 +461,12 @@ while true; do sleep 30; done
                     return False, f"Falha ao deletar '{alias}': {erro}"
                 log.info("[+] Container '%s' deletado com sucesso!", alias)
 
-            # 5. Remove os arquivos de log associados
-            if os.path.exists(log_out):
-                os.remove(log_out)
-            if os.path.exists(log_err):
-                os.remove(log_err)
+            # 5. Remove os logs do serviço (atual, rotações e os de versões antigas)
+            atual = servico.arquivo_log(alias)
+            for caminho in [atual] + [f"{atual}.{n}" for n in range(1, servico.LOG_BACKUPS + 1)] \
+                    + servico.logs_antigos(alias):
+                if os.path.exists(caminho):
+                    os.remove(caminho)
             log.info("[+] Arquivos de log removidos.")
 
             return True, f"Container '{alias}' deletado"
@@ -719,6 +629,8 @@ class NodeAgent:
         self.monitor = SystemMonitor()
         # CPU dos processos do Termux (total e por worker): funciona sem root
         self.cpu_processos = ProcessCPUMonitor()
+        # Logs do serviço de cada worker, enviados ao painel enquanto alguém assiste
+        self.logs = servico.LogsAoVivo(self._enviar_logs)
 
         # Resultado das tarefas executadas, enviado no próximo sync.
         # Escrito pela thread de tarefas e lido/limpo pela thread de polling.
@@ -767,12 +679,49 @@ class NodeAgent:
                 self.terminal.escrever_comando(alias, comando)
                 return
 
+            if evento == f"servico_to_{self.meu_ip}":
+                threading.Thread(target=self._comando_servico, args=(dados or {},), daemon=True).start()
+                return
+
+            if evento == f"logs_to_{self.meu_ip}":
+                alias = (dados or {}).get("alias")
+                if (dados or {}).get("acao") == "cancelar":
+                    self.logs.cancelar(alias)
+                else:
+                    threading.Thread(target=self.logs.assinar, args=(alias,), daemon=True).start()
+                return
+
             prefixo_resize = f"resize_to_{self.meu_ip}_"
             if evento.startswith(prefixo_resize):
                 alias = evento.replace(prefixo_resize, "")
                 if not WorkerManager._alias_valido(alias):
                     return
                 self.terminal.redimensionar(alias, dados.get('cols'), dados.get('rows'))
+
+    def _enviar_logs(self, alias, linhas, inicial):
+        try:
+            self.sio.emit('logs_saida', {'ip': self.meu_ip, 'alias': alias,
+                                         'linhas': linhas, 'inicial': inicial})
+        except Exception as e:
+            log.debug("Falha ao enviar logs de '%s': %s", alias, e)
+
+    def _comando_servico(self, dados):
+        """Executa um comando da aba Serviço e responde ao navegador que pediu."""
+        alias, acao = dados.get("alias"), dados.get("acao")
+        try:
+            ok, msg, extra = servico.executar(alias, acao, dados.get("dados") or {})
+        except Exception as e:
+            log.exception("Erro no comando de serviço %s/%s", alias, acao)
+            ok, msg, extra = False, f"Erro inesperado: {e}", {}
+        log.info("[Serviço] %s %s -> %s (%s)", alias, acao, "ok" if ok else "falhou", msg)
+        try:
+            self.sio.emit('servico_resposta', {
+                'ip': self.meu_ip, 'alias': alias, 'acao': acao, 'sid': dados.get("sid"),
+                'req': dados.get("req"), 'ok': ok, 'msg': msg, 'dados': extra,
+                'servico': servico.estado_servicos([alias]).get(alias),
+            })
+        except Exception as e:
+            log.warning("Falha ao responder comando de serviço: %s", e)
 
     def recarregar_config(self, sem_host=False):
         """Relê o pareamento (chamado quando o painel pareia ou despareia).
@@ -809,11 +758,15 @@ class NodeAgent:
         """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
         with self._lock_resultados:
             enviados = list(self._resultados)
-        worker_status, worker_pids = WorkerManager.get_workers_status_e_pids()
+        status_sup = servico.status_supervisor()
+        worker_status = {a: s["estado"] for a, s in status_sup.items()}
+        worker_pids = {a: s["pid"] for a, s in status_sup.items() if s["pid"]}
+        workers = WorkerManager.get_installed_workers()
         payload = {
             "ip": self.meu_ip,
             "status": "Online",
-            "workers": WorkerManager.get_installed_workers(),
+            "workers": workers,
+            "servicos": servico.estado_servicos(workers, status_sup),
             "worker_status": worker_status,
             "tarefa_atual": self._tarefa_atual,
             "resultados": enviados,
@@ -903,6 +856,7 @@ class NodeAgent:
                 self._registrar_resultado(acao, None, False, "Alias ausente na tarefa")
                 return
             self.terminal.encerrar(alias)
+            self.logs.cancelar(alias)
             try:
                 ok, msg = WorkerManager.deletar(alias)
             except Exception as e:
@@ -934,6 +888,13 @@ class NodeAgent:
             time.sleep(POLL_INTERVAL)
 
     def iniciar(self):
+        # Workers criados por versões anteriores passam a usar o lançador /app/run.sh
+        try:
+            migrados = servico.migrar_todos(WorkerManager.get_installed_workers())
+            if migrados:
+                log.info("[+] Serviços migrados para /app/run.sh: %s", ", ".join(migrados))
+        except Exception:
+            log.exception("[-] Falha ao migrar os serviços dos workers")
         try:
             self.servidor_descoberta = iniciar_servidor_descoberta(Descoberta(self))
         except OSError as e:
