@@ -114,6 +114,8 @@ cd /app
 exec python3 -m http.server 8080
 ```
 
+O *shebang* é respeitado: um `run.sh` com `#!/bin/bash` ou `#!/usr/bin/env python3` roda com esse interpretador (instale-o antes; o Alpine só traz o `sh`). Sem *shebang*, o arquivo roda com `sh`. Por segurança, `/app/run.sh` não pode ser um link simbólico.
+
 Os comandos e os logs passam pelo WebSocket já aberto entre o Host e o Node (resposta imediata, sem esperar o sync), e os logs vão só para o navegador que está com a aba aberta. Workers criados por versões anteriores são migrados ao iniciar o agente: um `/app/run_server.sh` próprio vira `/app/run.sh`.
 
 ### Terminal (WebSocket)
@@ -332,7 +334,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 159 testes (59 no Host e 100 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 166 testes (60 no Host e 106 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 

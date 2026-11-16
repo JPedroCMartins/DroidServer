@@ -1,11 +1,22 @@
 # Plano de próximos passos
 
-Escrito em 15/11/2026, com pouco tempo até a entrega. Prioridade: **(1) o sistema funcionando de ponta a ponta numa demonstração, (2) dados medidos para o TCC, (3) texto final.** Tudo o que não serve a esses três itens fica para "trabalhos futuros".
+Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega. Prioridade: **(1) o sistema funcionando de ponta a ponta numa demonstração, (2) dados medidos para o TCC, (3) texto final.** Tudo o que não serve a esses três itens fica para "trabalhos futuros".
 
-## Onde estamos
+## Onde estamos (16/11)
 
 | Já funciona (validado no Xiaomi, Android 16) | Ainda não testado ou não existe |
 |---|---|
+| `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | Estabilidade por **horas** de uso (E7) |
+| Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | Mais de um Node (cluster de verdade) |
+| Criar e remover Worker (Alpine e Debian) pelo painel | Painel **sem internet** (depende de CDNs, 2.26) |
+| **Serviço do Worker** (`/app/run.sh`) com estado, editor, logs ao vivo e opções | Segurança mínima (Fase 2) |
+| Aplicações reais respondendo na rede (portas 8080–8082) | Nenhum experimento da nota 09 executado |
+| Terminal no navegador, isolamento do `/sdcard` | Resultados, resumo, título único, documento ABNT final |
+| CPU do DroidServer (total e por Worker), RAM, gráfico em tempo real | |
+| 166 testes automatizados (60 no Host, 106 no agente) | |
+| Vault com 12 capítulos e ~45 referências | |
+
+---|---|
 | `setup.sh`, agente, Host, painel | Rodar uma **aplicação real** num Worker e acessá-la pela rede |
 | Criar e remover Worker (Alpine) pelo painel | Debian e Arch no aparelho |
 | Terminal no navegador, isolamento do `/sdcard` | Mais de um Node (cluster de verdade) |
@@ -21,11 +32,11 @@ Objetivo: na defesa, criar um Worker pelo painel e abrir no navegador um serviç
 
 | # | Tarefa | Por quê | Esforço |
 |---|---|---|---|
-| 1.1 | **Rodar uma aplicação num Worker** (API Flask ou `python -m http.server`) via `/app/run_server.sh` e acessá-la em `http://192.168.1.7:<porta>` | É a promessa central ("VPS no celular"). O PRoot não isola a rede, então a porta do Worker deve abrir direto no IP do celular — **confirmar** | 2 h |
-| 1.2 | Criar um **template de aplicação**: campo opcional "comando de inicialização" no formulário, gravado no `run_server.sh` na criação | Hoje é preciso editar o arquivo pelo terminal; na demonstração isso confunde | 3 h |
+| 1.1 | ✅ *Feito na Fase 1B (aba Serviço).* **Rodar uma aplicação num Worker** (API Flask ou `python -m http.server`) via `/app/run_server.sh` e acessá-la em `http://192.168.1.7:<porta>` | É a promessa central ("VPS no celular"). O PRoot não isola a rede, então a porta do Worker deve abrir direto no IP do celular — **confirmar** | 2 h |
+| 1.2 | ✅ *Substituído pela aba Serviço (editor do `run.sh` + "Inserir exemplo").* Criar um **template de aplicação**: campo opcional "comando de inicialização" no formulário, gravado no `run_server.sh` na criação | Hoje é preciso editar o arquivo pelo terminal; na demonstração isso confunde | 3 h |
 | 1.3 | ~~Testar **Debian e Arch** no aparelho~~ ✅ Debian ok (80 s com `apt`); Arch retirado (sem imagem arm64) | — | feito |
 | 1.4 | ✅ *Reboot validado (Termux:Boot); falta o teste de horas de uso (E7).* **Sobreviver a reboot e a horas de uso:** ativar o Termux:Boot, liberar o "Início automático" e o "Sem restrições" de bateria (Xiaomi/HyperOS é agressivo), desativar o *phantom process killer* e reiniciar o celular | Se o agente morrer durante a apresentação, nada funciona | 2 h |
-| 1.5 | ~~Reservar IP fixo no roteador~~ — **desnecessário**: o painel identifica o Node pelo token e acompanha a troca de IP | Contorna o Node identificado por IP (2.9) sem escrever código | 15 min |
+| 1.5 | ~~Reservar IP fixo no roteador~~ — **desnecessário**: o painel identifica o Node pelo token e acompanha a troca de IP do celular (2.22, validado: .7 → .5); se o PC mudar de IP, basta "Adicionar" o Node de novo (2.27) | Contorna o Node identificado por IP (2.9) sem escrever código | 15 min |
 | 1.6 | Segundo aparelho, **se houver um disponível** | "Cluster" com um nó só enfraquece a defesa | 1 h |
 
 ### Feito além do plano (pedido em 15/11)
@@ -64,6 +75,10 @@ Na página do Worker, ao lado da aba **Terminal**, uma aba **Serviço**:
 - **Ajuda:** sem `run.sh`, o Worker aparece como **"Aguardando /app/run.sh"**. Se o serviço morre logo depois de iniciar, o painel explica a causa mais comum (*"o run.sh terminou; o serviço precisa ficar em primeiro plano, sem `&`"*) e mostra as últimas linhas do log.
 
 ### Revisão antes da Fase 2 (16/11)
+
+**Segunda rodada (caça a bugs):** mais cinco problemas corrigidos e validados no aparelho (overview 2.27–2.31): o node não aceitava ser readicionado se o **PC do painel** mudasse de IP; o lançador ignorava o *shebang* do `run.sh` (scripts `#!/bin/bash` ou Python quebravam no Alpine); um **link simbólico** em `/app/run.sh` permitia ler/gravar arquivos do Termux (inclusive o token do pareamento) pela aba Serviço; a aba Serviço apagava limites `DROID_ULIMIT_*` personalizados; e uma falha no `exec` do terminal deixava uma cópia do agente rodando.
+
+**Primeira rodada:**
 
 Teste de ponta a ponta no aparelho (agente 100 testes, Host 59) e pelo painel: Worker Alpine novo criado, `run.sh` com falha (log mostra o motivo), exemplo funcionando, Parar/Iniciar, terminal, gráfico, exclusão limpa. Quatro defeitos encontrados e corrigidos (overview 2.22–2.25): troca de IP não detectada pelo agente, `update` geral do Supervisor reiniciando outros Workers, logs que paravam depois de o agente reiniciar e exemplo que não rodava no Alpine. Fica como pendência o painel depender de CDNs (2.26).
 
@@ -106,6 +121,9 @@ Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitaçõe
 | 2.2 | Remoção via `POST` em vez de `GET` | 2.8 | 30 min |
 | 2.3 | Senha única no painel (`DROID_PANEL_PASSWORD`, login simples com sessão) | 1.2 | 2 h |
 | 2.4 | Restringir o CORS à origem do próprio painel | 2.10 | 15 min |
+| 2.5 | **Painel funcionando sem internet:** servir Tailwind, xterm.js, Socket.IO e a fonte a partir de `static/` (hoje vêm de CDNs) | 2.26 | 1 h |
+
+A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o painel não abre. É barata e protege a demonstração.
 
 ## Fase 3 — Dados para o TCC (≈ 3 dias, metade é o aparelho trabalhando sozinho)
 
@@ -113,7 +131,7 @@ Do protocolo da nota 09, executar **só o essencial**, com scripts no repositór
 
 | # | Experimento | Questão | Como | Esforço |
 |---|---|---|---|---|
-| 3.1 | **E1** — Tempo de provisionamento (Alpine, Debian, Arch; 5 repetições cada, com e sem cache) | QP1 | Script no PC que usa a API (`/deploy_worker` → espera `RUNNING` → remove) | 3 h + execução |
+| 3.1 | **E1** — Tempo de provisionamento (Alpine e Debian; 5 repetições cada, com e sem cache) | QP1 | Script no PC que usa a API (`/deploy_worker` → espera `RUNNING` → remove) | 3 h + execução |
 | 3.2 | **E3** — Sobrecarga do PRoot: o mesmo benchmark no Termux nativo e dentro do Worker (CPU, E/S de arquivos, instalação de pacote) | QP1 | Script no celular, via SSH | 3 h |
 | 3.3 | **E4** — Latência do terminal (eco de 1 tecla, 500 amostras; mediana e p95) | QP2 | Cliente Socket.IO em Python no PC, sem navegador | 3 h |
 | 3.4 | **E7** — Disponibilidade em 24 h: o Host faz `GET` na aplicação do Worker a cada 10 s e registra falhas, reinícios, CPU e RAM | QP3 / H1 | Script em segundo plano no PC; deixar rodando de noite | 2 h + 24 h |
@@ -138,19 +156,20 @@ Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatu
 
 Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy reverso, TLS, imagens prontas de Worker, comparação com Raspberry Pi, cálculo de carbono (CCI) e qualquer refatoração do `index.html`.
 
-## Ordem sugerida
+## Ordem sugerida (atualizada em 16/11)
+
+Fase 1 e Fase 1B concluídas, com duas rodadas de revisão. Daqui para frente:
 
 ```
-Dia 1   1.1 → 1.3 → 1.5 → 1.4 (inclui reboot)        ← demo funcionando
-Dia 2   1.2 → 2.1 → 2.2 → 2.4 → 2.3                  ← demo apresentável
-Dia 3   scripts 3.1, 3.3, 3.4 → iniciar E7 (24 h)    ← dados rodando de noite
-Dia 4   3.2, 3.5, 3.1 executado → git push            ← dados completos
-Dia 5   4.1, 4.2, 4.6                                 ← resultados
-Dia 6   4.3, 4.4, 4.5                                 ← texto fechado
-Dia 7   4.7 + folga para imprevistos → orientador
+Dia 1   2.5 → 2.2 → 2.4 → 2.1 → 2.3                  ← demo apresentável, sem internet
+Dia 2   scripts 3.1, 3.3, 3.4 → iniciar E7 (24 h)    ← dados rodando de noite
+Dia 3   3.2, 3.5, 3.1 executado → git push            ← dados completos
+Dia 4   4.1, 4.2, 4.6                                 ← resultados
+Dia 5   4.3, 4.4, 4.5                                 ← texto fechado
+Dia 6   4.7 + folga para imprevistos → orientador
 ```
 
-Se o prazo for mais curto, corte nesta ordem: 2.3 → 1.6 → 3.5 → 3.2 → 1.2. **Não corte** 1.1, 1.4, 3.4 nem 4.2: sem eles não há demo nem resultado.
+Se o prazo for mais curto, corte nesta ordem: 2.3 → 1.6 → 3.5 → 3.2. **Não corte** 2.5, 3.4, 3.1 nem 4.2: sem eles a demo pode não abrir e não há resultado.
 
 ## Riscos
 
@@ -158,5 +177,6 @@ Se o prazo for mais curto, corte nesta ordem: 2.3 → 1.6 → 3.5 → 3.2 → 1.
 |---|---|
 | HyperOS ou Android 16 mata o Termux em segundo plano | Fazer 1.4 cedo; se não houver solução, deixar o celular na tela do Termux durante a demo e registrar como resultado (é um achado relevante para a QP3) |
 | A rede da faculdade isola os dispositivos no Wi-Fi | Levar um roteador próprio ou usar o roteador do celular do Host (*hotspot*) na defesa |
-| Debian ou Arch falham no `proot-distro` do Android 16 | Documentar como resultado e demonstrar com Alpine |
+| Sem internet no local da defesa | 2.5 (painel com arquivos locais); o `apk`/`apt` também precisa de internet: deixar os Workers da demo com os pacotes já instalados |
+| O IP do celular ou do PC muda na hora (DHCP) | O painel acompanha o celular sozinho; se o PC mudar, "Adicionar" o Node de novo. Ensaiar uma vez antes |
 | Um único aparelho | Assumir explicitamente como limitação ("prova de conceito com 1 nó") |
