@@ -63,6 +63,10 @@ Na página do Worker, ao lado da aba **Terminal**, uma aba **Serviço**:
 - **Logs:** saída e erros do serviço ao vivo, com as últimas 200 linhas ao abrir.
 - **Ajuda:** sem `run.sh`, o Worker aparece como **"Aguardando /app/run.sh"**. Se o serviço morre logo depois de iniciar, o painel explica a causa mais comum (*"o run.sh terminou; o serviço precisa ficar em primeiro plano, sem `&`"*) e mostra as últimas linhas do log.
 
+### Revisão antes da Fase 2 (16/11)
+
+Teste de ponta a ponta no aparelho (agente 100 testes, Host 59) e pelo painel: Worker Alpine novo criado, `run.sh` com falha (log mostra o motivo), exemplo funcionando, Parar/Iniciar, terminal, gráfico, exclusão limpa. Quatro defeitos encontrados e corrigidos (overview 2.22–2.25): troca de IP não detectada pelo agente, `update` geral do Supervisor reiniciando outros Workers, logs que paravam depois de o agente reiniciar e exemplo que não rodava no Alpine. Fica como pendência o painel depender de CDNs (2.26).
+
 ### Recomendações (decididas)
 
 | Decisão | Escolha | Motivo |
