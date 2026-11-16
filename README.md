@@ -1,68 +1,127 @@
 # DroidServer
 
-Orquestração de cluster a partir de dispositivos Android (Termux). Um servidor **desktop** (Flask + Socket.IO) funciona como host e controla vários **nodes** Android, onde cada node executa containers leves via `proot-distro` (ex.: Alpine) chamados de **workers**. Tudo é gerenciado por uma interface web com terminal interativo.
+Transforme smartphones Android antigos — **sem root** — em nós de um pequeno cluster de servidores Linux.
+
+Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em cada Node, um agente Python rodando no [Termux](https://termux.dev/) cria ambientes Linux com `proot-distro` (Alpine, Debian ou Arch Linux), chamados **Workers**, e os mantém de pé com o **Supervisor**. Tudo é operado por um painel web com métricas em tempo real e terminal interativo no navegador.
+
+> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026). A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md).
+
+## Sumário
+
+- [Conceitos](#conceitos)
+- [Arquitetura](#arquitetura)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação](#instalação)
+- [Uso](#uso)
+- [Configuração](#configuração)
+- [API e eventos](#api-e-eventos)
+- [Logs e diagnóstico](#logs-e-diagnóstico)
+- [Testes](#testes)
+- [Segurança e limitações](#segurança-e-limitações)
+
+## Conceitos
+
+| Termo | O que é |
+|---|---|
+| **Host** | Computador que roda `desktop/` — o plano de controle, com o painel web na porta 5050 |
+| **Node** | Um celular Android rodando o agente `android/node.py` dentro do Termux |
+| **Worker** | Um ambiente Linux (`proot-distro`) dentro de um Node, registrado como serviço no Supervisor |
+| **Tarefa** | Ordem do Host para um Node (`criar_worker` ou `deletar_worker`), entregue no próximo sync |
 
 ## Arquitetura
 
 ```
-┌───────────────────────────────┐         ┌──────────────────────────────┐
-│          DESKTOP (Host)       │         │        ANDROID (Node)        │
-│                               │  HTTP   │                              │
-│  Flask + Flask-SocketIO       │◄────────│  NodeAgent (node.py)         │
-│  - Dashboard web (Bootstrap)  │  poll   │  - Poll /api/node_sync 10s   │
-│  - API /api/node_sync         │ ───────►│  - Socket.IO client          │
-│  - WebSocket (terminais)      │ SocketIO│  - WorkerManager (proot)     │
-│                               │◄───────►│  - TerminalManager (PTY)     │
-└───────────────────────────────┘         └──────────────────────────────┘
+ Navegador ──HTTP/WebSocket──►  ┌─────────────────────────────┐
+                                │        HOST (desktop/)       │
+                                │  Flask + Flask-SocketIO      │
+                                │  · SPA (Tailwind + xterm.js) │
+                                │  · /api/node_sync, /api/*    │
+                                │  · retransmissão do terminal │
+                                └──────────────▲──────────────┘
+                                               │  POST /api/node_sync a cada 10 s
+                                               │  + WebSocket (terminal)
+                         ┌─────────────────────┴─────────────────────┐
+                         │      NODE Android (android/, no Termux)    │
+                         │  NodeAgent ─ polling, fila de tarefas      │
+                         │  WorkerManager ─ proot-distro + Supervisor │
+                         │  TerminalManager ─ PTY ↔ WebSocket         │
+                         │  SystemMonitor ─ CPU/RAM via /proc         │
+                         │   ┌─────────┐ ┌─────────┐ ┌─────────┐      │
+                         │   │ Worker  │ │ Worker  │ │ Worker  │      │
+                         │   │ alpine  │ │ debian  │ │  arch   │      │
+                         │   └─────────┘ └─────────┘ └─────────┘      │
+                         └───────────────────────────────────────────┘
 ```
 
-### Fluxo de comunicação
+Toda conexão é **iniciada pelo Node**: o Host nunca precisa alcançar o celular, o que funciona atrás de NAT e tolera as restrições de energia do Android.
 
-1. **Sincronização (HTTP):** cada node faz `POST /api/node_sync` a cada 10s informando IP, status, workers instalados e o **uso de CPU/memória** do dispositivo (lido de `/proc`). O host responde com as **tarefas pendentes** (criar/deletar worker) para o node executar.
-2. **Terminal (WebSocket):** o navegador emite `terminal_input` → o host repassa como `cmd_to_<ip>_<alias>` → o node injeta o comando no PTY do container → a saída retorna como `terminal_output` → `output_for_<ip>_<alias>` → xterm.js no navegador.
+### Sincronização (HTTP)
 
-### Fluxo de deploy de um worker
+A cada 10 s o Node faz `POST /api/node_sync` com IP, Workers instalados, status de cada serviço (`supervisorctl status`), tarefa em execução, resultado das últimas operações e uso de CPU/memória. O Host responde com as **tarefas pendentes** daquele Node. A lista de Workers é **autoritativa do Node** — o painel apenas exibe o que o aparelho reporta.
 
-O host enfileira a tarefa `criar_worker` → o node executa `proot-distro install` com o alias escolhido → gera um arquivo `.conf` em `$PREFIX/etc/supervisor/conf.d/` → o **Supervisor** inicia e mantém o container rodando (`proot-distro login <alias> -- /app/run_server.sh`). O agente também cria um `run_server.sh` padrão dentro de cada container — substitua pelo seu aplicativo.
+O Host marca um Node como **Offline** após 25 s sem contato e o remove do painel após 180 s (se não houver tarefas pendentes para ele).
 
-A lista de workers é **autoritativa do node** (o host não a edita otimistamente). O node reporta a cada sync o status dos serviços (`supervisorctl status`), a tarefa em execução e o **resultado das operações** (criado/deletado ✓ ou falhou ✗) — tudo visível no painel.
+### Criação de um Worker
+
+1. O painel envia `POST /deploy_worker`; o Host valida o alias e a distribuição e enfileira `criar_worker`.
+2. No próximo sync, o Node recebe a tarefa e a executa numa thread separada (instalar pode levar minutos sem travar o polling).
+3. O Node limpa resíduos do mesmo alias, roda `proot-distro install <distro> --override-alias <alias>`, grava `$PREFIX/etc/supervisor/conf.d/<alias>.conf` e recarrega o Supervisor.
+4. O Supervisor mantém o Worker rodando com `proot-distro login [--isolated] <alias> -- /app/run_server.sh`, aplicando limites `ulimit` (arquivos abertos e processos).
+5. O agente cria um `/app/run_server.sh` padrão (um loop ocioso) — **substitua-o pelo seu aplicativo**.
+6. O resultado (✓/✗) aparece no painel no sync seguinte.
+
+### Terminal (WebSocket)
+
+```
+xterm.js ─terminal_input─► Host ─cmd_to_<ip>_<alias>─► Node ─► PTY (proot-distro login)
+xterm.js ◄output_for_<ip>_<alias>─ Host ◄terminal_output─ Node ◄─┘
+```
+
+O PTY é aberto na primeira tecla recebida, e o redimensionamento da janela é repassado via `terminal_resize` → `resize_to_<ip>_<alias>` (`TIOCSWINSZ`).
 
 ## Estrutura do projeto
 
 ```
 DroidServer/
-├── android/                  # Agente que roda no dispositivo Android (Termux)
-│   ├── node.py               # NodeAgent: polling, WebSocket, workers e PTY
-│   ├── sysinfo.py            # Leitura de CPU/memória do dispositivo via /proc
-│   ├── setup.sh              # Script de primeiro uso (instala e configura tudo)
-│   ├── run.sh                # Inicia o agente carregando a configuração salva
-│   ├── pyproject.toml        # Dependências (python-socketio, requests)
-│   └── uv.lock
-└── desktop/                  # Servidor host (controlador do cluster)
-    ├── main.py               # Ponto de entrada — roda na porta 5050
-    ├── android_setup.sh      # Instala dependências no Android
-    ├── app/
-    │   ├── __init__.py       # Criação da app Flask + SocketIO
-    │   ├── routes.py         # Rotas HTTP, API e eventos SocketIO
-    │   └── templates/        # Páginas web (Bootstrap + xterm.js)
-    │       ├── index.html        # Dashboard com lista de nodes
-    │       ├── node_detail.html  # Gerencia workers do node
-    │       └── terminal.html     # Terminal web do worker
-    └── pyproject.toml        # Dependências (flask, flask-socketio)
+├── android/                  # Agente do Node (roda no Termux)
+│   ├── node.py               # NodeAgent, WorkerManager, TerminalManager
+│   ├── sysinfo.py            # CPU/memória via /proc (fallback: top)
+│   ├── setup.sh              # Primeiro uso: pacotes, Supervisor, conexão, boot
+│   ├── run.sh                # Inicia/para o agente (primeiro ou segundo plano)
+│   ├── diagnostico.sh        # Coleta informações para depuração
+│   ├── tests/test_node.py    # Testes com mocks (rodam fora do Android)
+│   └── pyproject.toml
+├── desktop/                  # Host (plano de controle)
+│   ├── main.py               # Ponto de entrada — porta 5050
+│   ├── app/
+│   │   ├── __init__.py       # create_app, Socket.IO e logs
+│   │   ├── routes.py         # Páginas, API REST e eventos Socket.IO
+│   │   └── templates/
+│   │       └── index.html    # SPA: Dashboard, Node e Terminal
+│   ├── tests/test_routes.py
+│   └── pyproject.toml
+└── docs/
+    ├── obsidian-valt/        # Documentação do TCC (Obsidian)
+    └── artigo_nao_finalizado.odt
 ```
 
 ## Pré-requisitos
 
-- **Desktop (Host):** Python 3.12+, [uv](https://docs.astral.sh/uv/) e `git`
-- **Android (Node):**
-  - [Termux](https://termux.dev/) (F-Droid)
-  - `proot-distro`
-  - `supervisor` + `supervisorctl`
-  - Python 3 + dependências do agente (`python-socketio`, `requests`)
+**Host**
+- Linux (testado em Debian), Python 3.12+ e [uv](https://docs.astral.sh/uv/)
+- Acesso à internet no navegador (o painel carrega Tailwind, xterm.js e Socket.IO de CDNs)
+
+**Node**
+- Android 7+ com [Termux](https://f-droid.org/packages/com.termux/) instalado pelo **F-Droid** ou GitHub (a versão da Play Store está desatualizada)
+- Celular e Host na **mesma rede**
+- Opcional: [Termux:Boot](https://f-droid.org/packages/com.termux.boot/) para iniciar o agente ao ligar o aparelho
+
+O `setup.sh` instala o restante (`python`, `proot-distro`, `supervisor`, `python-socketio[client]`, `requests`).
 
 ## Instalação
 
-### 1. Servidor host (desktop)
+### 1. Host
 
 ```bash
 cd desktop
@@ -70,82 +129,154 @@ uv sync
 uv run python main.py
 ```
 
-O host fica disponível em `http://0.0.0.0:5050`.
+O painel fica em `http://<ip-do-host>:5050`. Libere a porta 5050 no firewall, se houver.
 
-### 2. Node Android (Termux)
-
-No celular, com o [Termux](https://termux.dev/) instalado, copie o repositório para o aparelho (ex.: `git clone` ou via adb) e rode o script de **primeiro uso** — ele instala tudo e configura a conexão:
+### 2. Node (no Termux)
 
 ```bash
+pkg install -y git
+git clone <url-deste-repositório> DroidServer
+cd DroidServer
 bash android/setup.sh
 ```
 
-O script instala os pacotes (`git`, `python`, `proot-distro`, `supervisor`), as dependências do agente, garante que o **Supervisor** leia os arquivos de serviço em `$PREFIX/etc/supervisor/conf.d/`, inicia o `supervisord` e salva a configuração em `~/.config/droidserver/env`.
+O `setup.sh` pode ser executado de novo sem problemas. Ele:
 
-Inicie o agente com o wrapper (já carrega IP/porta/token salvos):
+1. instala os pacotes base e o Supervisor (via `pip`, com o `pkg` como alternativa);
+2. gera ou ajusta o `$PREFIX/etc/supervisord.conf` — usando HTTP em `127.0.0.1:9001` com senha quando o Python do Termux não tem `os.link()` — e inicia o `supervisord`;
+3. instala as dependências do agente e testa os imports;
+4. pergunta IP, porta e token do Host, salva em `~/.config/droidserver/env` (modo 600) e testa a conexão;
+5. opcionalmente cria um container Alpine de teste e configura o início automático com o Termux:Boot.
+
+Depois, inicie o agente:
 
 ```bash
 bash android/run.sh
 ```
 
-Ou configure manualmente via variáveis de ambiente:
+| Comando | Efeito |
+|---|---|
+| `bash android/run.sh` | Primeiro plano (Ctrl+C encerra) |
+| `bash android/run.sh -d` | Segundo plano, com `termux-wake-lock` e reinício automático |
+| `bash android/run.sh status` | Mostra se o agente está rodando |
+| `bash android/run.sh stop` | Encerra o agente em segundo plano |
 
-```bash
-export DROID_HOST_IP="192.168.1.10"   # IP do desktop na rede
-export DROID_HOST_PORT="5050"         # porta do host (opcional)
-export DROID_TOKEN=""                 # token opcional, exigido se o host tiver DROID_API_TOKEN
-python3 node.py                       # dentro da pasta android/
-```
+O `run.sh` garante que o `supervisord` esteja de pé e reinicia o agente se ele cair (espera exponencial de 2 s a 60 s).
 
-## Variáveis de ambiente
+### Mantendo o Node vivo
 
-| Variável              | Onde                | Descrição                                             |
-|-----------------------|---------------------|-------------------------------------------------------|
-| `DROID_HOST_IP`       | Node (android)      | IP do servidor host (padrão `192.168.1.10`)           |
-| `DROID_HOST_PORT`     | Node (android)      | Porta do host (padrão `5050`)                         |
-| `DROID_TOKEN`         | Node (android)      | Token enviado na sincronização (opcional)             |
-| `DROID_API_TOKEN`     | Host (desktop)      | Se definido, exige o token nos nodes (`/api/node_sync`) |
+O Android encerra processos em segundo plano agressivamente. Para um Node estável:
 
-Sem `DROID_API_TOKEN`, o host funciona aberto como antes. Com o token definido, apenas nodes que enviam o mesmo `DROID_TOKEN` são registrados.
-
-## Logs
-
-Tudo o que acontece é gravado em arquivo (com rotação) para análise futura:
-
-| Componente   | Local                                                                |
-|--------------|----------------------------------------------------------------------|
-| Setup        | `~/.config/droidserver/logs/setup-<data>.log` (um por execução)      |
-| Agente (node)| `~/.config/droidserver/logs/node.log` (ou `DROID_LOG_FILE`)          |
-| Host Flask   | `desktop/logs/droidserver.log` (ou `DROID_LOG_DIR`)                  |
-
-O host grava acessos HTTP (Werkzeug), eventos do Socket.IO, sincronizações de nodes e tarefas enfileiradas. O agente grava conectividade (polling), tarefas e erros do PTY.
-
-## Testes
-
-Os dois lados do projeto têm suíte de testes com `pytest`:
-
-```bash
-# Host (rotas HTTP, detecção de offline, fila de tarefas, eventos Socket.IO)
-cd desktop && uv run pytest -v
-
-# Agente Android (config, WorkerManager, TerminalManager e polling com mocks)
-cd android && uv run pytest -v
-```
-
-A suíte do desktop usa `test_client` do Flask e `socketio.test_client` para validar o encaminhamento dos eventos de terminal (`terminal_input`, `terminal_resize`, `terminal_output`) sem precisar de servidor real. A do android usa mocks (`monkeypatch`) de `subprocess`, `pty` e `requests`, então não requer Termux/proot-distro para rodar.
+- desative a otimização de bateria do Termux (*Configurações → Apps → Termux → Bateria → Sem restrições*);
+- use `run.sh -d`, que ativa o `termux-wake-lock`;
+- **Android 12 ou superior:** desative o *phantom process killer* (nas opções de desenvolvedor, "Desativar restrições de processos filhos", ou via ADB), senão o Termux pode ser encerrado com `signal 9`. Veja [termux-app#2366](https://github.com/termux/termux-app/issues/2366).
 
 ## Uso
 
-1. Acesse `http://<host>:5050` no navegador — o dashboard lista os nodes online.
-2. Clique em **Gerenciar Workers** para abrir a página do node.
-3. Crie um container informando o alias (ex.: `alpine_bd`) ou apague os existentes.
-4. Clique em **Abrir Terminal** para abrir um terminal interativo (xterm.js) dentro do container via WebSocket.
+1. Acesse `http://<host>:5050`. O **Dashboard** mostra os Nodes, se estão online e o uso de CPU/RAM de cada um.
+2. Clique em **Gerenciar Workers** para abrir a página do Node.
+3. Escolha a distribuição (Alpine, Debian ou Arch Linux), informe um alias (`[A-Za-z0-9_-]`, até 64 caracteres) e clique em **Criar Container**. A opção **Isolar do host** (`--isolated`, ativada por padrão) impede o Worker de enxergar o *home* do Termux e o armazenamento do aparelho.
+4. Acompanhe "Em processamento" e "Últimas operações"; o Worker aparece como `RUNNING` quando o Supervisor o inicia.
+5. Clique em **Abrir terminal** para uma sessão interativa dentro do Worker, ou no ícone de lixeira para removê-lo.
 
-## Pontos de configuração
+Para rodar sua aplicação, entre no terminal do Worker, instale o necessário e substitua `/app/run_server.sh` por um script que inicie seu serviço em primeiro plano (sem `&`), para que o Supervisor consiga monitorá-lo.
 
-| Parâmetro          | Local                                        | Descrição                               |
-|--------------------|----------------------------------------------|-----------------------------------------|
-| Conexão do node    | env vars (ver acima)                         | IP/porta/token do host                  |
-| `imagem`           | `desktop/app/routes.py` (`deploy_worker`)    | Imagem proot-distro dos workers         |
-| Intervalo de poll  | `android/node.py` (`POLL_INTERVAL`)          | Tempo entre sincronizações (10s)        |
-| Timeout de offline | `desktop/app/routes.py` (`STALE_TIMEOUT`)    | Segundos sem contato até virar Offline  |
+## Configuração
+
+### Variáveis de ambiente
+
+| Variável | Onde | Padrão | Descrição |
+|---|---|---|---|
+| `DROID_HOST_IP` | Node | `192.168.1.10` | IP do Host |
+| `DROID_HOST_PORT` | Node | `5050` | Porta do Host |
+| `DROID_TOKEN` | Node | vazio | Token enviado no sync |
+| `DROID_LOG_FILE` | Node | `~/.config/droidserver/logs/node.log` | Arquivo de log do agente |
+| `DROID_ULIMIT_NOFILE` | Node | `4096` | Limite de arquivos abertos por Worker (`0` desativa) |
+| `DROID_ULIMIT_NPROC` | Node | `1024` | Limite de processos por Worker (`0` desativa) |
+| `DROID_API_TOKEN` | Host | vazio | Se definido, só aceita Nodes que enviem o mesmo token |
+| `DROID_LOG_DIR` | Host | `desktop/logs/` | Diretório de logs do Host |
+
+No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e são carregadas pelo `run.sh`.
+
+### Constantes no código
+
+| Constante | Arquivo | Valor | Descrição |
+|---|---|---|---|
+| `POLL_INTERVAL` | `android/node.py` | 10 s | Intervalo entre syncs |
+| `INSTALL_TIMEOUT` | `android/node.py` | 1200 s | Tempo máximo do `proot-distro install` |
+| `IMAGENS_PERMITIDAS` | `node.py` e `routes.py` | alpine, debian, archlinux | Distribuições aceitas (mantenha iguais nos dois) |
+| `STALE_TIMEOUT` | `desktop/app/routes.py` | 25 s | Sem contato até virar Offline |
+| `PRUNE_TIMEOUT` | `desktop/app/routes.py` | 180 s | Offline até sair do painel |
+
+## API e eventos
+
+### HTTP
+
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/`, `/node/<ip>`, `/node/<ip>/worker/<alias>` | SPA (as telas são resolvidas no navegador) |
+| `GET` | `/api/nodes` | Estado de todos os Nodes |
+| `GET` | `/api/node/<ip>` | Estado de um Node (404 se desconhecido) |
+| `POST` | `/api/node_sync` | Sync do Node; responde `{"status": "ok", "tarefas": [...]}` |
+| `POST` | `/deploy_worker` | Form `ip`, `alias`, `imagem`, `isolado` → enfileira `criar_worker` |
+| `GET` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` |
+
+### Socket.IO
+
+| Evento | Direção | Payload |
+|---|---|---|
+| `node_updated` | Host → painéis | `{ip}` — o painel recarrega os dados |
+| `terminal_input` | Navegador → Host | `{ip, alias, input}` |
+| `terminal_resize` | Navegador → Host | `{ip, alias, cols, rows}` |
+| `terminal_output` | Node → Host | `{ip, alias, output}` |
+| `cmd_to_<ip>_<alias>` | Host → Node | `{input}` |
+| `resize_to_<ip>_<alias>` | Host → Node | `{cols, rows}` |
+| `output_for_<ip>_<alias>` | Host → Navegador | `{output}` |
+
+## Logs e diagnóstico
+
+| Componente | Local |
+|---|---|
+| Setup | `~/.config/droidserver/logs/setup-<data>.log` (um por execução) |
+| Agente | `~/.config/droidserver/logs/node.log` (rotativo, 2 MB × 5) |
+| Agente em segundo plano (stdout) | `~/.config/droidserver/logs/agent.out` |
+| Supervisor | `$PREFIX/var/log/supervisor/supervisord.log` |
+| Cada Worker | `$PREFIX/var/log/supervisor_<alias>_{out,err}.log` |
+| Host | `desktop/logs/droidserver.log` (rotativo, 2 MB × 5) |
+
+Para coletar tudo de uma vez no celular:
+
+```bash
+bash android/diagnostico.sh
+```
+
+Para ver os serviços do Supervisor:
+
+```bash
+supervisorctl -c $PREFIX/etc/supervisord.conf status
+```
+
+## Testes
+
+```bash
+cd desktop && uv run pytest -v
+```
+
+```bash
+cd android && uv run pytest -v
+```
+
+A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
+
+São 78 testes (30 no Host e 48 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+
+## Segurança e limitações
+
+O DroidServer é um protótipo acadêmico para uso **em rede local confiável**:
+
+- o painel **não tem autenticação** — qualquer pessoa na rede pode criar ou apagar Workers e abrir terminais;
+- o Host roda com `debug=True` em `0.0.0.0` e com `cors_allowed_origins="*"`; o token trafega sem TLS;
+- os eventos de terminal são enviados a todos os clientes Socket.IO conectados;
+- o PRoot isola apenas o sistema de arquivos: Workers compartilham rede, processos, CPU e memória com o aparelho (sem `cgroups`), e o `ptrace` adiciona sobrecarga em operações de E/S;
+- o Node é identificado pelo IP; mudanças de DHCP geram registros duplicados;
+- o estado do Host fica em memória e é perdido ao reiniciá-lo (os Nodes se registram de novo em até 10 s).
