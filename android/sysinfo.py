@@ -8,6 +8,7 @@ caso usamos o `top` do busybox como fallback.
 """
 
 import logging
+import os
 import subprocess
 import time
 
@@ -15,6 +16,12 @@ log = logging.getLogger("sysinfo")
 
 STAT_FILE = '/proc/stat'
 MEMINFO_FILE = '/proc/meminfo'
+PROC_DIR = '/proc'
+
+try:
+    CLK_TCK = os.sysconf('SC_CLK_TCK')
+except (ValueError, OSError, AttributeError):
+    CLK_TCK = 100
 
 
 def _read_cpu():
@@ -105,6 +112,7 @@ class SystemMonitor:
     def __init__(self):
         self._prev_cpu = _read_cpu()
         self._prev_ts = time.monotonic()
+        self._avisou_cpu = False
 
     def sample(self):
         """Devolve {'cpu': pct_ou_None, 'mem': dict_ou_None}."""
@@ -121,7 +129,11 @@ class SystemMonitor:
             # /proc/stat bloqueado (SELinux) -> tenta o top do busybox
             cpu = _cpu_via_top()
             if cpu is None:
-                log.warning("CPU indisponível (%s ilegível e top sem resultado)", STAT_FILE)
+                # Avisa uma vez; nos próximos ciclos só em DEBUG (evita poluir o log a cada 10 s)
+                nivel = logging.DEBUG if self._avisou_cpu else logging.WARNING
+                log.log(nivel, "CPU do aparelho indisponível (%s ilegível e top sem resultado); "
+                        "usando apenas a CPU dos processos do Termux", STAT_FILE)
+                self._avisou_cpu = True
         self._prev_cpu = atual
         self._prev_ts = time.monotonic()
 
@@ -137,3 +149,108 @@ class SystemMonitor:
         elif total == 0:
             log.debug("Memória indisponível (%s ilegível ou sem MemTotal)", MEMINFO_FILE)
         return {'cpu': cpu, 'mem': mem}
+
+
+# ---------------------------------------------------------------------------
+# CPU dos processos do Termux (agente + supervisor + workers)
+# ---------------------------------------------------------------------------
+# Sem root, o Android 16 nega /proc/stat e o top do sistema não mede a CPU
+# global. Já o /proc/<pid>/stat dos processos do próprio app (mesmo UID do
+# Termux) continua legível. Somando utime+stime desses processos entre duas
+# amostras obtemos quanto da CPU do aparelho o DroidServer consumiu — no total
+# e por worker. Validado no aparelho: cargas de 25/50/100% foram medidas como
+# 22,9/49,8/87,5%. Não inclui outros apps do celular.
+
+def ler_processos(proc_dir=None):
+    """Lê os processos visíveis. Devolve {pid: (ppid, ticks_de_cpu)}."""
+    proc_dir = proc_dir or PROC_DIR
+    processos = {}
+    try:
+        nomes = os.listdir(proc_dir)
+    except OSError:
+        return processos
+    for nome in nomes:
+        if not nome.isdigit():
+            continue
+        try:
+            with open(os.path.join(proc_dir, nome, 'stat')) as f:
+                dados = f.read()
+        except OSError:
+            continue  # processo terminou ou não é visível
+        # O nome do processo (campo 2) fica entre parênteses e pode ter espaços
+        try:
+            campos = dados.rsplit(')', 1)[1].split()
+            ppid = int(campos[1])
+            ticks = int(campos[11]) + int(campos[12])  # utime + stime
+        except (IndexError, ValueError):
+            continue
+        processos[int(nome)] = (ppid, ticks)
+    return processos
+
+
+def descendentes(processos, raizes):
+    """Conjunto com as raízes e todos os seus descendentes (pela árvore de ppid)."""
+    filhos = {}
+    for pid, (ppid, _) in processos.items():
+        filhos.setdefault(ppid, []).append(pid)
+    vistos = set()
+    pilha = [p for p in raizes if p in processos]
+    while pilha:
+        pid = pilha.pop()
+        if pid in vistos:
+            continue
+        vistos.add(pid)
+        pilha.extend(filhos.get(pid, ()))
+    return vistos
+
+
+class ProcessCPUMonitor:
+    """Uso de CPU dos processos visíveis ao Termux, total e por grupo (worker).
+
+    Os percentuais são relativos à capacidade do aparelho inteiro: 100% =
+    todos os núcleos ocupados. Assim o total e os workers são comparáveis com
+    o uso de CPU do dispositivo quando ele estiver disponível.
+    """
+
+    def __init__(self, proc_dir=None, ncpu=None, relogio=time.monotonic):
+        self.proc_dir = proc_dir
+        self.ncpu = ncpu or os.cpu_count() or 1
+        self._relogio = relogio
+        self._prev = ler_processos(self.proc_dir)
+        self._prev_ts = relogio()
+
+    def _pct(self, ticks, dt):
+        if dt <= 0:
+            return 0.0
+        return round(max(0.0, min(100.0, 100.0 * ticks / CLK_TCK / dt / self.ncpu)), 1)
+
+    def sample(self, grupos=None):
+        """Devolve {'total': pct, 'grupos': {nome: pct}}.
+
+        grupos: {nome: [pid_raiz, ...]} — cada grupo soma os processos raiz e
+        seus descendentes (ex.: o pid do serviço no Supervisor e o da sessão
+        de terminal de um worker).
+        """
+        atual = ler_processos(self.proc_dir)
+        agora = self._relogio()
+        dt = agora - self._prev_ts
+
+        # Delta por processo. Um pid novo começou depois da amostra anterior,
+        # então todo o seu tempo de CPU cabe no intervalo. Processos que
+        # terminaram entre as amostras não são contabilizados (subestima
+        # processos muito curtos).
+        delta = {}
+        for pid, (_, ticks) in atual.items():
+            anterior = self._prev.get(pid)
+            delta[pid] = max(ticks - anterior[1], 0) if anterior else ticks
+
+        resultado = {
+            'total': self._pct(sum(delta.values()), dt),
+            'grupos': {},
+        }
+        for nome, raizes in (grupos or {}).items():
+            pids = descendentes(atual, raizes)
+            resultado['grupos'][nome] = self._pct(sum(delta[p] for p in pids), dt)
+
+        self._prev, self._prev_ts = atual, agora
+        return resultado

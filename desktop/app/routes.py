@@ -168,6 +168,8 @@ def node_sync():
             "tarefa_atual": dados.get("tarefa_atual"),
             "resultados": dados.get("resultados", []),
             "cpu": dados.get("cpu"),
+            "cpu_termux": dados.get("cpu_termux"),
+            "cpu_workers": dados.get("cpu_workers", {}),
             "mem": dados.get("mem"),
         }
         logger.info("Novo node registrado: %s (workers=%s)", ip_node, dados.get("workers", []))
@@ -181,6 +183,8 @@ def node_sync():
         nodes_conectados[ip_node]["tarefa_atual"] = dados.get("tarefa_atual")
         nodes_conectados[ip_node]["resultados"] = dados.get("resultados", [])
         nodes_conectados[ip_node]["cpu"] = dados.get("cpu")
+        nodes_conectados[ip_node]["cpu_termux"] = dados.get("cpu_termux")
+        nodes_conectados[ip_node]["cpu_workers"] = dados.get("cpu_workers", {})
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
 
     # Notifica os painéis abertos para atualizarem sem precisar recarregar a página

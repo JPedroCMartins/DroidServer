@@ -826,3 +826,97 @@ def test_deletar_reporta_erro_real_do_remove(monkeypatch, tmp_path):
 
     assert ok is False
     assert "container is in use" in msg and "\x1b" not in msg
+
+
+# ---------- CPU dos processos (total e por worker) ----------
+
+def _proc_falso(raiz, processos):
+    """Cria um /proc falso: processos = {pid: (ppid, utime, stime, nome)}."""
+    for pid, (ppid, ut, st, nome) in processos.items():
+        d = raiz / str(pid)
+        d.mkdir(parents=True, exist_ok=True)
+        # campos após o nome: estado ppid pgrp sess tty tpgid flags minflt cminflt majflt cmajflt utime stime ...
+        (d / "stat").write_text(f"{pid} ({nome}) S {ppid} 0 0 0 0 0 0 0 0 0 {ut} {st} 0 0 20 0 1 0\n")
+
+
+def test_ler_processos_le_ppid_e_ticks_com_nome_com_espacos(tmp_path):
+    _proc_falso(tmp_path, {10: (1, 5, 3, "python node.py"), 11: (10, 0, 0, "sh (x)")})
+    (tmp_path / "self").mkdir()  # entradas não numéricas são ignoradas
+    assert sysinfo.ler_processos(str(tmp_path)) == {10: (1, 8), 11: (10, 0)}
+
+
+def test_descendentes_segue_a_arvore():
+    procs = {1: (0, 0), 10: (1, 0), 11: (10, 0), 12: (11, 0), 20: (1, 0)}
+    assert sysinfo.descendentes(procs, [10]) == {10, 11, 12}
+    assert sysinfo.descendentes(procs, [99]) == set()
+
+
+def test_process_cpu_monitor_total_e_por_worker(monkeypatch, tmp_path):
+    monkeypatch.setattr(sysinfo, "CLK_TCK", 100)
+    # agente (100), worker w1: supervisor sh (200) -> proot (201); worker w2 (300)
+    _proc_falso(tmp_path, {100: (1, 0, 0, "python"), 200: (1, 0, 0, "sh"),
+                           201: (200, 0, 0, "proot"), 300: (1, 0, 0, "proot")})
+    relogio = iter([0.0, 10.0])
+    mon = sysinfo.ProcessCPUMonitor(proc_dir=str(tmp_path), ncpu=4, relogio=lambda: next(relogio))
+
+    # Em 10 s: agente 1 s de CPU, w1 (proot) 20 s, w2 nada; processo novo 400 em w1 com 2 s
+    _proc_falso(tmp_path, {100: (1, 60, 40, "python"), 200: (1, 0, 0, "sh"),
+                           201: (200, 1500, 500, "proot"), 300: (1, 0, 0, "proot"),
+                           400: (201, 150, 50, "app")})
+    r = mon.sample({"w1": [200], "w2": [300]})
+
+    # total = (1 + 20 + 2) s / 10 s / 4 núcleos = 57,5% do aparelho
+    assert r["total"] == 57.5
+    assert r["grupos"] == {"w1": 55.0, "w2": 0.0}
+
+
+def test_process_cpu_monitor_sem_proc_nao_falha(tmp_path):
+    mon = sysinfo.ProcessCPUMonitor(proc_dir=str(tmp_path / "nada"), ncpu=8)
+    assert mon.sample({"w1": [1]}) == {"total": 0.0, "grupos": {"w1": 0.0}}
+
+
+def test_get_workers_status_le_saida_mesmo_com_codigo_de_erro(monkeypatch):
+    """supervisorctl sai com 3 quando algum programa não está RUNNING."""
+    class ProcFake:
+        returncode = 3
+        stdout = (
+            "api       RUNNING   pid 4321, uptime 0:05:00\n"
+            "quebrado  FATAL     Exited too quickly (process log may have details)\n"
+        )
+
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: ProcFake())
+    status, pids = WorkerManager.get_workers_status_e_pids()
+    assert status == {"api": "RUNNING", "quebrado": "FATAL"}
+    assert pids == {"api": 4321}
+    assert WorkerManager.get_workers_status() == status
+
+
+def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
+    payload = {}
+
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"tarefas": []}
+
+    monkeypatch.setattr("requests.post", lambda url, json=None, timeout=None: (payload.update(json), RespostaFake())[1])
+    monkeypatch.setattr(WorkerManager, "get_workers_status_e_pids",
+                        staticmethod(lambda: ({"w1": "RUNNING"}, {"w1": 200})))
+    monkeypatch.setattr(WorkerManager, "get_installed_workers", staticmethod(lambda: ["w1"]))
+
+    agente = NodeAgent()
+    agente.terminal.ativos["w1"] = (9, 555)  # sessão de terminal aberta no w1
+    grupos_recebidos = {}
+
+    def fake_sample(grupos=None):
+        grupos_recebidos.update(grupos)
+        return {"total": 12.5, "grupos": {"w1": 10.0}}
+
+    monkeypatch.setattr(agente.cpu_processos, "sample", fake_sample)
+    agente._poll_once()
+
+    assert grupos_recebidos == {"w1": [200, 555]}
+    assert payload["cpu_termux"] == 12.5
+    assert payload["cpu_workers"] == {"w1": 10.0}
+    assert payload["worker_status"] == {"w1": "RUNNING"}

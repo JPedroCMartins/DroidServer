@@ -346,3 +346,19 @@ def test_opcoes_servidor_debug_permitido_em_localhost(monkeypatch):
 def test_secret_key_nao_e_fixa(app_instance):
     assert app_instance.config["SECRET_KEY"] != "chave_secreta_tcc"
     assert len(app_instance.config["SECRET_KEY"]) >= 32
+
+
+def test_node_sync_armazena_cpu_do_termux_e_por_worker(client):
+    client.post("/api/node_sync", json={
+        "ip": "10.0.0.5", "workers": ["w1"], "cpu": None,
+        "cpu_termux": 12.5, "cpu_workers": {"w1": 10.0},
+    })
+    data = client.get("/api/node/10.0.0.5").get_json()
+    assert data["cpu"] is None
+    assert data["cpu_termux"] == 12.5
+    assert data["cpu_workers"] == {"w1": 10.0}
+
+    # o sync seguinte substitui os valores (worker removido some do mapa)
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": [], "cpu_termux": 0.4, "cpu_workers": {}})
+    data = client.get("/api/node/10.0.0.5").get_json()
+    assert data["cpu_termux"] == 0.4 and data["cpu_workers"] == {}

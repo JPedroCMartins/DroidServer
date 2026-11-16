@@ -188,6 +188,16 @@
             </div>`;
         }
 
+        // CPU: a do aparelho inteiro só existe quando o Android permite ler
+        // /proc/stat (versões recentes negam). A do DroidServer soma os processos
+        // do Termux (agente + workers) e sempre está disponível. Ambas em % do aparelho.
+        function cpuBars(info) {
+            const termux = metricBar('CPU DroidServer', info.cpu_termux, 'agente + workers · % do aparelho');
+            return (info.cpu != null ? metricBar('CPU aparelho', info.cpu) : '') + termux;
+        }
+
+        const fmtPct = (v) => (v == null ? '—' : `${v}%`);
+
         function topbar(title, subtitle, actions = '') {
             return `
             <header class="flex items-end justify-between gap-4 flex-wrap mb-7">
@@ -328,7 +338,7 @@
                         </div>
                     </div>
                     <div class="flex flex-col gap-3.5">
-                        ${metricBar('CPU', info.cpu)}
+                        ${cpuBars(info)}
                         ${metricBar('RAM', mem.percent, memSub)}
                     </div>
                     <div class="flex flex-wrap gap-2 min-h-6 items-center">${chips}</div>
@@ -450,7 +460,7 @@
                     <span class="pill pill-muted">${(n.workers || []).length} workers</span>`;
                 const mem = n.mem || {};
                 const memSub = mem.total ? `${fmtBytes(mem.usado)} / ${fmtBytes(mem.total)}` : '';
-                $('heroMetrics').innerHTML = metricBar('CPU', n.cpu) + metricBar('RAM', mem.percent, memSub);
+                $('heroMetrics').innerHTML = cpuBars(n) + metricBar('RAM', mem.percent, memSub);
             }
 
             function renderPending(n) {
@@ -500,6 +510,7 @@
             function renderWorkers(n) {
                 const workers = n.workers || [];
                 const ws = n.worker_status || {};
+                const cw = n.cpu_workers || {};
                 const el = $('workersSection');
                 const plural = workers.length === 1 ? 'worker' : 'workers';
                 const head = `
@@ -556,7 +567,7 @@
                             </span>
                         </div>
 
-                        <div class="grid grid-cols-2 gap-3 p-3 bg-slate-950/35 border border-slate-400/15 rounded-xl">
+                        <div class="grid grid-cols-3 gap-3 p-3 bg-slate-950/35 border border-slate-400/15 rounded-xl">
                             <div class="flex flex-col gap-1 min-w-0">
                                 <span class="label-xs tracking-wider">Runtime</span>
                                 <span class="text-[13px] font-semibold truncate">proot-distro</span>
@@ -564,6 +575,10 @@
                             <div class="flex flex-col gap-1 min-w-0">
                                 <span class="label-xs tracking-wider">Serviço</span>
                                 <span class="text-[13px] font-semibold truncate">${st ? esc(st) : '—'}</span>
+                            </div>
+                            <div class="flex flex-col gap-1 min-w-0" title="CPU do worker (serviço + terminal) em % do aparelho">
+                                <span class="label-xs tracking-wider">CPU</span>
+                                <span class="text-[13px] font-semibold truncate">${esc(fmtPct(cw[w]))}</span>
                             </div>
                         </div>
 

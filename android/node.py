@@ -14,7 +14,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 import socketio
 
-from sysinfo import SystemMonitor
+from sysinfo import ProcessCPUMonitor, SystemMonitor
 
 log = logging.getLogger("node")
 
@@ -32,6 +32,8 @@ ULIMIT_NPROC = int(os.getenv("DROID_ULIMIT_NPROC", "1024"))    # processos
 # Alias de container só pode conter caracteres seguros (usado em caminhos,
 # nomes de serviço do supervisor e nomes de eventos WebSocket).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# PID do programa na saída do `supervisorctl status` ("pid 123, uptime ...")
+PID_RE = re.compile(r"\bpid (\d+)")
 # `proot-distro remove` falha se uma sessão ainda segura o lock do container.
 REMOVE_TENTATIVAS = 5
 REMOVE_ESPERA = 2  # segundos entre tentativas
@@ -184,19 +186,32 @@ while true; do sleep 30; done
     @staticmethod
     def get_workers_status():
         """Devolve {alias: status} a partir do `supervisorctl status`."""
+        return WorkerManager.get_workers_status_e_pids()[0]
+
+    @staticmethod
+    def get_workers_status_e_pids():
+        """Devolve ({alias: status}, {alias: pid}) a partir do `supervisorctl status`.
+
+        O supervisorctl 4.x sai com código != 0 sempre que algum programa não
+        está RUNNING (ex.: um worker FATAL), mas a saída continua válida. Por
+        isso a saída é lida independentemente do código de retorno.
+        Linha típica: "web1   RUNNING   pid 123, uptime 0:01:00".
+        """
         try:
             proc = WorkerManager._supervisorctl("status", text=True, timeout=5)
         except Exception:
-            return {}
-        if proc.returncode != 0:
-            return {}
+            return {}, {}
 
-        status = {}
-        for linha in proc.stdout.splitlines():
+        status, pids = {}, {}
+        for linha in (proc.stdout or "").splitlines():
             partes = linha.split(None, 2)
-            if len(partes) >= 2:
-                status[partes[0]] = partes[1]
-        return status
+            if len(partes) < 2 or not WorkerManager._alias_valido(partes[0]):
+                continue  # linhas de erro ("unix:///... no such file") etc.
+            status[partes[0]] = partes[1]
+            m = PID_RE.search(partes[2] if len(partes) > 2 else "")
+            if m:
+                pids[partes[0]] = int(m.group(1))
+        return status, pids
 
     @staticmethod
     def criar(alias, imagem, isolado=True):
@@ -539,6 +554,8 @@ class NodeAgent:
         self.sio = socketio.Client()
         self.terminal = TerminalManager(self.sio, self.meu_ip)
         self.monitor = SystemMonitor()
+        # CPU dos processos do Termux (total e por worker): funciona sem root
+        self.cpu_processos = ProcessCPUMonitor()
 
         # Resultado das tarefas executadas, enviado no próximo sync.
         # Escrito pela thread de tarefas e lido/limpo pela thread de polling.
@@ -613,17 +630,21 @@ class NodeAgent:
         """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
         with self._lock_resultados:
             enviados = list(self._resultados)
+        worker_status, worker_pids = WorkerManager.get_workers_status_e_pids()
         payload = {
             "ip": self.meu_ip,
             "status": "Online",
             "workers": WorkerManager.get_installed_workers(),
-            "worker_status": WorkerManager.get_workers_status(),
+            "worker_status": worker_status,
             "tarefa_atual": self._tarefa_atual,
             "resultados": enviados,
         }
         uso = self.monitor.sample()
         payload["cpu"] = uso["cpu"]
         payload["mem"] = uso["mem"]
+        cpu_proc = self.cpu_processos.sample(self._grupos_de_processos(worker_pids))
+        payload["cpu_termux"] = cpu_proc["total"]
+        payload["cpu_workers"] = cpu_proc["grupos"]
         if self.config.token:
             payload["token"] = self.config.token
 
@@ -637,13 +658,21 @@ class NodeAgent:
                     self._resultados[:] = [r for r in self._resultados if id(r) not in ids_enviados]
                 tarefas = resposta.json().get("tarefas", [])
                 mem_pct = payload["mem"]["percent"] if payload.get("mem") else None
-                log.info("Sync OK com host (cpu=%s%%, mem=%s%%, workers=%s, %d tarefa(s))",
-                         payload.get("cpu"), mem_pct, payload.get("workers"), len(tarefas))
+                log.info("Sync OK com host (cpu=%s%%, cpu_termux=%s%%, mem=%s%%, workers=%s, %d tarefa(s))",
+                         payload.get("cpu"), payload.get("cpu_termux"), mem_pct,
+                         payload.get("cpu_workers"), len(tarefas))
                 return tarefas
             log.warning("[-] Host respondeu com status %s.", resposta.status_code)
         except requests.exceptions.RequestException as e:
             log.warning("[-] Erro ao sincronizar com o host: %s", e)
         return []
+
+    def _grupos_de_processos(self, worker_pids):
+        """{alias: [pids raiz]}: o serviço no Supervisor e a sessão de terminal, se houver."""
+        grupos = {alias: [pid] for alias, pid in worker_pids.items()}
+        for alias, (_, pid) in list(self.terminal.ativos.items()):
+            grupos.setdefault(alias, []).append(pid)
+        return grupos
 
     def _processa_fila(self):
         """Consome as tarefas da fila em background (thread daemon)."""
