@@ -41,7 +41,7 @@ flowchart LR
     Ag2 -- "POST /api/node_sync (10 s)<br/>+ WebSocket" --> Host
 ```
 
-*Figura 1 — Arquitetura do DroidServer. As setas partem de quem inicia a conexão: o Host nunca abre conexões até os Nodes.*
+*Figura 1 — Arquitetura do DroidServer em operação. As setas partem de quem inicia a conexão: o sync e o terminal são iniciados pelo Node; o Host só contata o Node (porta 5051) para a varredura e o pareamento (Figura 2).*
 
 ## 8.2 Componentes
 
