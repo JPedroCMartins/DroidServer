@@ -248,11 +248,14 @@ A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID 
 | Validação do alias (`^[A-Za-z0-9_-]{1,64}$`) no Host e no Node | O alias vira caminho, nome de serviço e nome de evento | Previne injeção de comandos e de caminhos |
 | Cadastro de Nodes em disco; estado de operação em memória | O cadastro (tokens) precisa sobreviver a reinícios; o resto é refeito pelos syncs | Reiniciar o Host não exige readicionar Nodes |
 | Node identificado por token, cadastrado pelo painel | O IP muda a cada reboot (DHCP); o celular não precisa saber o IP do Host | Um Node ainda não pareado aceita pareamento de qualquer máquina da LAN |
-| Token opcional (`DROID_API_TOKEN`) | Restringir quais Nodes se registram | Enviado em texto claro (sem TLS) |
+| Senha única no painel (`DROID_PANEL_PASSWORD`) e sessão assinada | Só quem sabe a senha cria/apaga Workers e abre terminais; os Nodes seguem autenticados pelo token | Sem TLS, senha e tokens trafegam em claro: adequado a uma LAN confiável |
+| WebSocket do Node autenticado pelo token; salas por terminal e por log | A saída de um terminal ou de um serviço só chega a quem o abriu; navegadores não se passam por Nodes | Cada tela precisa entrar na sala ao (re)conectar |
+| `POST` + verificação de `Origin`; CORS só da mesma origem | Impede que uma página de outro site, aberta na mesma rede, comande o painel (CSRF) | Clientes de terceiros precisam de `DROID_CORS_ORIGINS` |
+| Bibliotecas do painel servidas pelo Host | A demonstração não pode depender de internet | Atualizar as versões é manual (`static/vendor/LEIAME.md`) |
 
 ## 8.7 Garantia de qualidade
 
-O projeto possui 166 testes automatizados com `pytest` (60 no Host e 106 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 180 testes automatizados com `pytest` (73 no Host e 107 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
 ## 8.8 Interface
 

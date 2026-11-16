@@ -111,7 +111,9 @@ Teste de ponta a ponta no aparelho (agente 100 testes, Host 59) e pelo painel: W
 
 Mais de um serviço por Worker, variáveis de ambiente pelo painel, agendamento por horário (cron), upload de arquivos para `/app` e reinício automático ao editar o arquivo.
 
-## Fase 2 — Segurança mínima para não ser questionado (≈ 1 dia)
+## Fase 2 — Segurança mínima para não ser questionado ✅ (feito e validado em 16/11)
+
+Feito: 2.5 (painel sem internet), 2.2 (remoção via `POST` + bloqueio de `POST` de outros sites), 2.4 (CORS só da mesma origem), 2.1 (WebSocket do Node autenticado pelo token, terminal e logs por sala, navegador não se passa por Node) e 2.3 (senha `DROID_PANEL_PASSWORD`, sessão de 12 h, chave persistente). Validado no aparelho: um segundo navegador não recebe nada do terminal aberto por outro e uma saída forjada é descartada; login/logout pelo painel; Node sincronizando normalmente com a senha ativa. Testes: 73 no Host, 107 no agente. **Para a defesa:** suba o Host com `DROID_PANEL_PASSWORD` definida.
 
 Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitações.
 
@@ -158,18 +160,17 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 
 ## Ordem sugerida (atualizada em 16/11)
 
-Fase 1 e Fase 1B concluídas, com duas rodadas de revisão. Daqui para frente:
+Fases 1, 1B e 2 concluídas (16/11), com duas rodadas de revisão. Daqui para frente:
 
 ```
-Dia 1   2.5 → 2.2 → 2.4 → 2.1 → 2.3                  ← demo apresentável, sem internet
-Dia 2   scripts 3.1, 3.3, 3.4 → iniciar E7 (24 h)    ← dados rodando de noite
-Dia 3   3.2, 3.5, 3.1 executado → git push            ← dados completos
-Dia 4   4.1, 4.2, 4.6                                 ← resultados
-Dia 5   4.3, 4.4, 4.5                                 ← texto fechado
-Dia 6   4.7 + folga para imprevistos → orientador
+Dia 1   scripts 3.1, 3.3, 3.4 → iniciar E7 (24 h)    ← dados rodando de noite
+Dia 2   3.2, 3.5, 3.1 executado → git push            ← dados completos
+Dia 3   4.1, 4.2, 4.6                                 ← resultados
+Dia 4   4.3, 4.4, 4.5                                 ← texto fechado
+Dia 5   4.7 + folga para imprevistos → orientador
 ```
 
-Se o prazo for mais curto, corte nesta ordem: 2.3 → 1.6 → 3.5 → 3.2. **Não corte** 2.5, 3.4, 3.1 nem 4.2: sem eles a demo pode não abrir e não há resultado.
+Se o prazo for mais curto, corte nesta ordem: 1.6 → 3.5 → 3.2. **Não corte** 3.4, 3.1 nem 4.2: sem eles não há resultado.
 
 ## Riscos
 

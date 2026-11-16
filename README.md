@@ -125,6 +125,8 @@ xterm.js ─terminal_input─► Host ─cmd_to_<ip>_<alias>─► Node ─► P
 xterm.js ◄output_for_<ip>_<alias>─ Host ◄terminal_output─ Node ◄─┘
 ```
 
+O agente abre o WebSocket com `auth={papel: "node", ip, token}`; o Host só manda comandos (terminal, serviço, logs) a sockets autenticados assim, e só aceita deles a saída do terminal, os logs e as respostas. A saída de cada terminal vai apenas para quem o abriu (sala `term:<ip>:<alias>`, via `terminal_assinar`).
+
 O PTY é aberto na primeira tecla recebida, e o redimensionamento da janela é repassado via `terminal_resize` → `resize_to_<ip>_<alias>` (`TIOCSWINSZ`).
 
 ## Estrutura do projeto
@@ -173,10 +175,10 @@ O `setup.sh` instala o restante (`python`, `proot-distro`, `supervisor`, `python
 ```bash
 cd desktop
 uv sync
-uv run python main.py
+DROID_PANEL_PASSWORD='escolha-uma-senha' uv run python main.py
 ```
 
-O painel fica em `http://<ip-do-host>:5050`. Libere a porta 5050 no firewall, se houver.
+O painel fica em `http://<ip-do-host>:5050` e pede a senha definida em `DROID_PANEL_PASSWORD` (sem ela, o painel fica aberto a quem estiver na rede). Libere a porta 5050 no firewall, se houver. O painel funciona sem internet.
 
 O Host também sobe sem terminal interativo (systemd, `nohup`), pois o servidor Werkzeug é iniciado com `allow_unsafe_werkzeug=True`. Isso é suficiente para um protótipo em LAN; em produção, prefira gunicorn com eventlet ou gevent.
 
@@ -246,7 +248,9 @@ O Android encerra processos em segundo plano agressivamente. Para um Node estáv
 | `DROID_BIND` | Host | `0.0.0.0` | Endereço em que o Host escuta |
 | `DROID_PORT` | Host | `5050` | Porta do Host |
 | `DROID_DEBUG` | Host | `0` | `1` liga o modo debug — só aceito com `DROID_BIND=127.0.0.1` |
-| `DROID_SECRET_KEY` | Host | aleatória | Chave de sessão do Flask |
+| `DROID_PANEL_PASSWORD` | Host | vazio | **Senha do painel.** Definida, o painel e o WebSocket dos navegadores exigem login (sessão de 12 h); vazia, o painel fica aberto (aviso no log) |
+| `DROID_SECRET_KEY` | Host | gerada em `data/secret_key` | Chave que assina o cookie de login (persistente: reiniciar o Host não derruba o login) |
+| `DROID_CORS_ORIGINS` | Host | mesma origem | Origens extras aceitas no WebSocket, separadas por vírgula (ex.: painel atrás de proxy HTTPS) |
 | `DROID_LOG_DIR` | Host | `desktop/logs/` | Diretório de logs do Host |
 
 No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e são carregadas pelo `run.sh`.
@@ -277,21 +281,28 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 | `POST` | `/api/nodes/adicionar` | `{"ip": "..."}` → pareia o Node e o cadastra |
 | `POST` | `/api/nodes/<ip>/remover` | Remove do cadastro e desfaz o pareamento no celular |
 
-No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{host_port, token}`) e `POST /desparear` (`{token}`, só do Host pareado).
 | `POST` | `/deploy_worker` | Form `ip`, `alias`, `imagem`, `isolado` → enfileira `criar_worker` |
-| `GET` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` |
+| `POST` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` (GET responde 405) |
+| `GET`/`POST` | `/login` | Login do painel (só com `DROID_PANEL_PASSWORD`) |
+| `POST` | `/logout` | Encerra a sessão |
+
+Com senha definida, as rotas acima exigem login (páginas redirecionam para `/login`; a API responde 401), exceto `/api/node_sync`, autenticada pelo token do Node. Todo `POST` vindo de **outro site** (cabeçalho `Origin` diferente do painel) é recusado com 403.
+
+No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{host_port, token, token_atual?}`; `token_atual` permite ao mesmo Host parear de um IP novo) e `POST /desparear` (`{token}`, só do Host pareado).
 
 ### Socket.IO
 
 | Evento | Direção | Payload |
 |---|---|---|
 | `node_updated` | Host → painéis | `{ip}` — o painel recarrega os dados |
+| `connect` (auth) | Node → Host | `{papel: "node", ip, token}` — identifica o socket do Node; sem isso é um navegador (que precisa de login, se houver senha) |
+| `terminal_assinar` / `terminal_cancelar` | Navegador → Host | `{ip, alias}` (entra/sai da sala `term:<ip>:<alias>`) |
 | `terminal_input` | Navegador → Host | `{ip, alias, input}` |
 | `terminal_resize` | Navegador → Host | `{ip, alias, cols, rows}` |
 | `terminal_output` | Node → Host | `{ip, alias, output}` |
 | `cmd_to_<ip>_<alias>` | Host → Node | `{input}` |
 | `resize_to_<ip>_<alias>` | Host → Node | `{cols, rows}` |
-| `output_for_<ip>_<alias>` | Host → Navegador | `{output}` |
+| `output_for_<ip>_<alias>` | Host → sala do terminal | `{output}` |
 | `servico` | Navegador → Host | `{ip, alias, acao, dados, req}` — `acao`: iniciar, parar, reiniciar, ler_script, salvar_script, configurar, exemplo |
 | `servico_to_<ip>` | Host → Node | `{alias, acao, dados, sid, req}` |
 | `servico_resposta` | Node → Host → navegador que pediu | `{alias, acao, req, ok, msg, dados, servico}` |
@@ -334,15 +345,16 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 166 testes (60 no Host e 106 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 180 testes (73 no Host e 107 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
 O DroidServer é um protótipo acadêmico para uso **em rede local confiável**:
 
-- o painel **não tem autenticação** — qualquer pessoa na rede pode criar ou apagar Workers e abrir terminais;
-- o Host aceita qualquer origem no Socket.IO (`cors_allowed_origins="*"`) e o token de cada Node trafega sem TLS;
-- um Node **ainda não pareado** aceita o pareamento de qualquer máquina da rede (depois de pareado, só do mesmo Host); O modo debug fica desligado por padrão e só pode ser ligado escutando em `127.0.0.1`;
-- os eventos de terminal são enviados a todos os clientes Socket.IO conectados;
+- defina **`DROID_PANEL_PASSWORD`**: sem ela, o painel fica aberto a quem alcançar a porta (o Host avisa no log). Com ela, páginas, API e WebSocket dos navegadores exigem login; os Nodes continuam autenticados pelo token;
+- POSTs de outros sites são recusados (verificação do `Origin`) e o WebSocket só aceita a origem do próprio painel; comandos e saídas de terminal circulam só entre o Node autenticado e quem abriu o terminal;
+- não há TLS: a senha e os tokens trafegam em texto claro na rede local. Para uso fora de uma LAN confiável, coloque o Host atrás de um proxy HTTPS;
+- um Node **ainda não pareado** aceita o pareamento de qualquer máquina da rede (depois de pareado, só do mesmo Host ou de quem provar o token atual); o modo debug fica desligado por padrão e só pode ser ligado escutando em `127.0.0.1`;
+- o painel não depende de internet: Tailwind, xterm.js, Socket.IO e a fonte são servidos pelo Host (`desktop/app/static/vendor/`);
 - o PRoot isola apenas o sistema de arquivos: Workers compartilham rede, processos, CPU e memória com o aparelho (sem `cgroups`), e o `ptrace` adiciona sobrecarga em operações de E/S;
 - o cadastro de Nodes é persistido, mas o estado de operação (workers, métricas, histórico) fica em memória e é refeito pelos syncs em até 10 s após reiniciar o Host.
