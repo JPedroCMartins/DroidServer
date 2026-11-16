@@ -640,3 +640,16 @@ def test_sync_reconcilia_logs_depois_de_o_agente_reiniciar(ambiente_servico, cli
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"], "logs_ativos": ["w1"]})
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
     assert _eventos(node, "logs_to_10.0.0.5") == []
+
+
+def test_readicionar_node_envia_o_token_atual(client, monkeypatch):
+    """Se o PC do painel mudou de IP, o node só aceita o pareamento com o token atual."""
+    chamadas = _node_falso(monkeypatch)
+    client.post("/api/nodes/adicionar", json={"ip": "192.168.1.7"})
+    primeiro = chamadas[-1][2]
+    assert "token_atual" not in primeiro          # cadastro novo: não há token anterior
+
+    client.post("/api/nodes/adicionar", json={"ip": "192.168.1.7"})
+    segundo = chamadas[-1][2]
+    assert segundo["token_atual"] == primeiro["token"]
+    assert _routes().cadastro["192.168.1.7"]["token"] == segundo["token"] != primeiro["token"]

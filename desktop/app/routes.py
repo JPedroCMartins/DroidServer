@@ -382,8 +382,12 @@ def api_adicionar_node():
 
     token = secrets.token_hex(24)
     porta = int(os.getenv("DROID_PORT", "5050"))
-    status, corpo = _http_json("POST", f"http://{ip}:{NODE_PORTA}/parear",
-                               {"host_port": porta, "token": token}, timeout=5)
+    pedido = {"host_port": porta, "token": token}
+    if ip in cadastro:
+        # Já cadastrado: o token atual prova que somos o host pareado, mesmo
+        # que o IP deste PC tenha mudado (DHCP) desde o pareamento.
+        pedido["token_atual"] = cadastro[ip]["token"]
+    status, corpo = _http_json("POST", f"http://{ip}:{NODE_PORTA}/parear", pedido, timeout=5)
     if status != 200:
         erro = (corpo or {}).get("erro") or "o node recusou o pareamento"
         return jsonify({"ok": False, "erro": erro}), 409 if status == 409 else 502

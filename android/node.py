@@ -1,3 +1,4 @@
+import hmac
 import json
 import logging
 import os
@@ -38,8 +39,8 @@ IMAGENS_PERMITIDAS = {"alpine", "debian"}
 INSTALL_TIMEOUT = 1200
 # Limites por container (aplicados com `ulimit` no serviço do Supervisor).
 # Defina como 0 para não limitar. Configuráveis por variável de ambiente.
-ULIMIT_NOFILE = int(os.getenv("DROID_ULIMIT_NOFILE", "4096"))  # arquivos abertos
-ULIMIT_NPROC = int(os.getenv("DROID_ULIMIT_NPROC", "1024"))    # processos
+ULIMIT_NOFILE = servico.ULIMIT_NOFILE  # arquivos abertos (DROID_ULIMIT_NOFILE)
+ULIMIT_NPROC = servico.ULIMIT_NPROC    # processos (DROID_ULIMIT_NPROC)
 # Alias de container só pode conter caracteres seguros (usado em caminhos,
 # nomes de serviço do supervisor e nomes de eventos WebSocket).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -152,7 +153,8 @@ class Descoberta:
       POST /parear      -> {host_port, token}: o IP do host é o de quem pediu
       POST /desparear   -> {token}: só o host pareado pode desfazer
     Um node já pareado só aceita novo pareamento vindo do mesmo host, para
-    que outra máquina da rede não "sequestre" o node.
+    que outra máquina da rede não "sequestre" o node, ou de quem provar ser
+    o host pareado mandando o token atual (o PC do painel trocou de IP).
     """
 
     def __init__(self, agente):
@@ -176,7 +178,10 @@ class Descoberta:
         cfg = self.agente.config
         # Só um pareamento feito pelo painel protege o node; a configuração
         # antiga por variável de ambiente (sem token) pode ser substituída.
-        if cfg.origem == "pareamento" and cfg.host_ip != ip_cliente:
+        token_atual = str(dados.get("token_atual") or "")
+        mesmo_host = cfg.host_ip == ip_cliente or (
+            bool(cfg.token) and hmac.compare_digest(token_atual, cfg.token))
+        if cfg.origem == "pareamento" and not mesmo_host:
             return 409, {"ok": False, "erro": f"Node já pareado com {cfg.host_ip}. Desfaça o pareamento por lá."}
         token = str(dados.get("token", ""))
         try:
@@ -195,7 +200,7 @@ class Descoberta:
         cfg = self.agente.config
         if not cfg.pareado:
             return 200, {"ok": True}
-        if ip_cliente != cfg.host_ip or str(dados.get("token", "")) != cfg.token:
+        if ip_cliente != cfg.host_ip or not hmac.compare_digest(str(dados.get("token", "")), cfg.token or ""):
             return 403, {"ok": False, "erro": "Só o host pareado pode desfazer o pareamento."}
         try:
             os.remove(PAREAMENTO_ARQUIVO)
@@ -501,8 +506,16 @@ class TerminalManager:
         if pid == 0:
             # Garante que aplicativos interativos (vim, htop, nano) renderizem corretamente
             os.environ['TERM'] = 'xterm-256color'
-            cmd = WorkerManager.comando_login(alias, WorkerManager.esta_isolado(alias))
-            os.execvp(cmd[0], cmd)
+            try:
+                cmd = WorkerManager.comando_login(alias, WorkerManager.esta_isolado(alias))
+                os.execvp(cmd[0], cmd)
+            except OSError as e:
+                # Sem o exec, este filho seria uma cópia do agente rodando em
+                # paralelo: sai na hora, sem executar nada do processo pai.
+                try:
+                    os.write(2, f"Falha ao abrir o terminal: {e}\r\n".encode())
+                finally:
+                    os._exit(127)
         else:
             self.ativos[alias] = (master_fd, pid)
             t = threading.Thread(target=self._ler_saida, args=(master_fd, alias, pid), daemon=True)

@@ -252,3 +252,59 @@ def test_salvar_e_reiniciar_servico_que_estava_fatal(termux, comandos):
     comandos.respostas["restart w1"] = _Proc(out="w1: ERROR (not running)\nw1: started\n")
     ok, msg, _ = servico.executar("w1", "salvar_script", {"conteudo": "exec sleep 9", "reiniciar": True})
     assert ok and msg == "run.sh salvo e serviço reiniciado."
+
+
+# ---------- revisão: shebang, links simbólicos, ulimit ----------
+
+def _rodar_lancador(tmp_path, script, modo):
+    """Executa o lançador de verdade, com /app trocado por uma pasta temporária."""
+    import subprocess
+    app = tmp_path / "app"
+    app.mkdir(exist_ok=True)
+    (app / "run.sh").write_text(script)
+    os.chmod(app / "run.sh", modo)
+    lancador = servico.LANCADOR.replace("/app", str(app))
+    return subprocess.run(["sh", "-c", lancador], capture_output=True, text=True, timeout=10).stdout
+
+
+def test_lancador_respeita_o_shebang(tmp_path):
+    py = "#!/usr/bin/env python3\nprint('via python', 2 ** 10)\n"
+    assert "via python 1024" in _rodar_lancador(tmp_path, py, 0o755)
+    # sem permissão de execução (criado à mão no terminal): cai no sh
+    assert "via sh" in _rodar_lancador(tmp_path, "echo via sh\n", 0o644)
+    assert "via sh" in _rodar_lancador(tmp_path, "echo via sh\n", 0o755)
+
+
+def test_run_sh_link_simbolico_nao_e_seguido(termux, tmp_path):
+    segredo = tmp_path / "pareamento.json"
+    segredo.write_text('{"token": "segredo"}')
+    app = termux / "var/lib/proot-distro/containers/w1/rootfs/app"
+    os.symlink(segredo, app / "run.sh")
+    assert servico.ler_script("w1") is None
+    ok, msg = servico.salvar_script("w1", "echo oi")
+    assert not ok and "link" in msg
+    assert segredo.read_text() == '{"token": "segredo"}'
+
+    # /app inteiro apontando para fora do container
+    os.remove(app / "run.sh")
+    os.rmdir(app)
+    os.symlink(tmp_path, app)
+    assert servico.ler_script("w1") is None
+    assert servico.salvar_script("w1", "echo oi")[0] is False
+
+
+def test_configurar_mantem_os_limites_personalizados(termux, comandos, monkeypatch):
+    monkeypatch.setattr(servico, "ULIMIT_NOFILE", 777)
+    servico.gravar_conf("w1")
+    servico.executar("w1", "configurar", {"autostart": False})
+    texto = open(servico.arquivo_conf("w1")).read()
+    assert "ulimit -n 777" in texto
+
+
+def test_migrar_todos_atualiza_lancador_antigo(termux, comandos):
+    servico.gravar_conf("w1")
+    lancador = termux / "var/lib/proot-distro/containers/w1/rootfs/app/.droidserver/lancador.sh"
+    lancador.parent.mkdir(parents=True)
+    lancador.write_text("#!/bin/sh\nexec sh /app/run.sh\n")  # versão anterior
+    assert servico.migrar_todos(["w1"]) == []                  # .conf já atual: nada a migrar
+    assert lancador.read_text() == servico.LANCADOR

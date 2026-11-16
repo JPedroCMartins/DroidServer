@@ -1125,3 +1125,35 @@ def test_node_acompanha_troca_de_ip(monkeypatch):
     assert agente.terminal.local_ip == "192.168.1.5"
 
     assert agente._atualizar_ip() == "192.168.1.5"   # sem rede: mantém o último
+
+
+def test_iniciar_pty_filho_sai_se_o_exec_falhar(monkeypatch):
+    """Sem o exec, o filho do fork seria um segundo agente rodando: tem de sair."""
+    monkeypatch.setattr("pty.fork", lambda: (0, 0))
+
+    def exec_falha(nome, args):
+        raise FileNotFoundError("proot-distro")
+
+    def fake_exit(codigo):
+        raise SystemExit(codigo)
+
+    monkeypatch.setattr("os.execvp", exec_falha)
+    monkeypatch.setattr("os._exit", fake_exit)
+    monkeypatch.setattr("os.write", lambda fd, dados: len(dados))
+    agente = NodeAgent()
+    with pytest.raises(SystemExit) as saida:
+        agente.terminal.iniciar_pty("w1")
+    assert saida.value.code == 127
+
+
+def test_parear_aceita_o_mesmo_host_com_ip_novo_se_provar_o_token():
+    """O PC do painel trocou de IP (DHCP): o token atual prova que é o mesmo host."""
+    agente = NodeAgent()
+    d = node.Descoberta(agente)
+    d.parear("192.168.1.10", {"host_port": 5050, "token": TOKEN})
+    novo = "cd" * 24
+    # token atual errado: continua sendo outro host
+    assert d.parear("192.168.1.22", {"host_port": 5050, "token": novo, "token_atual": "ef" * 24})[0] == 409
+    status, _ = d.parear("192.168.1.22", {"host_port": 5050, "token": novo, "token_atual": TOKEN})
+    assert status == 200
+    assert (agente.config.host_ip, agente.config.token) == ("192.168.1.22", novo)

@@ -34,6 +34,10 @@ LANCADOR_INTERNO = "/app/" + LANCADOR_REL
 # Marca nos .conf gerados por esta versão (permite migrar os antigos)
 CONF_VERSAO = "; droidserver-conf: 3"
 
+# Limites por container (ulimit no serviço). 0 = sem limite.
+ULIMIT_NOFILE = int(os.getenv("DROID_ULIMIT_NOFILE", "4096"))  # arquivos abertos
+ULIMIT_NPROC = int(os.getenv("DROID_ULIMIT_NPROC", "1024"))    # processos
+
 SCRIPT_MAX = 64 * 1024        # tamanho máximo do run.sh editado pelo painel
 LOG_LINHAS_INICIAIS = 200     # linhas enviadas ao abrir os logs
 LOG_INTERVALO = 1.0           # segundos entre leituras do log ao vivo
@@ -49,6 +53,11 @@ if [ ! -f /app/run.sh ]; then
     while [ ! -f /app/run.sh ]; do sleep 2; done
 fi
 echo "[DroidServer] Iniciando /app/run.sh ($(date '+%Y-%m-%d %H:%M:%S'))"
+# Com shebang (#!/bin/bash, #!/usr/bin/env python3...) e executável, roda com o
+# interpretador indicado; sem shebang, com o sh.
+if [ -x /app/run.sh ] && [ "$(head -c 2 /app/run.sh)" = "#!" ]; then
+    exec /app/run.sh
+fi
 exec sh /app/run.sh
 """
 
@@ -124,6 +133,21 @@ def caminho_app(alias, *partes):
     return os.path.join(raiz, APP_DIR, *partes) if raiz else None
 
 
+def _dentro_do_container(alias, caminho):
+    """True se `caminho` não sai do rootfs por link simbólico.
+
+    O agente acessa o rootfs pelo Termux, fora do proot: um link criado dentro
+    do container (ex.: /app/run.sh -> arquivo do Termux) seria seguido aqui e
+    furaria o isolamento. Links não são aceitos no caminho do run.sh.
+    """
+    raiz = rootfs(alias)
+    if not raiz or not caminho:
+        return False
+    raiz_real = os.path.realpath(raiz)
+    return os.path.islink(caminho) is False and \
+        os.path.realpath(caminho).startswith(raiz_real + os.sep)
+
+
 # ---------------------------------------------------------------------------
 # Supervisor: .conf do serviço
 # ---------------------------------------------------------------------------
@@ -137,7 +161,9 @@ def prefixo_ulimit(nofile, nproc):
     return " ".join(partes) + (" " if partes else "")
 
 
-def conteudo_conf(alias, isolado=True, autostart=True, autorestart=True, nofile=4096, nproc=1024):
+def conteudo_conf(alias, isolado=True, autostart=True, autorestart=True, nofile=None, nproc=None):
+    nofile = ULIMIT_NOFILE if nofile is None else nofile
+    nproc = ULIMIT_NPROC if nproc is None else nproc
     login = "proot-distro login " + ("--isolated " if isolado else "") + alias
     return "\n".join([
         f"[program:{alias}]",
@@ -205,6 +231,16 @@ def instalar_lancador(alias):
     if not destino:
         log.warning("[-] Rootfs de '%s' não encontrado; lançador não instalado.", alias)
         return False
+    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    if not _dentro_do_container(alias, destino):
+        log.warning("[-] '%s': /app/.droidserver aponta para fora do container; lançador não instalado.", alias)
+        return False
+    try:
+        with open(destino) as f:
+            if f.read() == LANCADOR:
+                return True
+    except OSError:
+        pass
     _gravar_atomico(destino, LANCADOR, 0o755)
     return True
 
@@ -212,7 +248,7 @@ def instalar_lancador(alias):
 def ler_script(alias):
     """Conteúdo do /app/run.sh, ou None se ainda não existe."""
     caminho = caminho_app(alias, SCRIPT_NOME)
-    if not caminho:
+    if not caminho or not _dentro_do_container(alias, caminho):
         return None
     try:
         with open(caminho, encoding="utf-8", errors="replace") as f:
@@ -235,6 +271,8 @@ def salvar_script(alias, conteudo):
     caminho = caminho_app(alias, SCRIPT_NOME)
     if not caminho:
         return False, f"Container '{alias}' não encontrado."
+    if not _dentro_do_container(alias, caminho):
+        return False, "O /app/run.sh (ou o /app) é um link simbólico; troque-o por um arquivo comum."
     _gravar_atomico(caminho, conteudo, 0o755)
     return True, "run.sh salvo."
 
@@ -299,6 +337,14 @@ def precisa_migrar(alias):
 
 
 def migrar_todos(aliases):
+    # O lançador de versões anteriores é atualizado em todos (sem reiniciar:
+    # vale a partir da próxima vez que o serviço subir)
+    for alias in aliases:
+        if alias_valido(alias) and rootfs(alias) and ler_opcoes(alias):
+            try:
+                instalar_lancador(alias)
+            except OSError as e:
+                log.warning("[-] '%s': não foi possível atualizar o lançador: %s", alias, e)
     pendentes = [a for a in aliases if alias_valido(a) and precisa_migrar(a)]
     for alias in pendentes:
         # O .conf antigo não mata o grupo de processos ao parar: o programa do
