@@ -733,7 +733,7 @@ def test_painel_nao_depende_de_internet(client):
         resp = client.get(caminho)
         assert resp.status_code == 200 and len(resp.data) > 500, caminho
         resp.close()
-    css = client.get("/static/vendor/inter.css")
+    css = client.get("/static/vendor/poppins.css")
     for fonte in re.findall(r"url\('([^']+)'\)", css.get_data(as_text=True)):
         assert client.get("/static/vendor/" + fonte).status_code == 200
 
@@ -783,7 +783,7 @@ def test_sem_login_paginas_redirecionam_e_api_responde_401(com_senha):
     assert c.post("/deploy_worker", data={"ip": "x", "alias": "y"}).status_code == 401
     # o que precisa ficar livre: login, arquivos estáticos e o sync dos nodes
     assert c.get("/login").status_code == 200
-    assert c.get("/static/vendor/inter.css").status_code == 200
+    assert c.get("/static/vendor/poppins.css").status_code == 200
     assert c.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).status_code == 200
 
 

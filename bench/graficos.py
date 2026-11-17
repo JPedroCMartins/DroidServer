@@ -8,14 +8,20 @@ Para cada experimento usa o CSV mais recente (ou os indicados por padrão de
 nome). As figuras vão para bench/graficos/ em PNG (300 dpi, para o documento
 ABNT) e SVG.
 
+Com --apresentacao, gera versões em tema escuro (cores do painel/portfolio) e
+com títulos em linguagem simples, só em PNG, direto em
+desktop/app/static/apresentacao/ — as figuras claras do documento não mudam.
+
 Uso:
   uv run bench/graficos.py
+  uv run bench/graficos.py --apresentacao
 """
 
 import csv
 import glob
 import os
 import statistics
+import sys
 
 import matplotlib
 
@@ -43,6 +49,27 @@ plt.rcParams.update({
     "lines.linewidth": 2,
 })
 
+APRESENTACAO = "--apresentacao" in sys.argv
+if APRESENTACAO:
+    # Tema escuro no padrão do portfolio-page: card #16213e, destaque #e94560
+    SAIDA = os.path.join(os.path.dirname(RAIZ), "desktop", "app", "static", "apresentacao")
+    SUPERFICIE = "#16213e"
+    TEXTO = "#f0f0f0"
+    TEXTO_2 = "#a7a9be"
+    GRADE = "#2a3a5e"
+    SERIE = ["#e94560", "#4ea8de", "#34d399"]
+    CRITICO = "#fbbf24"
+    plt.rcParams.update({
+        "figure.facecolor": SUPERFICIE, "axes.facecolor": SUPERFICIE, "savefig.facecolor": SUPERFICIE,
+        "axes.edgecolor": GRADE, "axes.labelcolor": TEXTO_2, "xtick.color": TEXTO_2, "ytick.color": TEXTO_2,
+        "text.color": TEXTO, "grid.color": GRADE, "font.size": 11, "axes.titlesize": 12,
+    })
+
+
+def t(tecnico, simples):
+    """Título/rótulo do documento ou, com --apresentacao, a versão em linguagem simples."""
+    return simples if APRESENTACAO else tecnico
+
 
 def ler(padrao):
     arquivos = sorted(glob.glob(os.path.join(RES, padrao)))
@@ -54,10 +81,10 @@ def ler(padrao):
 
 def salvar(fig, nome):
     os.makedirs(SAIDA, exist_ok=True)
-    for ext in ("png", "svg"):
-        fig.savefig(os.path.join(SAIDA, f"{nome}.{ext}"), dpi=300, bbox_inches="tight")
+    for ext in (("png",) if APRESENTACAO else ("png", "svg")):
+        fig.savefig(os.path.join(SAIDA, f"{nome}.{ext}"), dpi=200 if APRESENTACAO else 300, bbox_inches="tight")
     plt.close(fig)
-    print(f"  {nome}.png/.svg")
+    print(f"  {nome}.png" if APRESENTACAO else f"  {nome}.png/.svg")
 
 
 def num(x):
@@ -69,9 +96,10 @@ def num(x):
 
 # ---------------------------------------------------------------------------
 def fig_e4():
-    series = [("5 GHz, long-polling (antes da correção)", "e4_latencia_terminal_5ghz_polling_*.csv"),
-              ("5 GHz, WebSocket", "e4_latencia_terminal_5ghz_websocket_*.csv"),
-              ("2,4 GHz, WebSocket", "e4_latencia_terminal_24ghz_*.csv")]
+    series = [(t("5 GHz, long-polling (antes da correção)", "Wi-Fi 5 GHz, versão antiga (já corrigida)"),
+               "e4_latencia_terminal_5ghz_polling_*.csv"),
+              (t("5 GHz, WebSocket", "Wi-Fi 5 GHz"), "e4_latencia_terminal_5ghz_websocket_*.csv"),
+              (t("2,4 GHz, WebSocket", "Wi-Fi 2,4 GHz"), "e4_latencia_terminal_24ghz_*.csv")]
     fig, ax = plt.subplots(figsize=(7, 3.6))
     desenhou = False
     for cor, (rotulo, padrao) in zip(SERIE, series):
@@ -80,17 +108,21 @@ def fig_e4():
         if not v:
             continue
         y = [(i + 1) / len(v) for i in range(len(v))]
-        ax.step(v, y, where="post", color=cor, label=f"{rotulo} (mediana {statistics.median(v):.0f} ms)")
+        ax.step(v, y, where="post", color=cor, label=f"{rotulo} ({t('mediana', 'típico')} {statistics.median(v):.0f} ms)")
         desenhou = True
     if not desenhou:
         plt.close(fig)
         return
     ax.set_xscale("log")
+    if APRESENTACAO:
+        ax.set_xticks([10, 30, 100, 300, 1000], ["10", "30", "100", "300", "1000"])
     ax.axvline(200, color=TEXTO_2, linewidth=1, linestyle="--")
-    ax.text(215, 0.5, "critério:\np95 ≤ 200 ms", color=TEXTO_2, fontsize=8, va="center")
-    ax.set_xlabel("Latência de eco (ms, escala log)")
-    ax.set_ylabel("Fração das teclas")
-    ax.set_title("E4 — Latência de eco do terminal (CDF)")
+    ax.text(215, 0.5, t("critério:\np95 ≤ 200 ms", "meta:\naté 200 ms"), color=TEXTO_2, fontsize=8, va="center")
+    ax.set_xlabel(t("Latência de eco (ms, escala log)", "Tempo até a tecla aparecer na tela (ms)"))
+    ax.set_ylabel(t("Fração das teclas", "Parte das teclas"))
+    if APRESENTACAO:
+        ax.set_yticks([0, .25, .5, .75, 1], ["0%", "25%", "50%", "75%", "100%"])
+    ax.set_title(t("E4 — Latência de eco do terminal (CDF)", "Quanto mais à esquerda, mais rápido o terminal responde"))
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.2), fontsize=8, ncol=1)
     salvar(fig, "e4_latencia_terminal_cdf")
 
@@ -102,8 +134,8 @@ def fig_e1():
         return
     grupos = [("alpine", "com"), ("alpine", "sem"), ("debian", "com"), ("debian", "sem")]
     fig, axes = plt.subplots(1, 2, figsize=(8, 3.4), sharey=False)
-    for ax, campo, titulo in ((axes[0], "instalacao_s", "No aparelho (proot-distro install)"),
-                              (axes[1], "total_s", "Percebido no painel (inclui o sync)")):
+    for ax, campo, titulo in ((axes[0], "instalacao_s", t("No aparelho (proot-distro install)", "Instalação no celular")),
+                              (axes[1], "total_s", t("Percebido no painel (inclui o sync)", "Até aparecer no painel"))):
         for i, (d, c) in enumerate(grupos):
             v = [num(l[campo]) for l in linhas if l["distro"] == d and l["cache"] == c and num(l[campo])]
             if not v:
@@ -111,11 +143,14 @@ def fig_e1():
             cor = SERIE[0] if c == "com" else SERIE[1]
             ax.scatter([i] * len(v), v, s=28, color=cor, edgecolor=SUPERFICIE, linewidth=1.5, zorder=3)
             ax.hlines(statistics.median(v), i - 0.25, i + 0.25, color=TEXTO, linewidth=1.5, zorder=4)
-        ax.set_xticks(range(len(grupos)), [f"{d.capitalize()}\n{c} cache" for d, c in grupos], fontsize=8)
+        ax.set_xticks(range(len(grupos)), [
+            t(f"{d.capitalize()}\n{c} cache", f"{d.capitalize()}\n{'já baixado' if c == 'com' else 'baixando'}")
+            for d, c in grupos], fontsize=8)
         ax.set_ylabel("segundos")
         ax.set_title(titulo, fontsize=9.5)
         ax.set_ylim(bottom=0)
-    fig.suptitle("E1 — Tempo de provisionamento de um Worker (traço = mediana)", x=0.01, ha="left",
+    fig.suptitle(t("E1 — Tempo de provisionamento de um Worker (traço = mediana)",
+                   "Tempo para criar um ambiente Linux (traço = valor típico)"), x=0.01, ha="left",
                  fontweight="bold", fontsize=11)
     fig.tight_layout()
     salvar(fig, "e1_provisionamento")
@@ -125,8 +160,9 @@ def fig_e3():
     _, linhas = ler("e3_sobrecarga_proot_*.csv")
     if not linhas:
         return
-    cargas = [("cpu", "CPU (sha256)"), ("processos", "fork + exec"), ("arquivos", "1000 arquivos"),
-              ("escrita", "escrita 200 MB"), ("python", "início do Python")]
+    cargas = [("cpu", t("CPU (sha256)", "Cálculo (CPU)")), ("processos", t("fork + exec", "Abrir programas")),
+              ("arquivos", t("1000 arquivos", "Muitos arquivos pequenos")),
+              ("escrita", t("escrita 200 MB", "Gravar arquivo grande")), ("python", t("início do Python", "Iniciar o Python"))]
     rot, val = [], []
     for c, r in cargas:
         n = [num(l["segundos"]) for l in linhas if l["carga"] == c and l["ambiente"] == "nativo"]
@@ -141,8 +177,9 @@ def fig_e3():
         ax.text(b.get_width() + (2 if v >= 0 else -2), b.get_y() + b.get_height() / 2, f"{v:+.0f}%",
                 va="center", ha="left" if v >= 0 else "right", color=TEXTO, fontsize=9)
     ax.axvline(0, color=TEXTO_2, linewidth=1)
-    ax.set_xlabel("Tempo a mais dentro do Worker em relação ao Termux nativo (mediana, %)")
-    ax.set_title("E3 — Sobrecarga do PRoot por tipo de carga")
+    ax.set_xlabel(t("Tempo a mais dentro do Worker em relação ao Termux nativo (mediana, %)",
+                    "Quanto mais lento fica dentro do ambiente Linux (%)"))
+    ax.set_title(t("E3 — Sobrecarga do PRoot por tipo de carga", "Custo de rodar dentro do ambiente Linux"))
     ax.grid(axis="y", visible=False)
     ax.margins(x=0.15)
     salvar(fig, "e3_sobrecarga_proot")
@@ -154,7 +191,8 @@ def fig_e8():
         return
     concs = sorted({int(l["concorrencia"]) for l in linhas})
     fig, ax = plt.subplots(figsize=(7, 3.4))
-    for cor, (alvo, rotulo) in zip(SERIE, (("worker", "No Worker (PRoot)"), ("nativo", "Termux nativo"))):
+    for cor, (alvo, rotulo) in zip(SERIE, (("worker", t("No Worker (PRoot)", "Dentro do ambiente Linux")),
+                                           ("nativo", t("Termux nativo", "Direto no celular")))):
         med = []
         for c in concs:
             v = [num(l["req_s"]) for l in linhas if l["alvo"] == alvo and int(l["concorrencia"]) == c
@@ -165,10 +203,10 @@ def fig_e8():
                     markeredgecolor=SUPERFICIE, markeredgewidth=2)
     ax.set_xscale("log")
     ax.set_xticks(concs, [str(c) for c in concs])
-    ax.set_xlabel("Conexões simultâneas")
-    ax.set_ylabel("Requisições por segundo (mediana)")
+    ax.set_xlabel(t("Conexões simultâneas", "Usuários ao mesmo tempo"))
+    ax.set_ylabel(t("Requisições por segundo (mediana)", "Acessos por segundo"))
     ax.set_ylim(bottom=0)
-    ax.set_title("E8 — Vazão da API de demonstração")
+    ax.set_title(t("E8 — Vazão da API de demonstração", "Acessos atendidos por segundo"))
     ax.legend(loc="lower right")
     salvar(fig, "e8_vazao")
 
@@ -204,5 +242,6 @@ def fig_e7():
 
 if __name__ == "__main__":
     print(f"Figuras em {SAIDA}:")
-    for f in (fig_e4, fig_e1, fig_e3, fig_e8, fig_e7):
+    figuras = (fig_e4, fig_e1) if APRESENTACAO else (fig_e4, fig_e1, fig_e3, fig_e8, fig_e7)
+    for f in figuras:
         f()
