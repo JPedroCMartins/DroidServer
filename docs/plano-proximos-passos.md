@@ -168,7 +168,7 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 | S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel |
 | S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos |
 
-Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
+Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). O projeto usa **só o moto e40** (o POCO é o celular pessoal do usuário); por isso o agente novo só vai ao aparelho depois que a E7 terminar (17/11, 20:22).
 
 **Decisões** (16/11, usuário): abordagem **A**; repositório Git fica para uma futura **integração de CI/CD** (seção 10.3 do TCC), e as variáveis de ambiente vão junto. A porta é declarada num cabeçalho do `run.sh` (`# droidserver: porta=8080`). Perguntas originais, já respondidas:
 1. Abordagem: B (recomendada), só A ou C?

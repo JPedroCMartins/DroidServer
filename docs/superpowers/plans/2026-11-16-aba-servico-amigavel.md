@@ -17,7 +17,7 @@
 - Texto da interface e mensagens em português; todo conteúdo dinâmico no HTML passa por `esc()`.
 - Painel sem dependências externas (nada de CDN); só o que já está em `desktop/app/static/vendor/`.
 - O `du` do Worker nunca roda no caminho do *sync*: em *thread*, com cache de 600 s.
-- **Até 17/11 às 20:22 a E7 roda no moto e40 (192.168.1.100): não reiniciar o agente nem mexer nos Workers dele.** Mudanças do agente só são enviadas ao POCO. Reinícios do Host são permitidos (anotar o horário no plano de ação).
+- **Aparelho: só o Motorola moto e40 (192.168.1.100).** O POCO X6 Pro é o celular pessoal do usuário e não entra no projeto. Até 17/11 às 20:22 a E7 roda no moto: **não reiniciar o agente nem mexer nos Workers dele** — as Tasks 1–6 se verificam por testes e no navegador; o agente novo só vai ao moto na Task 7, depois da E7. Reinícios do Host são permitidos (anotar o horário no plano de ação).
 - Nada de estimativas de tempo em documentos.
 - Depois de mudar o vault, regenerar `docs/DroidServer_TCC_artigo.docx` e validá-lo (ver Task 7).
 
@@ -280,7 +280,7 @@ def test_testar_node_ou_worker_desconhecido(client):
   - "CPU x% · RAM y MB · Disco z MB (ou 'calculando…') · <distro> · run.sh salvo há <tempo relativo>"; qualquer campo ausente → "—". O `ram_mb` que vier só do *sync* é mantido quando uma `servico_resposta` chegar sem ele.
 - [ ] **Step 2: Ajuda "?"**: botão "?" (com `aria-label="Ajuda"`) ao lado de `/app/run.sh`, das duas opções e do endereço; painel lateral à direita (tela cheia no celular), fecha com Esc, botão "×" e clique fora; foco vai para o painel ao abrir e volta ao "?" ao fechar. Seções com âncora: **Passo a passo** (arquivos em `/app` pelo Terminal → instalar pacotes com `apk add`/`apt install` → escrever o `run.sh` → declarar `# droidserver: porta=N` → "Salvar e reiniciar"), **Regras do run.sh** (primeiro plano, `exec` no último comando, sem `&`/`nohup`, *shebang* respeitado, sem link simbólico, porta exclusiva por aparelho), **Exemplos** (site estático com `python3 -m http.server`, API Python, Node.js, bot Python — cada um com o cabeçalho de porta quando houver), **Estados** (Rodando, Iniciando, Falhou, Parado, Aguardando run.sh), **Erros comuns** (127, 126, 137, "Address in use", sobe e cai), **Opções** (o que fazem os dois *checkboxes* e quando valem).
 - [ ] **Step 3: Números de linha** no editor: coluna à esquerda sincronizada com a rolagem e com a quantidade de linhas, mesma fonte e altura de linha do `textarea`.
-- [ ] **Step 4: Verificar no navegador** (Host reiniciado): Worker `demo_api` do POCO com o cabeçalho de porta → endereço aparece e "Testar" dá ✓; sem cabeçalho → "Porta não informada"; "?" abre/fecha (Esc, ×, fora); console sem erros; aparência em largura de celular (375 px).
+- [ ] **Step 4: Verificar no navegador** (Host reiniciado; o moto ainda roda o agente antigo por causa da E7): a visão geral do `demo_api` do moto mostra "—" nos campos novos e "Porta não informada", sem erro no console (Review Focus 5); "?" abre e fecha (Esc, ×, clique fora) e o foco volta ao botão; "Testar" sem porta mostra a mensagem da Task 5; aparência em largura de celular (375 px). A verificação com dados reais fica para a Task 7.
 - [ ] **Step 5:** `git commit -m "feat(painel): visão geral do serviço e ajuda '?' do run.sh"`
 
 ---
@@ -290,8 +290,8 @@ def test_testar_node_ou_worker_desconhecido(client):
 **Files:**
 - Modify: `README.md` (seção "Serviço do Worker"), `docs/obsidian-valt/08-prototipacao.md` (8.4.1), `docs/plano-proximos-passos.md` (Fase 2B), `docs/DroidServer_TCC_artigo.docx` (regenerado)
 
-- [ ] **Step 1:** enviar `servico.py`, `sysinfo.py`, `node.py` e os testes **só ao POCO**; rodar a suíte lá → PASS; reiniciar o agente do POCO.
-- [ ] **Step 2:** no painel: falha provocada (comando inexistente no `run.sh` de um Worker de teste do POCO) → "Falhas hoje: 1 · comando não encontrado (127)"; disco aparece após o 2º *sync*; RAM coerente com o processo.
+- [ ] **Step 1:** **depois de 17/11 20:22** (fim da E7): enviar `servico.py`, `sysinfo.py`, `node.py` e os testes ao **moto e40**; rodar a suíte lá → PASS; reiniciar o agente do moto.
+- [ ] **Step 2:** no painel, com o moto: acrescentar `# droidserver: porta=8080` ao `run.sh` do `demo_api` → endereço aparece e "Testar" dá ✓ 200; criar um Worker de teste com `run.sh` = `exec comando_inexistente` → "Falhas hoje" sobe e a última falha diz "comando não encontrado (127)"; apagar o Worker de teste; disco aparece após o 2º *sync*; RAM coerente com o processo. Não tocar no Worker `portfolio-web` do usuário.
 - [ ] **Step 3:** documentar o cabeçalho `# droidserver: porta=N`, a visão geral e a ajuda no README e na 8.4.1; marcar S1, S2, S3, S5 e S6 como feitos no plano.
 - [ ] **Step 4:** `cd docs/gerador-docx && npm run gerar` e `uv run --with defusedxml --with lxml python <skill docx>/scripts/office/validate.py ../DroidServer_TCC_artigo.docx` → "All validations PASSED!".
-- [ ] **Step 5:** `git commit -m "docs: aba Serviço amigável (visão geral e ajuda)"`. **Depois de 17/11 20:22**, levar o agente novo ao moto e40.
+- [ ] **Step 5:** `git commit -m "docs: aba Serviço amigável (visão geral e ajuda)"`.
