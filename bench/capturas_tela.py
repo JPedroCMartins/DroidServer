@@ -66,14 +66,19 @@ def main():
             contexto.add_cookies([{"name": c.name, "value": c.value, "url": HOST_URL}])
         pagina = contexto.new_page()
 
-        abrir(pagina, "/", args.espera)
+        abrir(pagina, "/", 2)
+        pagina.locator(f'[data-grafico="{ip}"]').first.click()  # abre o gráfico de CPU/RAM do node
+        time.sleep(args.espera)
         salvar(pagina, "painel_dashboard.png")
 
         abrir(pagina, f"/node/{ip}", args.espera)
         salvar(pagina, "painel_node.png", pagina_inteira=True)
 
+        # A rolagem fica dentro do <main>: uma janela mais alta mostra também os logs
+        pagina.set_viewport_size({"width": 1440, "height": 1620})
         abrir(pagina, f"/node/{ip}/worker/{args.worker}", args.espera)
-        salvar(pagina, "painel_servico.png", pagina_inteira=True)
+        salvar(pagina, "painel_servico.png")
+        pagina.set_viewport_size({"width": 1440, "height": 900})
 
         pagina.locator("[data-ajuda]").first.click()
         pagina.wait_for_selector("#ajudaPainel:not(.hidden)")

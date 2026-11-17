@@ -8,8 +8,9 @@ Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega
 |---|---|
 | `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | Estabilidade por **24 h** de uso (E7 — pendência P1) |
 | Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | Números da E7 no resumo, na 9.5 e na conclusão (P2) |
-| **Dois Nodes** (POCO X6 Pro e moto e40) | Capturas de tela da seção 8.8 (4.6) |
-| Criar e remover Worker (Alpine e Debian) pelo painel | Conferir as referências ⚠ (4.5) |
+| **Dois Nodes** (POCO X6 Pro e moto e40) | Conferir as referências ⚠ (4.5) |
+| Criar e remover Worker (Alpine e Debian) pelo painel | |
+| Capturas de tela do painel na seção 8.8 (4.6) | |
 | **Aba Serviço** (`/app/run.sh`): estado, editor, logs ao vivo, opções, visão geral e ajuda "?" | `.docx` final e revisão do orientador (4.7, 4.8) |
 | Aplicações reais respondendo na rede (portas 8080–8082) | |
 | Segurança mínima (Fase 2) e painel sem internet | |
@@ -191,7 +192,7 @@ Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a p
 | 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (226/216 palavras); falta o valor da E7 |
 | 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; falta fechar com a E7 |
 | 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) |
-| 4.6 | 🟡 *16/11:* seção 8.8 escrita com as Figuras 5–9 e *script* `bench/capturas_tela.py`; falta **rodar** o *script* com o Host e o moto no ar (precisa de `DROID_PANEL_PASSWORD`) e regenerar o `.docx` (imagens ausentes saem como `[IMAGEM PENDENTE]` em amarelo) |
+| 4.6 | ✅ *16/11:* seção 8.8 com as Figuras 5–9 (Dashboard com gráfico, Node, aba Serviço, ajuda, terminal), geradas por `bench/capturas_tela.py` no moto e40 |
 | 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final |
 | 4.8 | Revisão do orientador |
 
@@ -204,7 +205,7 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 Primeiro o que não depende de esperar; os experimentos ficam como pendências (P1–P4, no topo).
 
 ```
-Agora       4.6 capturas de tela (com a aba Serviço nova) → iniciar P1 (E7, 24 h com o moto parado)
+Agora       ✅ 4.6 capturas de tela → iniciar P1 (E7, 24 h com o moto parado)
 Durante a E7  4.5 referências ⚠ → enxugar o texto
 Depois      P2 → P4 → .docx final (4.7) → orientador
 ```

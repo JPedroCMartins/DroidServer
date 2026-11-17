@@ -267,9 +267,9 @@ O painel é uma página única servida pelo Host, organizada em três níveis: o
 
 ![[figuras/painel_dashboard.png]]
 
-*Figura 5 — Dashboard: Nodes do cluster com estado, CPU do DroidServer e RAM em tempo real. Fonte: o autor.*
+*Figura 5 — Dashboard: Nodes do cluster com estado, CPU do DroidServer e RAM, e o gráfico de uso em tempo real aberto para o moto e40. Fonte: o autor.*
 
-No *Dashboard*, cada Node aparece com o estado da última sincronização, o uso de CPU atribuído ao DroidServer e a memória do aparelho; o gráfico é atualizado em tempo real. É também nele que se cadastram Nodes novos, pela varredura da rede e pelo pareamento com *token* (seção 8.3).
+No *Dashboard*, cada Node aparece com o estado da última sincronização, o uso de CPU atribuído ao DroidServer e a memória do aparelho; o botão ao lado de "Gerenciar Workers" abre um gráfico dos últimos 10 minutos, atualizado em tempo real. Um Node cadastrado que ainda não sincronizou aparece como "Aguardando contato". É também nele que se cadastram Nodes novos, pela varredura da rede e pelo pareamento com *token* (seção 8.3).
 
 ![[figuras/painel_node.png]]
 
@@ -289,6 +289,6 @@ A aba Serviço (seção 8.4.1) permite pôr uma aplicação no ar sem terminal: 
 
 ![[figuras/painel_terminal.png]]
 
-*Figura 9 — Terminal no navegador com o `htop` em execução dentro de um Worker. Fonte: o autor.*
+*Figura 9 — Terminal no navegador com o `top` em execução dentro de um Worker. Fonte: o autor.*
 
-O terminal (Figura 9) é um *shell* dentro do Worker, transmitido pelo WebSocket (Figura 3); nele se instalam pacotes e se copiam os arquivos da aplicação para `/app`, como num VPS acessado por SSH.
+O terminal (Figura 9) é um *shell* dentro do Worker, transmitido pelo WebSocket (Figura 3); nele se instalam pacotes e se copiam os arquivos da aplicação para `/app`, como num VPS acessado por SSH. A figura também evidencia uma limitação do PRoot (seção 10.1): como ele não cria um espaço de processos próprio, o `top` executado dentro do Worker lista os processos de todo o Termux, inclusive o Supervisor e os outros Workers.
