@@ -4,28 +4,34 @@
 # ///
 """E7 — Disponibilidade de uma aplicação num Worker (QP3 / H1), com E6 e E10.
 
-A cada `--intervalo` segundos:
-  - faz GET na aplicação do Worker (http://<ip-do-node>:<porta>/) e registra
-    se respondeu 2xx/3xx e em quanto tempo;
-  - lê o estado do node no painel: Online/Offline, CPU do DroidServer, CPU do
-    Worker, RAM do aparelho e o pid/uptime do serviço (pid novo = reinício).
-A cada `--ssh-intervalo` segundos (se DROID_SSH estiver definido), mede a
-memória (RSS) do agente e do supervisord no aparelho (E10).
+Modo padrão (desde 17/11): os dados vêm do **registro local do celular**.
+O agente do Node grava a cada 10 s, com ou sem painel, o estado de cada
+serviço (Supervisor, pid) e um GET na porta declarada no run.sh, além da
+CPU, da RAM e da memória do agente e do supervisord
+(~/.config/droidserver/registro/metricas.jsonl). O PC e o painel podem ficar
+desligados durante toda a medição. No fim, este script baixa o registro por
+SSH, recorta a janela pedida e gera o mesmo CSV do modo antigo:
+  - amostras que faltam no registro (agente parado, aparelho desligado,
+    Android congelando o Termux) entram como indisponíveis ("sem_registro");
+  - reinício = pid novo do serviço; E6 = lacunas do próprio agente;
+  - E10 = RSS do agente e do supervisord.
 
-Ao terminar (ou com --resumo arquivo.csv, a qualquer momento) calcula:
-disponibilidade = respostas OK / total, reinícios do serviço, transições do
-node para Offline (E6: falsos positivos com o aparelho ligado) e consumo.
-
-Uso (deixar rodando de noite):
-  DROID_SSH="-p 8022 192.168.1.5" nohup uv run bench/e7_disponibilidade.py \\
-      --worker demo_api --porta 8080 --horas 24 > bench/resultados/e7.log 2>&1 &
+Uso:
+  # anote a hora de início e deixe o celular parado; depois de 24 h:
+  DROID_SSH="-p 8022 192.168.1.100" uv run bench/e7_disponibilidade.py \\
+      --worker demo_api --inicio "2026-11-17 01:00" --horas 24
   uv run bench/e7_disponibilidade.py --resumo bench/resultados/e7_disponibilidade_<data>.csv
+
+Modo antigo (--pelo-pc, rodadas 1 e 2 de 16/11): um script no PC faz o GET pela
+rede e lê o estado pelo painel; desligar o PC interrompe a medição.
 """
 
 import argparse
 import csv
+import json
 import os
 import time
+from datetime import datetime
 
 import requests
 
@@ -153,6 +159,92 @@ def resumir(caminho):
                                                         if _num(l["rss_supervisord_kb"])], "MB")
 
 
+# ---------------------------------------------------------------------------
+# Modo padrão: registro local do celular
+# ---------------------------------------------------------------------------
+
+PASTA_REGISTRO = "~/.config/droidserver/registro"
+
+
+def baixar_registro():
+    """Concatena metricas.jsonl.N ... .1 e metricas.jsonl (do mais antigo ao mais novo)."""
+    cmd = (f"cd {PASTA_REGISTRO} && for n in 10 9 8 7 6 5 4 3 2 1; do "
+           "[ -f metricas.jsonl.$n ] && cat metricas.jsonl.$n; done; cat metricas.jsonl")
+    codigo, saida = comum.ssh(cmd, timeout=300)
+    if codigo != 0 and not saida:
+        raise SystemExit("Não foi possível ler o registro no celular (o agente já foi atualizado?).")
+    bruto = comum.arquivo_csv("e7_registro").replace(".csv", ".jsonl")
+    with open(bruto, "w", encoding="utf-8") as f:
+        f.write(saida)
+    print(f"Registro bruto salvo em {bruto}")
+    return saida
+
+
+def ler_amostras(texto):
+    amostras = []
+    for linha in texto.splitlines():
+        try:
+            a = json.loads(linha.replace("\0", ""))
+            a["t"] = float(a["t"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        amostras.append(a)
+    return sorted(amostras, key=lambda a: a["t"])
+
+
+def _linha_vazia(t, erro):
+    return {"carimbo": datetime.fromtimestamp(t).isoformat(timespec="seconds"), "t": round(t, 1),
+            "http_ok": False, "erro": erro, "node_status": erro}
+
+
+def montar_linhas(amostras, worker, inicio, fim, intervalo=10.0):
+    """Linhas do CSV da E7 na janela [inicio, fim], com as lacunas preenchidas."""
+    janela = [a for a in amostras if inicio <= a["t"] <= fim]
+    linhas = []
+    anterior = inicio - intervalo  # lacuna no começo também conta
+    for a in janela + [None]:
+        t = a["t"] if a else fim + intervalo
+        faltam = int((t - anterior) / intervalo + 0.5) - 1  # amostras que deviam existir entre as duas
+        for k in range(1, faltam + 1):
+            linhas.append(_linha_vazia(anterior + k * intervalo, "sem_registro"))
+        if a is None:
+            break
+        sv = (a.get("servicos") or {}).get(worker) or {}
+        linhas.append({
+            "carimbo": datetime.fromtimestamp(t).isoformat(timespec="seconds"), "t": round(t, 1),
+            "http_ok": sv.get("http_ok") is True, "http_status": sv.get("http_status") or "",
+            "http_ms": sv.get("http_ms") or "", "erro": sv.get("erro") or ("" if sv else "worker_ausente"),
+            "node_status": "Online", "cpu_droidserver": a.get("cpu_termux"), "cpu_worker": sv.get("cpu"),
+            "ram_pct": a.get("ram_pct"), "servico_estado": sv.get("estado"), "servico_pid": sv.get("pid"),
+            "servico_uptime": sv.get("uptime"), "rss_agente_kb": a.get("rss_agente_kb"),
+            "rss_supervisord_kb": a.get("rss_supervisord_kb"),
+        })
+        anterior = t
+    return linhas
+
+
+def do_celular(args):
+    amostras = ler_amostras(open(args.registro, encoding="utf-8").read() if args.registro else baixar_registro())
+    if not amostras:
+        raise SystemExit("Registro vazio.")
+    if args.inicio:
+        inicio = datetime.fromisoformat(args.inicio).timestamp()
+        fim = min(inicio + args.horas * 3600, amostras[-1]["t"])
+    else:  # as últimas --horas registradas
+        fim = amostras[-1]["t"]
+        inicio = max(fim - args.horas * 3600, amostras[0]["t"])
+    linhas = montar_linhas(amostras, args.worker, inicio, fim, args.intervalo)
+    caminho = comum.arquivo_csv("e7_disponibilidade")
+    g = comum.GravadorCSV(caminho, CAMPOS)
+    for l in linhas:
+        g.linha(**{c: ("" if l.get(c) is None else l.get(c, "")) for c in CAMPOS})
+    g.fechar()
+    sem_painel = sum(1 for a in amostras if inicio <= a["t"] <= fim and a.get("painel") is not True)
+    print(f"Janela: {datetime.fromtimestamp(inicio):%d/%m %H:%M} a {datetime.fromtimestamp(fim):%d/%m %H:%M}; "
+          f"amostras com o painel desligado/inacessível: {sem_painel}")
+    resumir(caminho)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--worker", default="demo_api")
@@ -161,11 +253,16 @@ def main():
     ap.add_argument("--intervalo", type=float, default=10)
     ap.add_argument("--ssh-intervalo", type=float, default=300)
     ap.add_argument("--resumo", metavar="CSV", help="só resume um CSV já coletado (mesmo incompleto)")
+    ap.add_argument("--inicio", help='início da janela, ex.: "2026-11-17 01:00" (padrão: últimas --horas)')
+    ap.add_argument("--registro", metavar="JSONL", help="usa um registro já baixado em vez de buscar por SSH")
+    ap.add_argument("--pelo-pc", action="store_true", help="modo antigo: mede a partir do PC, pelo painel")
     args = ap.parse_args()
     if args.resumo:
         resumir(args.resumo)
-    else:
+    elif args.pelo_pc:
         coletar(args)
+    else:
+        do_celular(args)
 
 
 if __name__ == "__main__":

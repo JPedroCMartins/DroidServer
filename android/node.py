@@ -17,8 +17,9 @@ from logging.handlers import RotatingFileHandler
 import requests
 import socketio
 
+import registro
 import servico
-from sysinfo import ProcessCPUMonitor, SystemMonitor, memoria_grupos
+from sysinfo import ProcessCPUMonitor, SystemMonitor, _rss_kb, memoria_grupos
 
 log = logging.getLogger("node")
 
@@ -31,6 +32,9 @@ PAREAMENTO_ARQUIVO = os.getenv("DROID_PAREAMENTO_FILE") or os.path.join(
 # Token gerado pelo host: hexadecimal, 32 a 128 caracteres.
 TOKEN_RE = re.compile(r"^[0-9a-f]{32,128}$")
 POLL_INTERVAL = 10
+# Janela do histórico enviada ao painel quando ele (re)liga: 30 min de amostras
+HISTORICO_PAINEL_S = 30 * 60
+HISTORICO_PAINEL_MAX = 180
 # Distribuições do proot-distro aceitas pelo painel (deve espelhar o host).
 # Alpine é a recomendada (rootfs pequeno, instala em segundos); Debian é a
 # alternativa. O Arch foi retirado: a imagem oficial não tem build arm64.
@@ -644,6 +648,13 @@ class NodeAgent:
         self.cpu_processos = ProcessCPUMonitor()
         # Logs do serviço de cada worker, enviados ao painel enquanto alguém assiste
         self.logs = servico.LogsAoVivo(self._enviar_logs)
+        # Métricas e disponibilidade gravadas no celular, com ou sem painel
+        self.registro = registro.Registro()
+        # Painel alcançável no último sync (None = ainda não tentou); só as
+        # mudanças vão para o log, para não escrever um aviso a cada 10 s
+        self._painel_ok = None
+        # O painel pede o histórico quando (re)liga; vai no próximo sync
+        self._enviar_historico = False
 
         # Resultado das tarefas executadas, enviado no próximo sync.
         # Escrito pela thread de tarefas e lido/limpo pela thread de polling.
@@ -795,36 +806,83 @@ class NodeAgent:
         log.warning("[-] WebSocket indisponível (%s). Nova tentativa no próximo ciclo.", erro)
         return False
 
-    def _poll_once(self):
-        """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
-        with self._lock_resultados:
-            enviados = list(self._resultados)
+    def _amostrar(self):
+        """Mede o Node: estado dos serviços, CPU e RAM. Não depende do painel."""
         status_sup = servico.status_supervisor()
-        worker_status = {a: s["estado"] for a, s in status_sup.items()}
         worker_pids = {a: s["pid"] for a, s in status_sup.items() if s["pid"]}
         workers = WorkerManager.get_installed_workers()
+        servicos = servico.estado_servicos(workers, status_sup)
+        uso = self.monitor.sample()
+        cpu_proc = self.cpu_processos.sample(self._grupos_de_processos(worker_pids))
+        # RAM só do serviço (pid no Supervisor), sem a sessão de terminal
+        for alias, mb in memoria_grupos({a: [p] for a, p in worker_pids.items()}).items():
+            if alias in servicos:
+                servicos[alias]["ram_mb"] = mb
+        return {
+            "workers": workers,
+            "servicos": servicos,
+            "worker_status": {a: s["estado"] for a, s in status_sup.items()},
+            "worker_pids": worker_pids,
+            "cpu": uso["cpu"],
+            "mem": uso["mem"],
+            "cpu_termux": cpu_proc["total"],
+            "cpu_workers": cpu_proc["grupos"],
+        }
+
+    def _registrar_local(self, medida):
+        """Grava a amostra no celular, com a verificação HTTP de cada serviço."""
+        servicos = {}
+        for alias, sv in medida["servicos"].items():
+            item = {"estado": sv.get("estado"), "pid": sv.get("pid"), "uptime": sv.get("uptime"),
+                    "porta": sv.get("porta"), "cpu": medida["cpu_workers"].get(alias),
+                    "ram_mb": sv.get("ram_mb")}
+            if sv.get("porta"):
+                item.update(registro.checar_http(sv["porta"]))
+            servicos[alias] = item
+        # supervisord = pai do processo de qualquer serviço rodando
+        pid_sup = next((registro.ppid(p) for p in medida["worker_pids"].values()), None)
+        mem = medida.get("mem") or {}
+        self.registro.gravar({
+            "t": round(time.time(), 1),
+            "cpu_termux": medida["cpu_termux"],
+            "ram_pct": mem.get("percent"),
+            "painel": self._painel_ok,
+            "rss_agente_kb": _rss_kb(os.getpid(), "/proc") or None,
+            "rss_supervisord_kb": (_rss_kb(pid_sup, "/proc") or None) if pid_sup else None,
+            "servicos": servicos,
+        })
+
+    def _painel_falhou(self, mensagem, *args):
+        nivel = logging.DEBUG if self._painel_ok is False else logging.WARNING
+        if self._painel_ok is not False:
+            mensagem += " Os serviços seguem rodando e as métricas continuam no registro local."
+        log.log(nivel, mensagem, *args)
+        self._painel_ok = False
+
+    def _poll_once(self, medida=None):
+        """Sincroniza com o host uma única vez e devolve as tarefas pendentes."""
+        medida = medida or self._amostrar()
+        with self._lock_resultados:
+            enviados = list(self._resultados)
         payload = {
             "ip": self.meu_ip,
             "status": "Online",
-            "workers": workers,
-            "servicos": servico.estado_servicos(workers, status_sup),
-            "worker_status": worker_status,
+            "workers": medida["workers"],
+            "servicos": medida["servicos"],
+            "worker_status": medida["worker_status"],
             "tarefa_atual": self._tarefa_atual,
             "resultados": enviados,
             # logs que este agente está acompanhando: o host reconcilia com
             # quem está assistindo (ex.: depois de o agente reiniciar)
             "logs_ativos": sorted(self.logs.ativos()),
+            "cpu": medida["cpu"],
+            "mem": medida["mem"],
+            "cpu_termux": medida["cpu_termux"],
+            "cpu_workers": medida["cpu_workers"],
         }
-        uso = self.monitor.sample()
-        payload["cpu"] = uso["cpu"]
-        payload["mem"] = uso["mem"]
-        cpu_proc = self.cpu_processos.sample(self._grupos_de_processos(worker_pids))
-        payload["cpu_termux"] = cpu_proc["total"]
-        payload["cpu_workers"] = cpu_proc["grupos"]
-        # RAM só do serviço (pid no Supervisor), sem a sessão de terminal
-        for alias, mb in memoria_grupos({a: [p] for a, p in worker_pids.items()}).items():
-            if alias in payload["servicos"]:
-                payload["servicos"][alias]["ram_mb"] = mb
+        if self._enviar_historico:
+            payload["historico"] = self.registro.historico(
+                desde=time.time() - HISTORICO_PAINEL_S, maximo=HISTORICO_PAINEL_MAX)
         if self.config.token:
             payload["token"] = self.config.token
 
@@ -836,19 +894,27 @@ class NodeAgent:
                 ids_enviados = {id(r) for r in enviados}
                 with self._lock_resultados:
                     self._resultados[:] = [r for r in self._resultados if id(r) not in ids_enviados]
-                tarefas = resposta.json().get("tarefas", [])
+                if self._painel_ok is False:
+                    log.info("[+] Painel %s de volta.", self.config.host_ip)
+                self._painel_ok = True
+                corpo = resposta.json()
+                if "historico" in payload:
+                    self._enviar_historico = False
+                if corpo.get("pedir_historico"):
+                    self._enviar_historico = True
+                tarefas = corpo.get("tarefas", [])
                 mem_pct = payload["mem"]["percent"] if payload.get("mem") else None
                 log.info("Sync OK com host (cpu=%s%%, cpu_termux=%s%%, mem=%s%%, workers=%s, %d tarefa(s))",
                          payload.get("cpu"), payload.get("cpu_termux"), mem_pct,
                          payload.get("cpu_workers"), len(tarefas))
                 return tarefas
             if resposta.status_code == 401:
-                log.warning("[-] O host %s não reconhece este node (token inválido ou node removido). "
-                            "Adicione-o de novo pelo painel.", self.config.host_ip)
+                self._painel_falhou("[-] O host %s não reconhece este node (token inválido ou node removido). "
+                                    "Adicione-o de novo pelo painel.", self.config.host_ip)
             else:
-                log.warning("[-] Host respondeu com status %s.", resposta.status_code)
+                self._painel_falhou("[-] Host respondeu com status %s.", resposta.status_code)
         except requests.exceptions.RequestException as e:
-            log.warning("[-] Erro ao sincronizar com o host: %s", e)
+            self._painel_falhou("[-] Painel indisponível (%s).", e)
         return []
 
     def _grupos_de_processos(self, worker_pids):
@@ -921,20 +987,38 @@ class NodeAgent:
 
         avisou = False
         while True:
-            if not self.config.pareado:
-                if not avisou:
-                    log.info("[*] Node não pareado. Adicione o IP %s pelo painel do DroidServer.", self.meu_ip)
-                    avisou = True
-                time.sleep(POLL_INTERVAL)
-                continue
-            avisou = False
-            self._atualizar_ip()
-            self._conectar_ws()
-            tarefas = self._poll_once()
-            for tarefa in tarefas:
-                log.info("Tarefa recebida: %s", tarefa)
-                self._fila_tarefas.put(tarefa)
-            time.sleep(POLL_INTERVAL)
+            inicio = time.monotonic()
+            self._ciclo(avisou)
+            avisou = not self.config.pareado
+            time.sleep(max(0.0, POLL_INTERVAL - (time.monotonic() - inicio)))
+
+    def _ciclo(self, avisou=False):
+        """Um ciclo: mede, sincroniza (se houver painel) e grava no registro local.
+
+        A medição e o registro não dependem do painel: com ele desligado ou
+        sem pareamento, os serviços seguem e as métricas continuam no celular.
+        Nenhum erro aqui pode encerrar o agente.
+        """
+        try:
+            medida = self._amostrar()
+        except Exception:
+            log.exception("[-] Falha ao medir o Node")
+            return
+        try:
+            if self.config.pareado:
+                self._atualizar_ip()
+                self._conectar_ws()
+                for tarefa in self._poll_once(medida):
+                    log.info("Tarefa recebida: %s", tarefa)
+                    self._fila_tarefas.put(tarefa)
+            elif not avisou:
+                log.info("[*] Node não pareado. Adicione o IP %s pelo painel do DroidServer.", self.meu_ip)
+        except Exception:
+            log.exception("[-] Falha ao sincronizar com o painel")
+        try:
+            self._registrar_local(medida)
+        except Exception:
+            log.exception("[-] Falha ao gravar o registro local")
 
     def iniciar(self):
         # Workers criados por versões anteriores passam a usar o lançador /app/run.sh
