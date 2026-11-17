@@ -18,7 +18,7 @@ Não altera nada no aparelho: só abre páginas e, no terminal, roda htop e sai.
 Rode ANTES de iniciar a E7, para não interferir na medição.
 
 Uso:
-  DROID_HOST_URL=http://localhost:5000 DROID_PANEL_PASSWORD=... \\
+  DROID_PANEL_PASSWORD=... \\
       uv run bench/capturas_tela.py --node 192.168.1.100 --worker demo_api
 """
 
