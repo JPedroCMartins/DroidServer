@@ -188,7 +188,7 @@ O painel fica em `http://<ip-do-host>:5050` e pede a senha definida em `DROID_PA
 
 ```bash
 cd desktop
-echo "DROID_PANEL_PASSWORD=escolha-uma-senha" > .env
+cp .env.example .env   # e troque a senha em DROID_PANEL_PASSWORD
 docker compose up -d --build
 ```
 
