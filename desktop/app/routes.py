@@ -261,7 +261,8 @@ def _origem_permitida(origem):
 #   Navegadores precisam de sessão; os nodes se autenticam pelo token
 #   (/api/node_sync e o WebSocket com papel "node").
 # ---------------------------------------------------------------------------
-ROTAS_LIVRES = ("/login", "/static/", "/api/node_sync", "/socket.io")
+# /apresentar_tcc: slides da defesa, públicos e sem link no painel (só pela URL).
+ROTAS_LIVRES = ("/login", "/static/", "/api/node_sync", "/socket.io", "/apresentar_tcc")
 
 
 def _senha_exigida():
@@ -338,6 +339,12 @@ def _bloquear_outros_sites():
 @app.route('/node/<ip>/worker/<alias>/terminal')
 def spa(ip=None, alias=None):
     return render_template('index.html', senha_exigida=_senha_exigida())
+
+
+@app.route('/apresentar_tcc')
+def apresentar_tcc():
+    """Slides da defesa do TCC. Não mostram nada do cluster; por isso dispensam login."""
+    return render_template('apresentacao.html')
 
 
 @app.route('/node/<ip>/worker/<alias>/delete', methods=['POST'])

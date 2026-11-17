@@ -184,6 +184,16 @@ DROID_PANEL_PASSWORD='escolha-uma-senha' uv run python main.py
 
 O painel fica em `http://<ip-do-host>:5050` e pede a senha definida em `DROID_PANEL_PASSWORD` (sem ela, o painel fica aberto a quem estiver na rede). Libere a porta 5050 no firewall, se houver. O painel funciona sem internet.
 
+**Com Docker** (opcional, Linux): sobe o painel sem instalar Python nem `uv`.
+
+```bash
+cd desktop
+echo "DROID_PANEL_PASSWORD=escolha-uma-senha" > .env
+docker compose up -d --build
+```
+
+O container usa a rede do host (`network_mode: host`), porque o painel precisa enxergar o IP real da LAN para sugerir a rede da varredura e alcançar os Nodes na porta 5051. O cadastro dos Nodes e a chave da sessão ficam no volume `droid-data`, e os logs em `droid-logs` (`docker compose logs -f` mostra a saída). Para parar: `docker compose down`.
+
 O Host também sobe sem terminal interativo (systemd, `nohup`), pois o servidor Werkzeug é iniciado com `allow_unsafe_werkzeug=True`. Isso é suficiente para um protótipo em LAN; em produção, prefira gunicorn com eventlet ou gevent.
 
 ### 2. Node (no Termux)

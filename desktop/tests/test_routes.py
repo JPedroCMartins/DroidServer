@@ -924,3 +924,29 @@ def test_testar_porta_invalida_vinda_do_node(client):
                                             "servicos": {"w1": {"porta": porta}}})
         resp = client.post("/api/node/10.0.0.5/worker/w1/testar")
         assert resp.status_code == 200 and "porta não informada" in resp.get_json()["erro"]
+
+
+# ---------- Apresentação do TCC (/apresentar_tcc) ----------
+
+def test_apresentacao_e_publica_mesmo_com_senha(com_senha):
+    c = com_senha
+    resp = c.get("/apresentar_tcc")
+    assert resp.status_code == 200
+    assert "DroidServer" in resp.get_data(as_text=True)
+    assert 'class="slide"' in resp.get_data(as_text=True)
+    # a rota livre não abre o resto do painel
+    assert c.get("/").status_code == 302
+    assert c.get("/api/nodes").status_code == 401
+
+
+def test_apresentacao_nao_tem_link_no_painel(client):
+    assert "apresentar_tcc" not in client.get("/").get_data(as_text=True)
+
+
+def test_apresentacao_imagens_existem(client):
+    import re
+    html = client.get("/apresentar_tcc").get_data(as_text=True)
+    imagens = re.findall(r'src="(/static/[^"]+)"', html)
+    assert imagens, "a apresentação deveria ter figuras"
+    for src in imagens:
+        assert client.get(src).status_code == 200, src

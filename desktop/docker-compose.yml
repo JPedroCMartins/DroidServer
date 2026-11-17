@@ -1,0 +1,22 @@
+# Sobe o painel do DroidServer:  docker compose up -d --build
+# Senha: crie um arquivo .env ao lado deste com DROID_PANEL_PASSWORD=sua-senha
+services:
+  painel:
+    build: .
+    image: droidserver-painel
+    container_name: droidserver-painel
+    # Rede do host (Linux): o painel precisa ver o IP real da LAN para
+    # sugerir a rede da varredura e alcançar os Nodes na porta 5051.
+    # Em rede bridge ele veria só o IP interno do container (172.x).
+    network_mode: host
+    environment:
+      DROID_PANEL_PASSWORD: ${DROID_PANEL_PASSWORD:-}
+      DROID_PORT: ${DROID_PORT:-5050}
+    volumes:
+      - droid-data:/data   # cadastro dos Nodes (tokens) e chave da sessão
+      - droid-logs:/logs
+    restart: unless-stopped
+
+volumes:
+  droid-data:
+  droid-logs:

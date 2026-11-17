@@ -17,3 +17,6 @@ docs/obsidian-valt/.obsidian/workspace.json
 
 # Cadastro de nodes do host (contém tokens)
 desktop/data/
+
+# Senha do painel para o docker compose
+desktop/.env
