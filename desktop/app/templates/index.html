@@ -997,6 +997,97 @@
         //   emit logs_assinar / logs_cancelar        -> on logs_saida
         // =====================================================================
         let reqSeq = 0;
+        // =====================================================================
+        // Ajuda da aba Serviço (painel lateral aberto pelos botões "?")
+        // =====================================================================
+        const CLS_AJUDA = 'w-6 h-6 shrink-0 rounded-full border border-slate-400/30 text-[12px] font-bold text-muted hover:text-white hover:border-accent grid place-items-center leading-none';
+        const botaoAjuda = (secao, rotulo = 'Ajuda') =>
+            `<button type="button" class="${CLS_AJUDA}" data-ajuda="${secao}" aria-label="${esc(rotulo)}" title="${esc(rotulo)}">?</button>`;
+        const exemploCodigo = (txt) => `<pre class="mt-2 px-3 py-2.5 rounded-lg bg-term border border-slate-400/15 font-mono text-[12px] leading-relaxed text-slate-200 whitespace-pre-wrap">${esc(txt)}</pre>`;
+
+        function ajudaServicoHtml(ip) {
+            const h = (id, titulo) => `<h3 id="ajuda-${id}" class="text-[14px] font-bold text-white mt-6 mb-2 scroll-mt-20">${titulo}</h3>`;
+            return `
+            ${h('passos', 'Passo a passo para pôr sua aplicação no ar')}
+            <ol class="list-decimal pl-5 flex flex-col gap-1.5">
+                <li><strong>Coloque os arquivos em <code>/app</code></strong> pela aba <strong>Terminal</strong> (ex.: <code>git clone https://… /app/meuapp</code>, ou crie com <code>cat &gt; /app/app.py</code>).</li>
+                <li><strong>Instale o que ela precisa</strong>, também pelo Terminal: <code>apk add python3</code> (Alpine) ou <code>apt install python3</code> (Debian). Ou deixe o próprio <code>run.sh</code> instalar na 1ª execução, como no exemplo.</li>
+                <li><strong>Escreva o <code>/app/run.sh</code></strong> no editor desta aba, seguindo as regras abaixo.</li>
+                <li><strong>Informe a porta</strong> com a linha <code># droidserver: porta=8080</code> no início do script.</li>
+                <li>Clique em <strong>Salvar e reiniciar</strong> e acompanhe os <strong>Logs</strong>. Quando aparecer “Rodando”, use <strong>Testar</strong> no endereço.</li>
+            </ol>
+
+            ${h('regras', 'Regras do run.sh')}
+            <ul class="list-disc pl-5 flex flex-col gap-1.5">
+                <li>O serviço fica em <strong>primeiro plano</strong>: nada de <code>&amp;</code> no fim nem <code>nohup</code>. Se o script terminar, o DroidServer entende que o serviço caiu.</li>
+                <li>Use <code>exec</code> no último comando (<code>exec python3 app.py</code>), para o processo vigiado ser o do seu programa.</li>
+                <li>A 1ª linha pode escolher o interpretador (<code>#!/bin/bash</code>, <code>#!/usr/bin/env python3</code>); sem ela, o script roda com <code>sh</code>.</li>
+                <li>O <code>run.sh</code> precisa ser um arquivo comum: links simbólicos são recusados por segurança.</li>
+                <li>Tudo o que o programa imprimir (saída e erros) vai para os <strong>Logs</strong>.</li>
+            </ul>
+
+            ${h('porta', 'Porta e endereço')}
+            <p>O Android não deixa o DroidServer descobrir sozinho em que porta seu serviço escuta. Declare-a num comentário do <code>run.sh</code>:</p>
+            ${exemploCodigo(`# droidserver: porta=8080`)}
+            <p class="mt-2">Com ela, a visão geral mostra o endereço (<code>http://${esc(ip)}:8080</code>) e o botão <strong>Testar</strong>, que acessa o serviço a partir do computador do painel. A rede não é isolada: <strong>dois Workers do mesmo celular não podem usar a mesma porta</strong>.</p>
+
+            ${h('exemplos', 'Exemplos')}
+            <p><strong>Site estático</strong> (arquivos em <code>/app/site</code>):</p>
+            ${exemploCodigo(`#!/bin/sh
+# droidserver: porta=8080
+cd /app/site
+exec python3 -m http.server 8080`)}
+            <p class="mt-3"><strong>API Python</strong> (Flask, FastAPI…):</p>
+            ${exemploCodigo(`#!/bin/sh
+# droidserver: porta=5000
+cd /app/api
+exec python3 app.py`)}
+            <p class="mt-3"><strong>Node.js</strong>:</p>
+            ${exemploCodigo(`#!/bin/sh
+# droidserver: porta=3000
+cd /app/web
+exec node server.js`)}
+            <p class="mt-3"><strong>Bot ou script contínuo</strong> (sem porta):</p>
+            ${exemploCodigo(`#!/bin/sh
+cd /app/bot
+exec python3 bot.py`)}
+
+            ${h('estados', 'O que significa cada estado')}
+            <ul class="flex flex-col gap-1.5">
+                <li><strong class="text-ok">Rodando</strong> — o serviço está no ar.</li>
+                <li><strong class="text-warn">Iniciando</strong> — subiu há pouco; vira “Rodando” se continuar de pé.</li>
+                <li><strong class="text-bad">Falhou</strong> — o serviço terminou logo depois de iniciar, várias vezes seguidas. Veja os Logs e a última falha.</li>
+                <li><strong class="text-muted">Parado</strong> — foi parado pelo botão Parar (ou ainda não foi iniciado).</li>
+                <li><strong class="text-accent2">Aguardando run.sh</strong> — o Worker existe, mas ainda não há serviço para rodar.</li>
+            </ul>
+
+            ${h('erros', 'Erros comuns')}
+            <ul class="flex flex-col gap-1.5">
+                <li><strong>Código 127 — comando não encontrado:</strong> o programa não está instalado no Worker. Instale pelo Terminal (<code>apk add …</code> / <code>apt install …</code>).</li>
+                <li><strong>Código 126 — sem permissão:</strong> o arquivo executado não é executável (<code>chmod +x</code>) ou é um diretório.</li>
+                <li><strong>Código 137 — encerrado pelo sistema:</strong> falta de memória no celular ou o processo foi morto.</li>
+                <li><strong>“Address in use”:</strong> outro serviço já usa essa porta neste celular. Troque a porta.</li>
+                <li><strong>Sobe e cai em seguida:</strong> provavelmente o programa foi para segundo plano (<code>&amp;</code>, <code>nohup</code>, <code>-d</code>/<code>--daemon</code>) e o script terminou.</li>
+            </ul>
+
+            ${h('opcoes', 'Opções do serviço')}
+            <ul class="flex flex-col gap-1.5">
+                <li><strong>Iniciar junto com o celular:</strong> quando o celular (ou o Supervisor) liga, o serviço sobe sozinho.</li>
+                <li><strong>Reiniciar automaticamente se cair:</strong> se o programa terminar, o DroidServer o executa de novo.</li>
+                <li>As duas valem a partir da próxima reinicialização do serviço.</li>
+            </ul>`;
+        }
+
+        // "há 5 min", "há 2 h"... a partir de um carimbo epoch (segundos)
+        function haQuanto(epoch) {
+            if (!epoch) return '—';
+            const s = Math.max(0, Date.now() / 1000 - epoch);
+            if (s < 60) return 'agora';
+            if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+            if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+            return `há ${Math.floor(s / 86400)} dia(s)`;
+        }
+
         function viewServico(ip, alias) {
             setNav(ip);
             setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Logs ao vivo</div>`);
@@ -1029,6 +1120,18 @@
                         </div>
                     </div>
                     <div id="svAlerta"></div>
+                    <div class="flex flex-col gap-2 pt-3 border-t border-slate-400/15 text-[13px]" id="svVisao">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="label-xs w-20">Endereço</span>
+                            <span id="svEndereco" class="text-muted">—</span>
+                            <a id="btnAbrir" class="btn btn-ghost !py-1 !px-2.5 text-[12px] hidden" target="_blank" rel="noopener">Abrir</a>
+                            <button type="button" id="btnTestar" class="btn btn-ghost !py-1 !px-2.5 text-[12px]">Testar</button>
+                            <span id="svTeste" class="text-[12px]"></span>
+                            ${botaoAjuda('porta', 'Ajuda: porta e endereço')}
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap"><span class="label-xs w-20">Falhas</span><span id="svFalhas" class="text-muted">—</span></div>
+                        <div class="flex items-center gap-2 flex-wrap"><span class="label-xs w-20">Recursos</span><span id="svRecursos" class="text-muted">—</span></div>
+                    </div>
                     <div class="flex gap-6 flex-wrap pt-3 border-t border-slate-400/15 text-[13px]">
                         <label class="flex items-center gap-2.5 cursor-pointer select-none" title="Quando o celular (ou o Supervisor) liga, o serviço sobe sozinho.">
                             <input type="checkbox" id="optAutostart" class="w-4 h-4 accent-indigo-500 cursor-pointer"> Iniciar junto com o celular
@@ -1036,6 +1139,7 @@
                         <label class="flex items-center gap-2.5 cursor-pointer select-none" title="Se o run.sh terminar ou o processo cair, o DroidServer o executa de novo.">
                             <input type="checkbox" id="optAutorestart" class="w-4 h-4 accent-indigo-500 cursor-pointer"> Reiniciar automaticamente se cair
                         </label>
+                        ${botaoAjuda('opcoes', 'Ajuda: opções do serviço')}
                         <span class="text-[11.5px] text-muted self-center" id="optNota"></span>
                     </div>
                 </section>
@@ -1044,6 +1148,7 @@
                     <div class="flex items-center justify-between gap-3 flex-wrap">
                         <div class="flex items-center gap-2.5">
                             <h2 class="text-[15px] font-bold font-mono">/app/run.sh</h2>
+                            ${botaoAjuda('passos', 'Ajuda: como escrever o run.sh')}
                             <span class="pill pill-warn hidden" id="edSujo">alterações não salvas</span>
                         </div>
                         <div class="flex gap-2 flex-wrap">
@@ -1052,11 +1157,14 @@
                             <button class="btn btn-primary" id="btnSalvarReiniciar">${svg(ICON.refresh)}Salvar e reiniciar</button>
                         </div>
                     </div>
-                    <textarea id="editor" spellcheck="false" rows="14" disabled
-                        class="w-full font-mono text-[13px] leading-relaxed px-4 py-3 rounded-xl bg-term border border-slate-400/15 text-slate-200 outline-none focus:border-accent resize-y"
-                        placeholder="Carregando o /app/run.sh…"></textarea>
+                    <div class="flex rounded-xl bg-term border border-slate-400/15 focus-within:border-accent overflow-hidden">
+                        <pre id="edLinhas" aria-hidden="true" class="select-none overflow-hidden shrink-0 py-3 pl-3 pr-2 text-right font-mono text-[13px] leading-relaxed text-slate-500 border-r border-slate-400/10">1</pre>
+                        <textarea id="editor" spellcheck="false" rows="14" disabled aria-label="Conteúdo do /app/run.sh"
+                            class="flex-1 min-w-0 font-mono text-[13px] leading-relaxed px-3 py-3 bg-transparent text-slate-200 outline-none resize-y whitespace-pre overflow-x-auto"
+                            placeholder="Carregando o /app/run.sh…"></textarea>
+                    </div>
                     <div id="edAvisos" class="flex flex-col gap-2"></div>
-                    <p class="text-[11.5px] text-muted">O serviço precisa ficar em <strong>primeiro plano</strong> (sem <code>&amp;</code>); use <code>exec</code> no último comando. Portas abertas aqui ficam em <code>http://${esc(ip)}:&lt;porta&gt;</code>. Instale programas pelo <a class="underline" href="/node/${esc(ip)}/worker/${esc(alias)}/terminal" data-link>Terminal</a> (ex.: <code>apk add python3</code>).</p>
+                    <p class="text-[11.5px] text-muted">Primeiro plano, <code>exec</code> no último comando e <code># droidserver: porta=N</code> para o painel saber o endereço. Instale programas pelo <a class="underline" href="/node/${esc(ip)}/worker/${esc(alias)}/terminal" data-link>Terminal</a>. Dúvidas? Clique em <strong>?</strong>.</p>
                 </section>
 
                 <section class="card p-5 flex flex-col gap-3">
@@ -1073,7 +1181,41 @@
                     </div>
                     <pre id="logs" class="h-[340px] overflow-auto px-4 py-3 rounded-xl bg-term border border-slate-400/15 font-mono text-[12.5px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all" aria-live="polite">Carregando logs…</pre>
                 </section>
-            </div>`;
+            </div>
+            <div id="ajudaFundo" class="fixed inset-0 z-40 bg-black/50 hidden"></div>
+            <aside id="ajudaPainel" role="dialog" aria-modal="true" aria-labelledby="ajudaTitulo" tabindex="-1"
+                class="fixed top-0 right-0 z-50 h-full w-full md:w-[480px] bg-surface border-l border-slate-400/15 shadow-card overflow-y-auto px-6 pb-10 text-[13px] text-slate-300 leading-relaxed outline-none hidden">
+                <div class="sticky top-0 -mx-6 px-6 py-4 bg-surface border-b border-slate-400/15 flex items-center justify-between">
+                    <h2 id="ajudaTitulo" class="text-[16px] font-bold text-white">Como pôr sua aplicação no ar</h2>
+                    <button type="button" id="ajudaFechar" class="btn btn-ghost !py-1 !px-2.5" aria-label="Fechar a ajuda">×</button>
+                </div>
+                ${ajudaServicoHtml(ip)}
+            </aside>`;
+
+            // ---- Ajuda ("?") ----
+            let gatilhoAjuda = null;
+            function abrirAjuda(secao, gatilho) {
+                gatilhoAjuda = gatilho || document.activeElement;
+                $('ajudaFundo').classList.remove('hidden');
+                $('ajudaPainel').classList.remove('hidden');
+                $('ajudaPainel').focus();
+                const alvo = document.getElementById(`ajuda-${secao}`);
+                if (alvo) alvo.scrollIntoView({ block: 'start' });
+            }
+            function fecharAjuda() {
+                if ($('ajudaPainel').classList.contains('hidden')) return;
+                $('ajudaFundo').classList.add('hidden');
+                $('ajudaPainel').classList.add('hidden');
+                if (gatilhoAjuda && gatilhoAjuda.focus) gatilhoAjuda.focus();
+            }
+            $('view').addEventListener('click', (e) => {
+                const b = e.target.closest('[data-ajuda]');
+                if (b) abrirAjuda(b.dataset.ajuda, b);
+            });
+            $('ajudaFechar').addEventListener('click', fecharAjuda);
+            $('ajudaFundo').addEventListener('click', fecharAjuda);
+            const onTeclaAjuda = (e) => { if (e.key === 'Escape') fecharAjuda(); };
+            document.addEventListener('keydown', onTeclaAjuda);
 
             // ---- Comandos (com resposta casada pelo req) ----
             const pendentes = new Map();
@@ -1101,8 +1243,36 @@
             let ultimoEstado = null;
             const TOM_DOT = { ok: 'dot-online', warn: 'dot-idle', bad: 'dot-offline', muted: 'dot-idle' };
             const TOM_TXT = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad', muted: 'text-muted' };
+            let cpuWorker;
+            function mostrarVisaoGeral(sv) {
+                const porta = sv.porta;
+                const url = porta ? `http://${ip}:${porta}/` : null;
+                $('svEndereco').innerHTML = url
+                    ? `<a class="underline text-slate-200" href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`
+                    : (sv.porta === undefined ? '—' : '<span class="text-warn">Porta não informada</span> — declare <code># droidserver: porta=N</code> no run.sh');
+                $('btnAbrir').classList.toggle('hidden', !url);
+                if (url) $('btnAbrir').href = url;
+
+                if (sv.falhas_hoje === undefined) $('svFalhas').textContent = '—';
+                else {
+                    const u = sv.ultima_falha;
+                    $('svFalhas').innerHTML = `${sv.falhas_hoje} hoje` + (u
+                        ? ` · última às ${esc(u.quando)} — <span class="text-bad">${esc(u.motivo)}</span> (código ${esc(String(u.codigo))})` : '');
+                }
+
+                const fmt = (v, suf) => (v === undefined || v === null ? '—' : `${String(v).replace('.', ',')}${suf}`);
+                const disco = sv.disco_mb === undefined ? '—' : (sv.disco_mb === null ? 'calculando…' : fmt(sv.disco_mb, ' MB'));
+                $('svRecursos').textContent = [
+                    `CPU ${fmt(cpuWorker, '%')}`, `RAM ${fmt(sv.ram_mb, ' MB')}`, `Disco ${disco}`,
+                    sv.distro || '—', `run.sh salvo ${sv.script_salvo_em ? haQuanto(sv.script_salvo_em) : '—'}`,
+                ].join(' · ');
+            }
+
             function mostrarEstado(sv) {
+                // A RAM só vem no sync; uma resposta de comando chega sem ela
+                if (sv.ram_mb === undefined && ultimoEstado && ultimoEstado.ram_mb !== undefined) sv = { ...sv, ram_mb: ultimoEstado.ram_mb };
                 ultimoEstado = sv;
+                mostrarVisaoGeral(sv);
                 const e = estadoServico(sv);
                 $('svDot').className = 'dot ' + TOM_DOT[e.tone];
                 $('svEstado').className = 'text-[16px] font-bold ' + TOM_TXT[e.tone];
@@ -1138,6 +1308,7 @@
                     const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
                     if (!res.ok) return;
                     const n = await res.json();
+                    cpuWorker = (n.cpu_workers || {})[alias];
                     const sv = (n.servicos || {})[alias];
                     if (sv) mostrarEstado(sv);
                     else if (!(n.workers || []).includes(alias)) {
@@ -1155,6 +1326,24 @@
                 if (ultimoEstado) mostrarEstado(ultimoEstado);
             }));
 
+            $('btnTestar').addEventListener('click', async () => {
+                const b = $('btnTestar');
+                b.disabled = true;
+                $('svTeste').className = 'text-[12px] text-muted';
+                $('svTeste').textContent = 'testando…';
+                try {
+                    const resp = await fetch(`/api/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}/testar`,
+                        { method: 'POST' });
+                    const r = await resp.json().catch(() => ({}));
+                    $('svTeste').className = 'text-[12px] ' + (r.ok ? 'text-ok' : 'text-bad');
+                    $('svTeste').textContent = r.ok ? `✓ ${r.status} em ${String(r.ms).replace('.', ',')} ms` : `✗ ${r.erro || 'falhou'}`;
+                } catch (e) {
+                    $('svTeste').className = 'text-[12px] text-bad';
+                    $('svTeste').textContent = '✗ o Host não respondeu';
+                }
+                b.disabled = false;
+            });
+
             async function configurar(chave, valor) {
                 const r = await comando('configurar', { [chave]: valor });
                 toast(r.ok ? 'Configuração salva' : (r.msg || 'Falhou'));
@@ -1166,7 +1355,13 @@
             // ---- Editor do /app/run.sh ----
             const ed = $('editor');
             let salvo = '';
-            const marcarSujo = () => $('edSujo').classList.toggle('hidden', ed.value === salvo);
+            const numerar = () => {
+                const n = Math.max(1, ed.value.split('\n').length);
+                $('edLinhas').textContent = Array.from({ length: n }, (_, i) => i + 1).join('\n');
+                $('edLinhas').scrollTop = ed.scrollTop;
+            };
+            const marcarSujo = () => { $('edSujo').classList.toggle('hidden', ed.value === salvo); numerar(); };
+            ed.addEventListener('scroll', () => { $('edLinhas').scrollTop = ed.scrollTop; });
             const mostrarAvisos = (avisos) => {
                 $('edAvisos').innerHTML = (avisos || []).map(a =>
                     `<div class="px-3.5 py-2.5 rounded-xl border border-warn/30 bg-warn/10 text-[12.5px]">⚠ ${esc(a)}</div>`).join('');
@@ -1264,6 +1459,7 @@
                 socket.off('servico_resposta', onResposta);
                 socket.off('node_updated', onUpd);
                 socket.off('connect', onConnect);
+                document.removeEventListener('keydown', onTeclaAjuda);
                 pendentes.forEach(fn => fn({ ok: false, msg: 'cancelado' }));
             };
         }
