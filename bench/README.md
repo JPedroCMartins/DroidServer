@@ -11,6 +11,7 @@ mediu) e imprime um resumo com média, desvio-padrão, IC 95%, mediana e percent
 | `e3_sobrecarga_proot.py` | **E3** sobrecarga do PRoot (nativo × Worker) | QP1 | SSH no celular |
 | `e4_latencia_terminal.py` | **E4** latência de eco do terminal | QP2 | PC (WebSocket do painel) |
 | `e7_disponibilidade.py` | **E7** disponibilidade em 24 h (+ **E6** quedas, **E10** consumo do agente) | QP3 / H1 | PC, em segundo plano |
+| `capturas_tela.py` | Capturas do painel para a seção 8.8 (Dashboard, Node, aba Serviço, ajuda, terminal) em `docs/obsidian-valt/figuras/painel_*.png`; usa o Chrome do sistema. Rodar **antes** da E7 | — | PC |
 | `e8_vazao.py` | **E8** vazão da API no Worker × nativa | QP3 | PC (`hey`) + SSH |
 | `comum.py` | login no painel, SSH, CSV e estatística | — | — |
 

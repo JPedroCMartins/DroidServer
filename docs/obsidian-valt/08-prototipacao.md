@@ -263,4 +263,32 @@ O projeto possui 211 testes automatizados com `pytest` (85 no Host e 126 no agen
 
 ## 8.8 Interface
 
-*(Inserir capturas de tela: Dashboard com os Nodes e as barras de CPU/RAM; página do Node com o formulário de criação e os cartões de Workers; terminal com `htop` em execução dentro de um Worker.)*
+O painel é uma página única servida pelo Host, organizada em três níveis: o *Dashboard* (todos os Nodes), a página de cada Node (seus Workers) e a página de cada Worker, com as abas **Serviço** e **Terminal**. As capturas abaixo foram feitas no cluster de dois Nodes usado na avaliação (capítulo 9) pelo *script* `bench/capturas_tela.py`.
+
+![[figuras/painel_dashboard.png]]
+
+*Figura 5 — Dashboard: Nodes do cluster com estado, CPU do DroidServer e RAM em tempo real. Fonte: o autor.*
+
+No *Dashboard*, cada Node aparece com o estado da última sincronização, o uso de CPU atribuído ao DroidServer e a memória do aparelho; o gráfico é atualizado em tempo real. É também nele que se cadastram Nodes novos, pela varredura da rede e pelo pareamento com *token* (seção 8.3).
+
+![[figuras/painel_node.png]]
+
+*Figura 6 — Página do Node: formulário de criação de Worker e cartões dos Workers, com a CPU de cada um. Fonte: o autor.*
+
+A página do Node concentra o ciclo de vida dos Workers: o formulário cria um Worker a partir de uma distribuição (Alpine ou Debian) e cada cartão mostra o estado do serviço, a CPU consumida e os atalhos para as abas Serviço e Terminal.
+
+![[figuras/painel_servico.png]]
+
+*Figura 7 — Aba Serviço: visão geral (endereço, falhas, recursos), editor do `/app/run.sh` e logs ao vivo. Fonte: o autor.*
+
+A aba Serviço (seção 8.4.1) permite pôr uma aplicação no ar sem terminal: a visão geral mostra o endereço em que o serviço responde, com os botões Abrir e Testar, as falhas do dia, a CPU e a RAM do serviço e o disco do Worker; abaixo ficam o editor do `run.sh` e os logs ao vivo. Os botões **?** abrem um guia lateral (Figura 8) com o passo a passo, as regras do *script*, exemplos por tipo de aplicação e os erros mais comuns.
+
+![[figuras/painel_servico_ajuda.png]]
+
+*Figura 8 — Guia lateral da aba Serviço, aberto pelo botão "?". Fonte: o autor.*
+
+![[figuras/painel_terminal.png]]
+
+*Figura 9 — Terminal no navegador com o `htop` em execução dentro de um Worker. Fonte: o autor.*
+
+O terminal (Figura 9) é um *shell* dentro do Worker, transmitido pelo WebSocket (Figura 3); nele se instalam pacotes e se copiam os arquivos da aplicação para `/app`, como num VPS acessado por SSH.

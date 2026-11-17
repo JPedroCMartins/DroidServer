@@ -171,6 +171,13 @@ function tamanhoPng(buf) {
 }
 
 function paragrafoImagem(caminho) {
+  if (!fs.existsSync(caminho)) {  // ex.: capturas de tela ainda não geradas (bench/capturas_tela.py)
+    console.warn(`  imagem ausente: ${path.relative(VAULT, caminho)}`);
+    return new Paragraph({
+      alignment: AlignmentType.CENTER, keepNext: true,
+      children: [new TextRun({ text: `[IMAGEM PENDENTE: ${path.basename(caminho)}]`, highlight: "yellow" })],
+    });
+  }
   const dados = fs.readFileSync(caminho);
   const { w, h } = tamanhoPng(dados);
   const escala = Math.min(1, LARGURA_IMG_PX / w, ALTURA_IMG_PX / h);
