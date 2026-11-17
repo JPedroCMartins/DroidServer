@@ -204,6 +204,29 @@ def descendentes(processos, raizes):
     return vistos
 
 
+def _rss_kb(pid, proc_dir):
+    try:
+        with open(os.path.join(proc_dir, str(pid), 'status')) as f:
+            for linha in f:
+                if linha.startswith('VmRSS:'):
+                    return int(linha.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+def memoria_grupos(grupos, proc_dir=None):
+    """{grupo: MB} somando o VmRSS das raízes e de todos os descendentes.
+
+    O pid do Supervisor é só o wrapper do proot (~3 MB); a memória real do
+    serviço está nos processos-filhos. Processo ilegível conta 0.
+    """
+    proc_dir = proc_dir or PROC_DIR
+    processos = ler_processos(proc_dir)
+    return {nome: round(sum(_rss_kb(p, proc_dir) for p in descendentes(processos, raizes)) / 1024, 1)
+            for nome, raizes in grupos.items()}
+
+
 class ProcessCPUMonitor:
     """Uso de CPU dos processos visíveis ao Termux, total e por grupo (worker).
 

@@ -18,7 +18,7 @@ import requests
 import socketio
 
 import servico
-from sysinfo import ProcessCPUMonitor, SystemMonitor
+from sysinfo import ProcessCPUMonitor, SystemMonitor, memoria_grupos
 
 log = logging.getLogger("node")
 
@@ -821,6 +821,10 @@ class NodeAgent:
         cpu_proc = self.cpu_processos.sample(self._grupos_de_processos(worker_pids))
         payload["cpu_termux"] = cpu_proc["total"]
         payload["cpu_workers"] = cpu_proc["grupos"]
+        # RAM só do serviço (pid no Supervisor), sem a sessão de terminal
+        for alias, mb in memoria_grupos({a: [p] for a, p in worker_pids.items()}).items():
+            if alias in payload["servicos"]:
+                payload["servicos"][alias]["ram_mb"] = mb
         if self.config.token:
             payload["token"] = self.config.token
 
