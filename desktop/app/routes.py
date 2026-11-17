@@ -27,6 +27,8 @@ nodes_conectados = {}
 sockets_nodes = {}
 # Série temporal de CPU/RAM por node, para o gráfico do painel. Fica fora de
 # nodes_conectados para não ir junto em toda chamada de /api/nodes.
+# É só um cache: a fonte é o registro local gravado no celular. Quando o
+# painel liga (ou o node aparece), ele pede o histórico ao node no sync.
 historico = {}
 
 # Segundos sem contato antes de um node ser marcado como Offline.
@@ -203,6 +205,17 @@ def _acumular_resultados(anteriores, novos):
             vistos.add(chave)
             lista.append(r)
     return lista[-MAX_RESULTADOS:]
+
+
+def _carregar_historico(ip, amostras):
+    """Substitui o cache pelo histórico gravado no celular (vem no sync)."""
+    serie = deque(maxlen=MAX_HISTORICO)
+    for a in amostras if isinstance(amostras, list) else []:
+        if not isinstance(a, dict) or not isinstance(a.get("t"), (int, float)):
+            continue
+        num = lambda v: v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+        serie.append({"t": round(float(a["t"]), 1), "cpu": num(a.get("cpu")), "ram": num(a.get("ram"))})
+    historico[ip] = serie
 
 
 def _registrar_amostra(ip, dados):
@@ -608,6 +621,10 @@ def node_sync():
         nodes_conectados[ip_node]["servicos"] = dados.get("servicos", {})
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
 
+    # Painel recém-ligado (ou node novo): pede o histórico gravado no celular
+    pedir_historico = ip_node not in historico and "historico" not in dados
+    if "historico" in dados:
+        _carregar_historico(ip_node, dados.get("historico"))
     _registrar_amostra(ip_node, dados)
     _reconciliar_logs(ip_node, dados.get("logs_ativos"))
 
@@ -620,7 +637,10 @@ def node_sync():
     if tarefas_para_enviar:
         logger.info("Enviadas %d tarefa(s) para o node %s", len(tarefas_para_enviar), ip_node)
 
-    return jsonify({"status": "ok", "tarefas": tarefas_para_enviar}), 200
+    resposta = {"status": "ok", "tarefas": tarefas_para_enviar}
+    if pedir_historico:
+        resposta["pedir_historico"] = True
+    return jsonify(resposta), 200
 
 
 # ---------------------------------------------------------------------------

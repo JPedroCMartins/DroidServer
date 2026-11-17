@@ -2,6 +2,7 @@ import os
 import signal
 import struct
 import threading
+import time
 
 import pytest
 import requests
@@ -20,6 +21,8 @@ def _pareamento_isolado(monkeypatch, tmp_path_factory):
     monkeypatch.setattr(node, "PAREAMENTO_ARQUIVO", str(arquivo))
     for nome in ("DROID_HOST_IP", "DROID_HOST_PORT", "DROID_TOKEN"):
         monkeypatch.delenv(nome, raising=False)
+    # nem o registro local de métricas (~/.config/droidserver/registro)
+    monkeypatch.setenv("DROID_REGISTRO_DIR", str(tmp_path_factory.mktemp("registro")))
     return arquivo
 
 
@@ -1204,3 +1207,118 @@ def test_memoria_grupos_soma_a_arvore(tmp_path):
         (d / "status").write_text(f"Name:\tx\nVmRSS:\t   {rss} kB\n")
     assert sysinfo.memoria_grupos({"w1": [10], "w2": [20], "w3": [99]}, proc_dir=str(tmp_path)) == \
         {"w1": 4.0, "w2": 4.0, "w3": 0.0}
+
+
+# ---------- Independência do painel: registro local no celular ----------
+
+MEDIDA_FAKE = {
+    "workers": ["demo"], "worker_status": {"demo": "RUNNING"}, "worker_pids": {"demo": 4242},
+    "servicos": {"demo": {"estado": "RUNNING", "pid": 4242, "uptime": "1:00:00", "porta": 8080}},
+    "cpu": None, "mem": {"total": 8, "usado": 4, "percent": 50.0},
+    "cpu_termux": 2.5, "cpu_workers": {"demo": 0.5},
+}
+
+
+def _agente_medindo(monkeypatch, http_ok=True):
+    agente = NodeAgent()
+    agente._amostrar = lambda: {k: (dict(v) if isinstance(v, dict) else v) for k, v in MEDIDA_FAKE.items()}
+    monkeypatch.setattr(node.registro, "checar_http", lambda porta: {
+        "http_ok": http_ok, "http_status": 200 if http_ok else None, "http_ms": 3.0 if http_ok else None,
+        "erro": "" if http_ok else "ConnectionError"})
+    return agente
+
+
+def _post_falhando(*a, **k):
+    raise ConnectionError("painel desligado")
+
+
+def test_ciclo_sem_pareamento_grava_registro_sem_falar_com_o_painel(monkeypatch):
+    monkeypatch.setattr("requests.post", lambda *a, **k: pytest.fail("não devia chamar o painel"))
+    agente = _agente_medindo(monkeypatch)
+    assert not agente.config.pareado
+    agente._ciclo()
+    [amostra] = agente.registro.ler()
+    assert amostra["cpu_termux"] == 2.5 and amostra["ram_pct"] == 50.0
+    assert amostra["servicos"]["demo"]["http_ok"] is True
+    assert amostra["servicos"]["demo"]["pid"] == 4242 and amostra["servicos"]["demo"]["cpu"] == 0.5
+    assert amostra["painel"] is None
+
+
+def test_ciclo_com_painel_desligado_segue_gravando(monkeypatch):
+    monkeypatch.setenv("DROID_HOST_IP", "10.0.0.9")
+    monkeypatch.setenv("DROID_TOKEN", "a" * 32)
+    monkeypatch.setattr("requests.post", _post_falhando)
+    agente = _agente_medindo(monkeypatch, http_ok=False)
+    agente._conectar_ws = lambda: False
+    agente._ciclo()
+    agente._ciclo()
+    amostras = agente.registro.ler()
+    assert len(amostras) == 2
+    assert all(a["painel"] is False for a in amostras)
+    assert amostras[0]["servicos"]["demo"]["erro"] == "ConnectionError"
+
+
+def test_painel_fora_avisa_uma_vez_e_avisa_a_volta(monkeypatch, caplog):
+    monkeypatch.setenv("DROID_HOST_IP", "10.0.0.9")
+    agente = _agente_medindo(monkeypatch)
+    agente._conectar_ws = lambda: False
+    monkeypatch.setattr("requests.post", _post_falhando)
+    with caplog.at_level("INFO", logger="node"):
+        for _ in range(5):
+            agente._ciclo()
+    avisos = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(avisos) == 1 and "registro local" in avisos[0].getMessage()
+
+    class Ok:
+        status_code = 200
+
+        def json(self):
+            return {"tarefas": []}
+
+    monkeypatch.setattr("requests.post", lambda *a, **k: Ok())
+    caplog.clear()
+    with caplog.at_level("INFO", logger="node"):
+        agente._ciclo()
+    assert any("de volta" in r.getMessage() for r in caplog.records)
+    assert agente.registro.ler()[-1]["painel"] is True
+
+
+def test_erro_ao_medir_nao_derruba_o_ciclo(monkeypatch):
+    agente = NodeAgent()
+
+    def explode():
+        raise RuntimeError("supervisorctl travou")
+
+    agente._amostrar = explode
+    agente._ciclo()  # não pode levantar
+
+
+def test_painel_pede_historico_e_recebe_o_do_registro(monkeypatch):
+    monkeypatch.setenv("DROID_HOST_IP", "10.0.0.9")
+    enviados = []
+
+    class Resp:
+        status_code = 200
+
+        def __init__(self, corpo):
+            self._corpo = corpo
+
+        def json(self):
+            return self._corpo
+
+    respostas = iter([{"tarefas": [], "pedir_historico": True}, {"tarefas": []}, {"tarefas": []}])
+
+    def fake_post(url, json=None, timeout=None):
+        enviados.append(json)
+        return Resp(next(respostas))
+
+    monkeypatch.setattr("requests.post", fake_post)
+    agente = _agente_medindo(monkeypatch)
+    agente.registro.gravar({"t": time.time() - 60, "cpu_termux": 1.5, "ram_pct": 40.0})
+    agente._conectar_ws = lambda: False
+    for _ in range(3):
+        agente._ciclo()
+    assert "historico" not in enviados[0]
+    hist = enviados[1]["historico"]
+    assert hist[0]["cpu"] == 1.5 and hist[0]["ram"] == 40.0 and len(hist) == 2
+    assert "historico" not in enviados[2]

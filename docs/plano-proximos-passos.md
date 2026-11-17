@@ -2,27 +2,22 @@
 
 Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega. Prioridade: **(1) o sistema funcionando de ponta a ponta numa demonstração, (2) dados medidos para o TCC, (3) texto final.** Tudo o que não serve a esses três itens fica para "trabalhos futuros".
 
-## Onde estamos (16/11)
+## Onde estamos (16/11, depois da Fase 2B)
 
-| Já funciona (validado no Xiaomi, Android 16) | Ainda não testado ou não existe |
+| Já funciona (validado nos aparelhos) | Ainda falta |
 |---|---|
-| `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | Estabilidade por **horas** de uso (E7) |
-| Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | Mais de um Node (cluster de verdade) |
-| Criar e remover Worker (Alpine e Debian) pelo painel | Painel **sem internet** (depende de CDNs, 2.26) |
-| **Serviço do Worker** (`/app/run.sh`) com estado, editor, logs ao vivo e opções | Segurança mínima (Fase 2) |
-| Aplicações reais respondendo na rede (portas 8080–8082) | Nenhum experimento da nota 09 executado |
-| Terminal no navegador, isolamento do `/sdcard` | Resultados, resumo, título único, documento ABNT final |
-| CPU do DroidServer (total e por Worker), RAM, gráfico em tempo real | |
-| 166 testes automatizados (60 no Host, 106 no agente) | |
-| Vault com 12 capítulos e ~45 referências | |
-
----|---|
-| `setup.sh`, agente, Host, painel | Rodar uma **aplicação real** num Worker e acessá-la pela rede |
-| Criar e remover Worker (Alpine) pelo painel | Debian e Arch no aparelho |
-| Terminal no navegador, isolamento do `/sdcard` | Mais de um Node (cluster de verdade) |
-| CPU do DroidServer (total e por Worker), RAM | Estabilidade por horas, **reboot** do celular |
-| 93 testes automatizados | Nenhum experimento da nota 09 executado |
-| Vault com 12 capítulos e ~45 referências | Resultados, resumo, título único, documento ABNT final |
+| `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | Estabilidade por **24 h** de uso (E7 — pendência P1) |
+| Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | Números da E7 no resumo, na 9.5 e na conclusão (P2) |
+| **Dois Nodes** (POCO X6 Pro e moto e40) | Conferir as referências ⚠ (4.5) |
+| Criar e remover Worker (Alpine e Debian) pelo painel | |
+| Capturas de tela do painel na seção 8.8 (4.6) | |
+| **Aba Serviço** (`/app/run.sh`): estado, editor, logs ao vivo, opções, visão geral e ajuda "?" | `.docx` final e revisão do orientador (4.7, 4.8) |
+| Aplicações reais respondendo na rede (portas 8080–8082) | |
+| Segurança mínima (Fase 2) e painel sem internet | |
+| Terminal no navegador, isolamento do `/sdcard`; CPU/RAM em tempo real | |
+| Experimentos E1–E5, E8 e E10 com figuras e resultados (nota 09) | |
+| 233 testes automatizados | |
+| Vault com 13 capítulos, título único, resumo/abstract e conclusão (faltando a E7) | |
 
 ---
 
@@ -32,7 +27,7 @@ A pedido do usuário, os experimentos que exigem esperar ficam para depois; prim
 
 | # | Pendência | Depende de |
 |---|---|---|
-| P1 | **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada). Rodadas anteriores interrompidas: 1ª por queda de energia (4,42 h, 99,94%, 1 *timeout*, 0 reinícios) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*`. Comando: `DROID_NODE_IP=192.168.1.100 DROID_SSH="-p 8022 192.168.1.100" nohup setsid uv run --directory bench e7_disponibilidade.py --worker demo_api --porta 8080 --horas 24 > bench/resultados/e7_moto_e40.log 2>&1 &` | Deixar o moto 24 h sem mexer |
+| P1 | **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada). Desde 16/11 a medição é feita **pelo próprio agente** (registro local, vault 8.5.1): basta anotar a hora de início e deixar o moto parado; o PC e o painel podem ser desligados. No fim: `DROID_SSH="-p 8022 192.168.1.100" uv run bench/e7_disponibilidade.py --worker demo_api --inicio "<data hora>" --horas 24`. Rodadas anteriores (medidas pelo PC) interrompidas: 1ª por queda de energia (4,42 h, 99,94%) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*` | Deixar o moto 24 h sem mexer |
 | P2 | Preencher os `[RESULTADO E7: ...]` do resumo/abstract (nota 00), da 9.5 e da conclusão (11.1 QP3 e 11.2), gerar a figura da E7 (`bench/graficos.py`) e decidir se a H1 fica **confirmada** ou **parcialmente confirmada** | P1 |
 | P3 | (Opcional) E7 com o Android em configuração padrão (otimização de bateria ativa), para saber se a condição (c) da H1 é necessária, não só suficiente | P1 + mais 24 h |
 | P4 | Regenerar o `.docx` com os números da E7 | P2 |
@@ -193,11 +188,11 @@ Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a p
 | # | Tarefa |
 |---|---|
 | 4.1 | ✅ *Feito em 16/11:* "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados" (capa, folha de rosto, vault, README; termo definido na seção 1.1) |
-| 4.2 | Escrever o capítulo 9.5 (Resultados) com tabelas e gráficos da Fase 3 |
+| 4.2 | 🟡 *16/11:* Capítulo 9.5 (Resultados) escrito com tabelas e gráficos de E1, E3, E4 e E8; falta a E7 |
 | 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (226/216 palavras); falta o valor da E7 |
 | 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; falta fechar com a E7 |
 | 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) |
-| 4.6 | Capturas de tela para a seção 8.8 (Dashboard, Node, terminal, CPU por Worker) |
+| 4.6 | ✅ *16/11:* seção 8.8 com as Figuras 5–9 (Dashboard com gráfico, Node, aba Serviço, ajuda, terminal), geradas por `bench/capturas_tela.py` no moto e40 |
 | 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final |
 | 4.8 | Revisão do orientador |
 
@@ -210,11 +205,12 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 Primeiro o que não depende de esperar; os experimentos ficam como pendências (P1–P4, no topo).
 
 ```
-Agora    4.6 capturas de tela (com a aba Serviço nova) → 4.5 referências ⚠ → enxugar o texto
-Quando der  P1 (E7, 24 h com o moto parado) → P2 → P4 → .docx final (4.7) → orientador
+Agora       ✅ 4.6 capturas de tela → ✅ registro local no Node → iniciar P1 (E7, 24 h com o moto parado; PC pode desligar)
+Durante a E7  4.5 referências ⚠ → enxugar o texto
+Depois      P2 → P4 → .docx final (4.7) → orientador
 ```
 
-Se o prazo apertar, corte nesta ordem: S5 → S3 → P3. **Não corte** a ajuda "?" (S1) nem a E7 (P1): uma é o que a banca vê na demonstração, a outra é a evidência da H1.
+A E7 é o caminho crítico (P2, P4, 4.7 e 4.8 dependem dela): iniciar assim que as capturas estiverem prontas e fazer 4.5 e o texto enquanto ela roda. Se o prazo apertar, corte P3. **Não corte** a E7 (P1): é a evidência da H1.
 
 ## Riscos
 
@@ -225,4 +221,4 @@ Se o prazo apertar, corte nesta ordem: S5 → S3 → P3. **Não corte** a ajuda 
 | Sem internet no local da defesa | 2.5 (painel com arquivos locais); o `apk`/`apt` também precisa de internet: deixar os Workers da demo com os pacotes já instalados |
 | O IP do celular ou do PC muda na hora (DHCP) | O painel acompanha o celular sozinho; se o PC mudar, "Adicionar" o Node de novo. Ensaiar uma vez antes |
 | Um único aparelho | ✅ Resolvido: dois Nodes (POCO X6 Pro e moto e40) |
-| Queda de energia (aconteceu em 16/11) | O Host é o ponto único de falha: os celulares seguem na bateria e os serviços não caem, mas o painel some. Na defesa, ligar o PC num *nobreak* ou usar um notebook com bateria |
+| Queda de energia (aconteceu em 16/11) | O Host é só gerenciamento: os celulares seguem na bateria, os serviços não caem e as métricas continuam no registro de cada celular (16/11); só o painel some. Na defesa, ligar o PC num *nobreak* ou usar um notebook com bateria |

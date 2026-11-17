@@ -77,7 +77,8 @@ def test_node_sync_registra_node(client):
         "cpu": 37.5, "mem": {"total": 8000000000, "usado": 4000000000, "percent": 50.0},
     })
     assert resp.status_code == 200
-    assert resp.get_json() == {"status": "ok", "tarefas": []}
+    # 1º contato: o painel também pede o histórico gravado no celular
+    assert resp.get_json() == {"status": "ok", "tarefas": [], "pedir_historico": True}
 
     nodes = client.get("/api/nodes").get_json()
     assert "10.0.0.5" in nodes
@@ -449,6 +450,25 @@ def test_historico_tem_limite_e_404(client, monkeypatch):
     amostras = client.get("/api/node/10.0.0.5/historico").get_json()["amostras"]
     assert [a["cpu"] for a in amostras] == [7.0, 8.0, 9.0, 10.0, 11.0]
     assert client.get("/api/node/10.0.0.99/historico").status_code == 404
+
+
+def test_painel_recem_ligado_pede_o_historico_ao_node(client):
+    """O painel pode ser desligado: o histórico vive no celular e volta no sync."""
+    r1 = client.post("/api/node_sync", json={"ip": "10.0.0.5", "cpu_termux": 3.0, "mem": {"percent": 50.0}})
+    assert r1.get_json().get("pedir_historico") is True
+    r2 = client.post("/api/node_sync", json={"ip": "10.0.0.5", "cpu_termux": 4.0, "mem": {"percent": 51.0}})
+    assert "pedir_historico" not in r2.get_json()
+
+
+def test_historico_do_node_substitui_o_cache(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "cpu_termux": 9.0, "mem": {"percent": 1.0}})
+    gravado = [{"t": 100.0, "cpu": 1.0, "ram": 40.0}, {"t": 110.0, "cpu": None, "ram": 41.0},
+               {"t": "x"}, "lixo", {"t": 120.0, "cpu": True, "ram": "50"}]
+    resp = client.post("/api/node_sync", json={"ip": "10.0.0.5", "cpu_termux": 2.0, "mem": {"percent": 42.0},
+                                               "historico": gravado})
+    assert "pedir_historico" not in resp.get_json()
+    amostras = client.get("/api/node/10.0.0.5/historico").get_json()["amostras"]
+    assert [(a["cpu"], a["ram"]) for a in amostras] == [(1.0, 40.0), (None, 41.0), (None, None), (2.0, 42.0)]
 
 
 # ---------- Cadastro de nodes (pareamento pelo painel) ----------

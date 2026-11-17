@@ -218,6 +218,16 @@ bash android/run.sh -d
 
 O `run.sh` garante que o `supervisord` esteja de pé e reinicia o agente se ele cair (espera exponencial de 2 s a 60 s).
 
+### O painel pode ser desligado
+
+Tudo o que roda e tudo o que é registrado fica no celular; o painel (Host) serve só para configurar, monitorar e gerenciar e pode ser desligado a qualquer momento. Sem ele, os serviços continuam sob o Supervisor e o agente continua medindo. A cada 10 s, com ou sem painel (e mesmo antes do pareamento), o agente grava em `~/.config/droidserver/registro/metricas.jsonl` (JSON Lines, 2 MB × 10 arquivos, cerca de uma semana):
+
+- CPU do DroidServer, RAM do aparelho e memória (RSS) do agente e do `supervisord`;
+- para cada serviço: estado no Supervisor, pid, tempo no ar, CPU, RAM e um `GET` local na porta declarada no `run.sh` (`http_ok`, status, tempo de resposta);
+- se o painel estava acessível naquele ciclo.
+
+Os logs dos serviços (`$PREFIX/var/log/droidserver_<worker>.log`), do Supervisor e do agente (`~/.config/droidserver/logs/node.log`) também ficam no celular. Quando o painel cai, o agente registra um aviso só na queda e outro na volta. Ao ser ligado de novo, o painel pede a cada Node os últimos 30 minutos do registro, e o gráfico volta completo.
+
 ### Mantendo o Node vivo
 
 O Android encerra processos em segundo plano agressivamente. Para um Node estável:
@@ -349,7 +359,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 211 testes (85 no Host e 126 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 233 testes (87 no Host e 146 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
@@ -361,4 +371,4 @@ O DroidServer é um protótipo acadêmico para uso **em rede local confiável**:
 - um Node **ainda não pareado** aceita o pareamento de qualquer máquina da rede (depois de pareado, só do mesmo Host ou de quem provar o token atual); o modo debug fica desligado por padrão e só pode ser ligado escutando em `127.0.0.1`;
 - o painel não depende de internet: Tailwind, xterm.js, Socket.IO e a fonte são servidos pelo Host (`desktop/app/static/vendor/`);
 - o PRoot isola apenas o sistema de arquivos: Workers compartilham rede, processos, CPU e memória com o aparelho (sem `cgroups`), e o `ptrace` adiciona sobrecarga em operações de E/S;
-- o cadastro de Nodes é persistido, mas o estado de operação (workers, métricas, histórico) fica em memória e é refeito pelos syncs em até 10 s após reiniciar o Host.
+- o cadastro de Nodes é persistido no Host; o estado de operação (workers, métricas) é refeito pelos syncs em até 10 s após reiniciar o Host, e o histórico do gráfico é recarregado do registro de cada celular.
