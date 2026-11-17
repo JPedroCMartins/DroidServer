@@ -156,7 +156,7 @@ Do protocolo da nota 09, executar **só o essencial**, com scripts no repositór
 
 Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatura e energia, que exigem Termux:API ou medidor USB) e o consumo de energia.
 
-## Fase 2B — Aba Serviço mais amigável 🟡 (abordagem A escolhida em 16/11)
+## Fase 2B — Aba Serviço mais amigável ✅ (abordagem A, feita e validada no moto e40 em 16/11)
 
 Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que roda, se está funcionando, onde acessar e o que fazer quando falha** — e consegue pôr uma aplicação no ar pelo painel (útil na demonstração para a banca). Proposta completa, com telas e alternativas: [`docs/superpowers/specs/2026-11-16-aba-servico-amigavel-design.md`](superpowers/specs/2026-11-16-aba-servico-amigavel-design.md).
 
@@ -172,12 +172,12 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 
 | # | Tarefa | Onde |
 |---|---|---|
-| S1 | **"?" com guia** em painel lateral: passo a passo (arquivos em `/app` → pacotes → `run.sh` → porta → salvar e reiniciar), regras do script, exemplos por tipo, erros comuns, significado de cada estado; "?" também nas opções | painel |
-| S2 | **Visão geral**: endereço `http://<ip>:<porta>` com "Abrir" e "Testar" (GET a partir do Host), reinícios do dia e última falha, CPU/RAM do serviço, disco do Worker, distribuição, último salvamento; botões habilitados conforme o estado | painel + Host + agente |
-| S3 | **Dados no agente**: porta/tipo lidos do cabeçalho do `run.sh` (`# droidserver: porta=8080`), RAM somando a árvore de processos, contagem de reinícios pelo log, `du` em segundo plano com cache de 10 min | agente |
+| S1 | ✅ **"?" com guia** em painel lateral: passo a passo (arquivos em `/app` → pacotes → `run.sh` → porta → salvar e reiniciar), regras do script, exemplos por tipo, erros comuns, significado de cada estado; "?" também nas opções | painel |
+| S2 | ✅ **Visão geral**: endereço `http://<ip>:<porta>` com "Abrir" e "Testar" (GET a partir do Host), reinícios do dia e última falha, CPU/RAM do serviço, disco do Worker, distribuição, último salvamento; botões habilitados conforme o estado | painel + Host + agente |
+| S3 | ✅ **Dados no agente**: porta/tipo lidos do cabeçalho do `run.sh` (`# droidserver: porta=8080`), RAM somando a árvore de processos, contagem de reinícios pelo log, `du` em segundo plano com cache de 10 min | agente |
 | ~~S4~~ | ~~Assistente~~ — fora desta fase (vai para trabalhos futuros, com o CI/CD) | — |
-| S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel |
-| S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos |
+| S5 | ✅ Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel |
+| S6 | ✅ Testes + validação no aparelho + README/vault (8.4.1) | todos |
 
 Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). O projeto usa **só o moto e40** (o POCO é o celular pessoal do usuário). Com a E7 adiada, o moto está livre para validar esta fase.
 
@@ -210,8 +210,7 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 Primeiro o que não depende de esperar; os experimentos ficam como pendências (P1–P4, no topo).
 
 ```
-Agora    Fase 2B no moto: S1 → S2 → S3 → S5 → S6 (plano em docs/superpowers/plans/)
-Depois   4.6 capturas de tela (com a aba Serviço nova) → 4.5 referências ⚠ → enxugar o texto
+Agora    4.6 capturas de tela (com a aba Serviço nova) → 4.5 referências ⚠ → enxugar o texto
 Quando der  P1 (E7, 24 h com o moto parado) → P2 → P4 → .docx final (4.7) → orientador
 ```
 
