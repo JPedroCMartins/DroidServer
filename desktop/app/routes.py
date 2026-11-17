@@ -513,6 +513,33 @@ def api_remover_node(ip):
     return jsonify({"ok": True, "despareado": despareado})
 
 
+@app.route('/api/node/<ip>/worker/<alias>/testar', methods=['POST'])
+def api_testar_servico(ip, alias):
+    """Testa, a partir do Host, o endereço do serviço (porta declarada no run.sh)."""
+    node = nodes_conectados.get(ip)
+    if not node or not _alias_valido(alias) or alias not in node.get("workers", []):
+        return jsonify({"ok": False, "erro": "Node ou worker não encontrado."}), 404
+    porta = ((node.get("servicos") or {}).get(alias) or {}).get("porta")
+    if not porta:
+        return jsonify({"ok": False, "url": None, "status": None, "ms": None,
+                        "erro": "porta não informada: declare '# droidserver: porta=N' no run.sh."})
+    url = f"http://{ip}:{int(porta)}/"
+    inicio = time.monotonic()
+    status, erro = None, None
+    try:
+        with urllib.request.urlopen(url, timeout=3) as resp:
+            status = resp.status
+    except urllib.error.HTTPError as e:
+        status = e.code  # respondeu com erro HTTP: o serviço está no ar
+    except (socket.timeout, TimeoutError):
+        erro = "sem resposta em 3 s."
+    except OSError as e:
+        erro = f"o serviço não respondeu em {url} ({getattr(e, 'reason', e)})."
+    ms = round((time.monotonic() - inicio) * 1000, 1)
+    return jsonify({"ok": status is not None, "url": url, "status": status,
+                    "ms": ms if status is not None else None, "erro": erro})
+
+
 @app.route('/api/node/<ip>/historico', methods=['GET'])
 def api_node_historico(ip):
     """Série de CPU (DroidServer) e RAM do node: [{t, cpu, ram}], mais antiga primeiro."""

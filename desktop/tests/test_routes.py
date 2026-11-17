@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import socket
+import urllib.error
 import sys
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
@@ -804,3 +806,64 @@ def test_sem_senha_o_painel_fica_aberto(client):
     assert client.get("/").status_code == 200
     assert client.get("/login").status_code == 302
     assert "Sair" not in client.get("/").get_data(as_text=True)
+
+
+# ---------- Aba Serviço: testar o endereço do serviço ----------
+
+def _sync_com_porta(client, porta):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"],
+                                        "servicos": {"w1": {"estado": "RUNNING", "porta": porta}}})
+
+
+class _Resp:
+    status = 200
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def test_testar_endereco_ok(client, monkeypatch):
+    _sync_com_porta(client, 8080)
+    urls = []
+    monkeypatch.setattr(_routes().urllib.request, "urlopen",
+                        lambda url, timeout=None: (urls.append((url, timeout)), _Resp())[1])
+    r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
+    assert r["ok"] is True and r["status"] == 200 and r["ms"] >= 0 and r["erro"] is None
+    assert r["url"] == "http://10.0.0.5:8080/" and urls == [("http://10.0.0.5:8080/", 3)]
+
+
+def test_testar_sem_porta(client):
+    _sync_com_porta(client, None)
+    r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
+    assert r["ok"] is False and r["url"] is None and "porta não informada" in r["erro"]
+
+
+@pytest.mark.parametrize("exc,trecho", [(ConnectionRefusedError(), "não respondeu"),
+                                        (socket.timeout(), "3 s")])
+def test_testar_recusado_e_timeout(client, monkeypatch, exc, trecho):
+    _sync_com_porta(client, 8080)
+
+    def falha(url, timeout=None):
+        raise exc
+    monkeypatch.setattr(_routes().urllib.request, "urlopen", falha)
+    r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
+    assert r["ok"] is False and trecho in r["erro"]
+
+
+def test_testar_erro_http_ainda_prova_que_esta_no_ar(client, monkeypatch):
+    _sync_com_porta(client, 8080)
+
+    def http_404(url, timeout=None):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+    monkeypatch.setattr(_routes().urllib.request, "urlopen", http_404)
+    r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
+    assert r["ok"] is True and r["status"] == 404
+
+
+def test_testar_node_ou_worker_desconhecido(client):
+    _sync_com_porta(client, 8080)
+    assert client.post("/api/node/10.9.9.9/worker/w1/testar").status_code == 404
+    assert client.post("/api/node/10.0.0.5/worker/nope/testar").status_code == 404
