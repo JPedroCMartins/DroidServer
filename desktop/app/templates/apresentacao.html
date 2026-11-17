@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex">
+    <title>DroidServer — Apresentação do TCC</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/inter.css') }}">
+    <style>
+        :root {
+            --bg: #0b1220;
+            --surface: #111c33;
+            --borda: rgba(148, 163, 184, .16);
+            --texto: #e2e8f0;
+            --muted: #8aa0bf;
+            --accent: #6366f1;
+            --accent2: #22d3ee;
+            --ok: #34d399;
+            --bad: #f87171;
+            --warn: #fbbf24;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body { height: 100%; }
+
+        body {
+            font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--texto);
+            background: #05090f;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Palco 1280×720 escalado para caber na janela (ver ajustar()). */
+        #palco {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 1280px;
+            height: 720px;
+            transform-origin: center center;
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            padding: 64px 80px 70px;
+            display: flex;
+            flex-direction: column;
+            background:
+                radial-gradient(1200px 600px at 10% -10%, rgba(99, 102, 241, .16), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(34, 211, 238, .10), transparent 60%),
+                var(--bg);
+            border-radius: 6px;
+            overflow: hidden;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity .25s ease;
+        }
+
+        .slide.ativo { opacity: 1; visibility: visible; }
+
+        .rotulo {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: var(--accent2);
+            margin-bottom: 10px;
+        }
+
+        h1 { font-size: 46px; font-weight: 800; line-height: 1.12; letter-spacing: -.01em; }
+        h2 { font-size: 38px; font-weight: 800; line-height: 1.15; letter-spacing: -.01em; margin-bottom: 28px; }
+        h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+
+        p, li { font-size: 21px; line-height: 1.5; color: #cbd5e1; }
+        ul { list-style: none; display: grid; gap: 14px; }
+        ul li { padding-left: 26px; position: relative; }
+        ul li::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: .62em;
+            width: 10px;
+            height: 10px;
+            border-radius: 3px;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+        }
+
+        b, strong { color: #fff; font-weight: 700; }
+        code { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: .88em; color: #a5b4fc; }
+        .muted { color: var(--muted); }
+        .pequeno { font-size: 16px; }
+
+        .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 1; min-height: 0; }
+        .grade3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+
+        .cartao {
+            border: 1px solid var(--borda);
+            background: rgba(17, 28, 51, .8);
+            border-radius: 16px;
+            padding: 22px 24px;
+            box-shadow: 0 10px 30px rgba(2, 6, 23, .45);
+        }
+
+        .numero { font-size: 52px; font-weight: 800; line-height: 1.12; letter-spacing: -.02em;
+                  background: linear-gradient(135deg, #a5b4fc, var(--accent2));
+                  -webkit-background-clip: text; background-clip: text; color: transparent; }
+        .numero.ruim { background: none; color: var(--bad); }
+        .legenda { font-size: 16px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+
+        .citacao {
+            border-left: 4px solid var(--accent);
+            padding: 14px 22px;
+            background: rgba(99, 102, 241, .08);
+            border-radius: 0 12px 12px 0;
+            font-size: 22px;
+            line-height: 1.5;
+            color: #e2e8f0;
+        }
+
+        .figura {
+            flex: 1;
+            min-height: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            border-radius: 14px;
+            padding: 10px;
+        }
+
+        .figura img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+        .figura.escura { background: transparent; padding: 0; }
+        .figura.escura img { border-radius: 12px; border: 1px solid var(--borda); }
+
+        .marca {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 64px;
+            height: 64px;
+            border-radius: 18px;
+            font-weight: 800;
+            font-size: 24px;
+            color: #fff;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+        }
+
+        .selo {
+            display: inline-block;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+            border-radius: 999px;
+        }
+
+        .selo.ok { background: rgba(52, 211, 153, .14); color: var(--ok); }
+        .selo.bad { background: rgba(248, 113, 113, .14); color: var(--bad); }
+        .selo.warn { background: rgba(251, 191, 36, .14); color: var(--warn); }
+
+        /* Arquitetura desenhada em HTML (Figura 1 do artigo). */
+        .arq { display: grid; grid-template-columns: 180px 110px 220px 130px 1fr; align-items: center; flex: 1; }
+        .arq .caixa { border: 1px solid var(--borda); border-radius: 14px; background: rgba(17, 28, 51, .9); padding: 16px; text-align: center; }
+        .arq .caixa h3 { margin-bottom: 4px; }
+        .arq .caixa p { font-size: 15px; line-height: 1.4; color: var(--muted); }
+        .arq .seta { text-align: center; font-size: 13px; color: var(--accent2); line-height: 1.3; }
+        .arq .seta::before { content: "⟷"; display: block; font-size: 30px; color: var(--accent); }
+        .arq .seta.esq::before { content: "⟵"; }
+        .nodes { display: grid; gap: 16px; }
+        .node { border: 1px dashed rgba(34, 211, 238, .4); border-radius: 16px; padding: 14px 16px; background: rgba(34, 211, 238, .04); }
+        .node .titulo { font-size: 15px; font-weight: 700; color: var(--accent2); margin-bottom: 8px; }
+        .termux { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; background: rgba(17, 28, 51, .9); }
+        .termux .linha { display: flex; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+        .chip { border-radius: 8px; padding: 5px 10px; background: rgba(99, 102, 241, .18); color: #c7d2fe; font-weight: 600; font-size: 14px; }
+        .chip.w { background: rgba(52, 211, 153, .14); color: #a7f3d0; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 19px; }
+        th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--borda); }
+        th { font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+        td { color: #cbd5e1; }
+
+        .rodape {
+            position: absolute;
+            left: 80px;
+            right: 80px;
+            bottom: 26px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #64748b;
+        }
+
+        /* Controles fora do palco */
+        #progresso {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--accent), var(--accent2));
+            transition: width .25s ease;
+            z-index: 5;
+        }
+
+        #controles {
+            position: fixed;
+            right: 14px;
+            bottom: 12px;
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            font-size: 13px;
+            color: var(--muted);
+            z-index: 5;
+            opacity: .35;
+            transition: opacity .2s;
+        }
+
+        #controles:hover { opacity: 1; }
+
+        #controles button {
+            font: inherit;
+            color: var(--texto);
+            background: rgba(17, 28, 51, .9);
+            border: 1px solid var(--borda);
+            border-radius: 8px;
+            padding: 6px 10px;
+            cursor: pointer;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .slide, #progresso { transition: none; }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="palco">
+
+        <!-- 1. Capa -->
+        <section class="slide" data-titulo="Capa" style="justify-content:center">
+            <div style="display:flex;align-items:center;gap:18px;margin-bottom:34px">
+                <span class="marca">DS</span>
+                <div>
+                    <div style="font-weight:700;font-size:22px">DroidServer</div>
+                    <div class="muted" style="font-size:14px;letter-spacing:.1em;text-transform:uppercase">Trabalho de Conclusão de Curso</div>
+                </div>
+            </div>
+            <h1 style="max-width:1040px">Orquestração de servidores virtuais privados em smartphones Android reaproveitados</h1>
+            <p style="margin-top:30px;font-size:24px"><b>João Pedro Correia Martins</b></p>
+            <p class="muted" style="font-size:19px">Engenharia da Computação · Centro Universitário do Norte — UNINORTE</p>
+        </section>
+
+        <!-- 2. Problema -->
+        <section class="slide" data-titulo="Problema">
+            <div class="rotulo">Contexto e problema</div>
+            <h2>Lixo eletrônico cresce; celulares ainda capazes vão para a gaveta</h2>
+            <div class="grade2" style="grid-template-columns: 340px 1fr; flex:0">
+                <div class="cartao">
+                    <div class="numero">62 Mt</div>
+                    <div class="legenda">de lixo eletrônico em 2022 — só <b>22,3%</b> formalmente reciclado (BALDÉ et al., 2024)</div>
+                </div>
+                <ul style="align-content:center">
+                    <li>Smartphones descartados têm CPU <i>multicore</i> ARM e RAM comparáveis a uma VPS básica.</li>
+                    <li>Mas o Android, <b>sem root</b>, não permite Docker (sem <i>namespaces</i>/<i>cgroups</i>).</li>
+                    <li>Doze, <code>lmkd</code> e o <i>phantom process killer</i> encerram processos em segundo plano.</li>
+                </ul>
+            </div>
+            <div class="citacao" style="margin-top:30px">
+                Como orquestrar um <i>cluster</i> de smartphones Android reaproveitados, contornando as restrições
+                de privilégio e de gerenciamento de processos, para provisionar ambientes Linux isolados de forma estável?
+            </div>
+        </section>
+
+        <!-- 3. Objetivos e hipótese -->
+        <section class="slide" data-titulo="Objetivos">
+            <div class="rotulo">Objetivos e hipótese</div>
+            <h2>Transformar celulares sem root em nós de um pequeno cluster</h2>
+            <div class="grade2">
+                <ul>
+                    <li><b>OE1</b> — Linux (Alpine e Debian) no aparelho com Termux + <code>proot-distro</code>, instalado por um script.</li>
+                    <li><b>OE2</b> — Agente em Python: métricas, tarefas e sincronização com o Host.</li>
+                    <li><b>OE3/OE4</b> — Painel web (Flask + Socket.IO) com ciclo de vida dos Workers e terminal no navegador.</li>
+                    <li><b>OE5</b> — Avaliar provisionamento, sobrecarga, latência e disponibilidade.</li>
+                </ul>
+                <div class="cartao" style="align-self:start">
+                    <h3 style="color:var(--accent2)">Hipótese H1</h3>
+                    <p style="font-size:19px">É possível manter ambientes Linux disponíveis por longos períodos, para cargas leves, <b>sem root</b>, desde que:</p>
+                    <ul style="margin-top:12px;gap:8px">
+                        <li style="font-size:18px">(a) a comunicação parta do próprio nó (<i>pull</i>);</li>
+                        <li style="font-size:18px">(b) os processos sejam supervisionados;</li>
+                        <li style="font-size:18px">(c) as otimizações de bateria sejam desativadas para o Termux.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. Arquitetura -->
+        <section class="slide" data-titulo="Arquitetura">
+            <div class="rotulo">Arquitetura</div>
+            <h2>Host controla Nodes; cada Node hospeda Workers</h2>
+            <div class="arq">
+                <div class="caixa">
+                    <h3>Administrador</h3>
+                    <p>navegador</p>
+                </div>
+                <div class="seta">HTTP +<br>WebSocket</div>
+                <div class="caixa">
+                    <h3>Host</h3>
+                    <p>Flask + Socket.IO<br>painel na porta 5050<br>fila de tarefas</p>
+                </div>
+                <div class="seta esq">sync a cada 10 s<br>+ WebSocket<br><span class="muted">(parte do Node)</span></div>
+                <div class="nodes">
+                    <div class="node">
+                        <div class="titulo">Node Android 01</div>
+                        <div class="termux">
+                            <div class="linha" style="margin-bottom:8px"><span class="chip">Termux</span><span class="chip">agente node.py</span><span class="chip">Supervisor</span></div>
+                            <div class="linha"><span class="muted">proot-distro:</span><span class="chip w">Worker alpine_api</span><span class="chip w">Worker debian_bd</span></div>
+                        </div>
+                    </div>
+                    <div class="node">
+                        <div class="titulo">Node Android 02</div>
+                        <div class="termux">
+                            <div class="linha" style="margin-bottom:8px"><span class="chip">Termux</span><span class="chip">agente node.py</span><span class="chip">Supervisor</span></div>
+                            <div class="linha"><span class="muted">proot-distro:</span><span class="chip w">Worker</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <p class="pequeno muted" style="margin-top:16px">Worker = ambiente Linux em PRoot, usado como uma VPS. O Host só contata o Node (porta 5051) para varredura e pareamento.</p>
+        </section>
+
+        <!-- 5. Decisões de projeto -->
+        <section class="slide" data-titulo="Protocolo">
+            <div class="rotulo">Como funciona</div>
+            <h2>Decisões que contornam as restrições do Android</h2>
+            <div class="grade3">
+                <div class="cartao">
+                    <h3>Comunicação parte do Node</h3>
+                    <p style="font-size:18px">O agente faz <code>POST /api/node_sync</code> a cada 10 s, envia estado e recebe tarefas. Sobrevive a troca de IP por DHCP e a reinícios do Host.</p>
+                </div>
+                <div class="cartao">
+                    <h3>Terminal por WebSocket</h3>
+                    <p style="font-size:18px">xterm.js no navegador ↔ Host ↔ agente ↔ PTY com <code>proot-distro login</code>. Cada terminal fica numa sala própria.</p>
+                </div>
+                <div class="cartao">
+                    <h3>Supervisão e registro local</h3>
+                    <p style="font-size:18px">O Supervisor reinicia os serviços; o Node grava métricas e verificações no próprio celular — independe do painel.</p>
+                </div>
+            </div>
+            <ul style="margin-top:30px">
+                <li>Nodes adicionados pelo painel: varredura da rede + pareamento com <b>token exclusivo</b> por Node.</li>
+                <li>Painel com senha, proteção contra requisições de outros sites e <b>233 testes</b> automatizados.</li>
+            </ul>
+        </section>
+
+        <!-- 6. Interface -->
+        <section class="slide" data-titulo="Interface">
+            <div class="rotulo">Protótipo</div>
+            <h2>Painel web e terminal no navegador</h2>
+            <div class="grade2">
+                <div class="figura escura"><img src="{{ url_for('static', filename='apresentacao/painel_dashboard.png') }}" alt="Dashboard do painel com os Nodes cadastrados"></div>
+                <div class="figura escura"><img src="{{ url_for('static', filename='apresentacao/painel_terminal.png') }}" alt="Terminal de um Worker aberto no navegador"></div>
+            </div>
+        </section>
+
+        <!-- 7. Ambiente de testes -->
+        <section class="slide" data-titulo="Avaliação">
+            <div class="rotulo">Avaliação experimental</div>
+            <h2>Dois aparelhos de gerações diferentes, em Wi-Fi doméstico</h2>
+            <div class="grade2" style="flex:0">
+                <div class="cartao">
+                    <h3>Node 1 — POCO X6 Pro 5G</h3>
+                    <p style="font-size:18px">Dimensity 8300 · 7,3 GB RAM · <b>Android 16</b><br><span class="muted">E1–E5, E8</span></p>
+                </div>
+                <div class="cartao">
+                    <h3>Node 2 — Motorola moto e40</h3>
+                    <p style="font-size:18px">Unisoc T700 · 3,4 GB RAM · <b>Android 11</b><br><span class="muted">E7 (24 h), E10</span></p>
+                </div>
+            </div>
+            <table style="margin-top:26px">
+                <tr><th>Questão</th><th>O que foi medido</th></tr>
+                <tr><td><b>QP1</b> Isolamento</td><td>Tempo de provisionamento (E1), disco (E2), sobrecarga do PRoot (E3)</td></tr>
+                <tr><td><b>QP2</b> Rede</td><td>Latência de eco do terminal (E4), entrega de tarefa (E5)</td></tr>
+                <tr><td><b>QP3</b> Estabilidade</td><td>Disponibilidade em 24 h (E7), vazão (E8), consumo do agente (E10)</td></tr>
+            </table>
+            <p class="pequeno muted" style="margin-top:14px">Host cabeado ao roteador · scripts e dados brutos em <code>bench/</code></p>
+        </section>
+
+        <!-- 8. E1 -->
+        <section class="slide" data-titulo="E1">
+            <div class="rotulo">E1 · Provisionamento</div>
+            <h2>Criar um Worker leva segundos; o painel espera o próximo sync</h2>
+            <div class="grade2" style="grid-template-columns: 330px 1fr">
+                <div style="display:grid;gap:18px;align-content:start">
+                    <div class="cartao"><div class="numero">1,9 s</div><div class="legenda">Alpine instalado no aparelho (imagem em cache) · 9 MB</div></div>
+                    <div class="cartao"><div class="numero">16 s</div><div class="legenda">até aparecer no painel (mediana) — dominado pelo ciclo de 10 s</div></div>
+                    <span class="selo ok">Critério ≤ 2 min atendido</span>
+                </div>
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e1_provisionamento.png') }}" alt="Gráfico do tempo de provisionamento"></div>
+            </div>
+        </section>
+
+        <!-- 9. E3 + E8 -->
+        <section class="slide" data-titulo="E3 e E8">
+            <div class="rotulo">E3 · E8 · Custo do PRoot</div>
+            <h2>Barato para CPU e escrita; caro para arquivos pequenos</h2>
+            <div class="grade3" style="margin-bottom:22px">
+                <div class="cartao"><div class="numero">+15%</div><div class="legenda">CPU pura · escrita sequencial +2%</div></div>
+                <div class="cartao"><div class="numero ruim">13×</div><div class="legenda">mais lento em metadados de arquivo (<code>ptrace</code> intercepta cada chamada)</div></div>
+                <div class="cartao"><div class="numero">~60 req/s</div><div class="legenda">API HTTP no Worker ≈ 40–45% da vazão nativa</div></div>
+            </div>
+            <div class="grade2">
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e3_sobrecarga_proot.png') }}" alt="Gráfico da sobrecarga do PRoot por carga"></div>
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e8_vazao.png') }}" alt="Gráfico da vazão por conexões simultâneas"></div>
+            </div>
+        </section>
+
+        <!-- 10. E4 -->
+        <section class="slide" data-titulo="E4">
+            <div class="rotulo">E4 · Latência do terminal</div>
+            <h2>O terminal responde rápido — se a rede ajudar</h2>
+            <div class="grade2" style="grid-template-columns: 360px 1fr">
+                <div style="display:grid;gap:18px;align-content:start">
+                    <div class="cartao"><div class="numero">58 ms</div><div class="legenda">p95 em 5 GHz (mediana 17 ms)</div><span class="selo ok" style="margin-top:12px">≤ 200 ms</span></div>
+                    <div class="cartao"><div class="numero ruim">360 ms</div><div class="legenda">p95 em 2,4 GHz — efeito do meio sem fio</div><span class="selo bad" style="margin-top:12px">acima do critério</span></div>
+                    <p class="pequeno muted">A medição revelou um defeito: o agente ficava em <i>long-polling</i> (p95 321 ms). Corrigido para WebSocket direto.</p>
+                </div>
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e4_latencia_terminal_cdf.png') }}" alt="Distribuição acumulada da latência de eco"></div>
+            </div>
+        </section>
+
+        <!-- 11. E7 — resultado pendente: troque só o bloco #e7-resultado -->
+        <section class="slide" data-titulo="E7">
+            <div class="rotulo">E7 · Disponibilidade em 24 h</div>
+            <h2>O serviço continua no ar sozinho no celular?</h2>
+            <div class="grade2" style="grid-template-columns: 1fr 420px">
+                <ul style="align-content:start">
+                    <li>moto e40 (Android 11), Worker Alpine com a API de demonstração, na tomada e com a tela apagada.</li>
+                    <li>O próprio agente faz <code>GET</code> no serviço a cada 10 s e grava no registro local — não depende do PC.</li>
+                    <li>Amostra ausente conta como indisponível (medida conservadora).</li>
+                    <li>Parcial: <b>99,94%</b> em 4,4 h, sem reinícios; o serviço ficou 6 h no ar mesmo com o PC desligado.</li>
+                </ul>
+                <div class="cartao" id="e7-resultado" style="align-self:start;text-align:center">
+                    <span class="selo warn">Resultado pendente</span>
+                    <div class="numero" style="margin-top:18px">— %</div>
+                    <div class="legenda">disponibilidade em 24 h · critério ≥ 99%</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 12. Conclusão -->
+        <section class="slide" data-titulo="Conclusão">
+            <div class="rotulo">Conclusão</div>
+            <h2>Celulares reaproveitados sustentam serviços leves, sem root</h2>
+            <div class="grade2">
+                <ul style="align-content:start">
+                    <li>Comunicação a partir do nó + supervisão de processos funcionaram: trocas de IP e reinícios foram absorvidos.</li>
+                    <li>Agente leve: 25–43 MB de RAM e &lt; 1% de CPU em repouso.</li>
+                    <li>Limites claros: PRoot não é virtualização, arquivos ficam ~13× mais lentos e a qualidade do Wi-Fi pesa tanto quanto o sistema.</li>
+                </ul>
+                <div class="cartao" style="align-self:start">
+                    <h3>Limitações e trabalhos futuros</h3>
+                    <ul style="gap:8px;margin-top:10px">
+                        <li style="font-size:18px">Sem TLS e sem limites de CPU/memória (sem <i>cgroups</i>)</li>
+                        <li style="font-size:18px">Temperatura e energia não medidas sem root</li>
+                        <li style="font-size:18px">Escalonamento automático entre Nodes</li>
+                        <li style="font-size:18px">Proxy reverso para expor os serviços</li>
+                    </ul>
+                </div>
+            </div>
+            <p style="margin-top:22px;font-size:26px;font-weight:700">Obrigado! <span class="muted" style="font-weight:500">Perguntas?</span></p>
+        </section>
+
+    </div>
+
+    <div id="progresso"></div>
+    <div id="controles">
+        <button type="button" id="ant" aria-label="Slide anterior">←</button>
+        <span id="contador">1 / 1</span>
+        <button type="button" id="prox" aria-label="Próximo slide">→</button>
+        <button type="button" id="tela" aria-label="Tela cheia" title="Tela cheia (F)">⛶</button>
+    </div>
+
+    <script>
+        (function () {
+            const palco = document.getElementById('palco');
+            const slides = Array.from(document.querySelectorAll('.slide'));
+            const total = slides.length;
+            let atual = 0;
+
+            // Rodapé com autor e número em todos os slides, menos a capa.
+            slides.forEach((s, i) => {
+                if (i === 0) return;
+                const r = document.createElement('div');
+                r.className = 'rodape';
+                r.innerHTML = '<span>DroidServer · TCC</span><span>' + (i + 1) + ' / ' + total + '</span>';
+                s.appendChild(r);
+            });
+
+            function ajustar() {
+                const escala = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+                palco.style.transform = 'translate(-50%, -50%) scale(' + escala + ')';
+            }
+
+            function ir(n, atualizarHash = true) {
+                atual = Math.max(0, Math.min(total - 1, n));
+                slides.forEach((s, i) => s.classList.toggle('ativo', i === atual));
+                document.getElementById('contador').textContent = (atual + 1) + ' / ' + total;
+                document.getElementById('progresso').style.width = ((atual + 1) / total * 100) + '%';
+                if (atualizarHash) history.replaceState(null, '', '#' + (atual + 1));
+            }
+
+            function deHash() {
+                const n = parseInt(location.hash.slice(1), 10);
+                return Number.isFinite(n) ? n - 1 : 0;
+            }
+
+            function telaCheia() {
+                if (document.fullscreenElement) document.exitFullscreen();
+                else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.altKey || e.ctrlKey || e.metaKey) return;
+                const k = e.key;
+                if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); ir(atual + 1); }
+                else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); ir(atual - 1); }
+                else if (k === 'Home') ir(0);
+                else if (k === 'End') ir(total - 1);
+                else if (k === 'f' || k === 'F') telaCheia();
+            });
+
+            document.getElementById('ant').addEventListener('click', (e) => { e.stopPropagation(); ir(atual - 1); });
+            document.getElementById('prox').addEventListener('click', (e) => { e.stopPropagation(); ir(atual + 1); });
+            document.getElementById('tela').addEventListener('click', (e) => { e.stopPropagation(); telaCheia(); });
+
+            // Clique: metade direita avança, metade esquerda volta.
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('#controles')) return;
+                ir(e.clientX > window.innerWidth / 2 ? atual + 1 : atual - 1);
+            });
+
+            // Deslizar no celular.
+            let toqueX = null;
+            document.addEventListener('touchstart', (e) => { toqueX = e.touches[0].clientX; }, { passive: true });
+            document.addEventListener('touchend', (e) => {
+                if (toqueX === null) return;
+                const dx = e.changedTouches[0].clientX - toqueX;
+                toqueX = null;
+                if (Math.abs(dx) > 40) ir(dx < 0 ? atual + 1 : atual - 1);
+            });
+
+            window.addEventListener('resize', ajustar);
+            window.addEventListener('hashchange', () => ir(deHash(), false));
+            ajustar();
+            ir(deHash(), false);
+        })();
+    </script>
+</body>
+
+</html>
