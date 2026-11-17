@@ -1,6 +1,6 @@
 # 9. Protocolo de Avaliação Experimental
 
-> [!info] Executado em 16/11/2026 (E7 em andamento)
+> [!info] Executado em 16/11/2026 (E7 pendente)
 > Este capítulo define **o que medir, como e com quais critérios**, para que os resultados sejam reprodutíveis (JAIN, 1991), e registra os resultados (seção 9.5). Os *scripts* e os dados brutos (CSV) estão em `bench/` no repositório; as figuras são geradas por `bench/graficos.py`.
 
 ## 9.1 Ambiente de testes
@@ -43,7 +43,7 @@ Compare pelo menos duas configurações para sustentar a hipótese H1:
 
 | Critério | Limite | Resultado (16/11/2026) |
 |---|---|---|
-| Disponibilidade do Worker em 24 h (configuração 2) | ≥ 99% | ⏳ E7 em andamento |
+| Disponibilidade do Worker em 24 h (configuração 2) | ≥ 99% | ⏳ E7 pendente (parciais: 99,94% em 4,4 h) |
 | Latência de eco do terminal, p95, em LAN | ≤ 200 ms | ✅ 58 ms em 5 GHz · ❌ 360 ms em 2,4 GHz |
 | Detecção de Node *offline* | ≤ 35 s | ✅ por construção: `STALE_TIMEOUT` = 25 s + até 10 s até o próximo *refresh* (não medido; E6 fora do escopo) |
 | Provisionamento de Worker Alpine | ≤ 2 min | ✅ 1,9 s no aparelho; 16 s (mediana) a 32 s (máx.) no painel |
@@ -130,9 +130,16 @@ Nota de método: as versões do Python diferem (3.14 no Termux e no Alpine; o ap
 
 *(Valores iniciais; o resumo completo sai com a E7.)*
 
-### E7 e E6 — Disponibilidade em 24 h (Node 2, em andamento)
+### E7 e E6 — Disponibilidade em 24 h (Node 2, pendente)
 
-Iniciada em 16/11/2026 às 14:11 no moto e40 (Worker Alpine com a API de demonstração, porta 8080), com o aparelho na tomada e a tela apagada. O *script* registra a cada 10 s a resposta HTTP, o estado do Node no painel (E6: transições para *Offline*) e o pid do serviço (reinícios). *(Preencher com `uv run bench/e7_disponibilidade.py --resumo <csv>`.)*
+A rodada completa de 24 h no moto e40 ainda não foi concluída. Duas rodadas parciais (Worker Alpine com a API de demonstração, porta 8080; aparelho na tomada e tela apagada; uma amostra a cada 10 s):
+
+| Rodada | Duração | Disponibilidade | Falhas | Reinícios do serviço | Quedas do Node (E6) | Interrupção |
+|---|---|---|---|---|---|---|
+| 1 | 4,42 h (1593 amostras) | 99,94% | 1 *timeout* de 10 s | 0 | 0 | queda de energia no PC (o celular seguiu na bateria; o serviço ficou 6 h no ar sem reiniciar) |
+| 2 | 0,23 h (82 amostras) | 100% | 0 | 0 | 0 | adiada pelo usuário |
+
+*(Preencher com a rodada de 24 h: `uv run bench/e7_disponibilidade.py --resumo <csv>`.)*
 
 ### E9 — Temperatura e energia
 

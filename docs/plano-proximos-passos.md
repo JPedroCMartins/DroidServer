@@ -26,6 +26,17 @@ Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega
 
 ---
 
+## ⏸ Pendências — experimentos deixados para depois (16/11)
+
+A pedido do usuário, os experimentos que exigem esperar ficam para depois; primeiro vem o que não depende de tempo (Fase 2B). Celular do projeto: **só o moto e40** (o POCO é pessoal).
+
+| # | Pendência | Depende de |
+|---|---|---|
+| P1 | **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada). Rodadas anteriores interrompidas: 1ª por queda de energia (4,42 h, 99,94%, 1 *timeout*, 0 reinícios) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*`. Comando: `DROID_NODE_IP=192.168.1.100 DROID_SSH="-p 8022 192.168.1.100" nohup setsid uv run --directory bench e7_disponibilidade.py --worker demo_api --porta 8080 --horas 24 > bench/resultados/e7_moto_e40.log 2>&1 &` | Deixar o moto 24 h sem mexer |
+| P2 | Preencher os `[RESULTADO E7: ...]` do resumo/abstract (nota 00), da 9.5 e da conclusão (11.1 QP3 e 11.2), gerar a figura da E7 (`bench/graficos.py`) e decidir se a H1 fica **confirmada** ou **parcialmente confirmada** | P1 |
+| P3 | (Opcional) E7 com o Android em configuração padrão (otimização de bateria ativa), para saber se a condição (c) da H1 é necessária, não só suficiente | P1 + mais 24 h |
+| P4 | Regenerar o `.docx` com os números da E7 | P2 |
+
 ## Fase 1 — Deixar a demonstração funcionando
 
 Objetivo: na defesa, criar um Worker pelo painel e abrir no navegador um serviço rodando nele.
@@ -127,7 +138,7 @@ Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitaçõe
 
 A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o painel não abre. É barata e protege a demonstração.
 
-## Fase 3 — Dados para o TCC 🟡 (16/11: E1–E5, E8 e E10 feitos; E7 rodando até 17/11 20:22)
+## Fase 3 — Dados para o TCC 🟡 (16/11: E1–E5, E8 e E10 feitos; E7 pendente — ver Pendências)
 
 > **16/11, 18:37:** uma queda de energia desligou o PC (e com ele o Host e o *script* da E7) depois de 4,4 h de medição (rodada 1, 99,9%, guardada em `bench/resultados/e7_rodada1_interrompida_*.csv`). O moto e40 seguiu na bateria e o serviço **não reiniciou** (6 h no ar). A E7 foi reiniciada às 20:22 (rodada 2, 24 h).
 
@@ -168,7 +179,7 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 | S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel |
 | S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos |
 
-Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). O projeto usa **só o moto e40** (o POCO é o celular pessoal do usuário); por isso o agente novo só vai ao aparelho depois que a E7 terminar (17/11, 20:22).
+Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). O projeto usa **só o moto e40** (o POCO é o celular pessoal do usuário). Com a E7 adiada, o moto está livre para validar esta fase.
 
 **Decisões** (16/11, usuário): abordagem **A**; repositório Git fica para uma futura **integração de CI/CD** (seção 10.3 do TCC), e as variáveis de ambiente vão junto. A porta é declarada num cabeçalho do `run.sh` (`# droidserver: porta=8080`). Perguntas originais, já respondidas:
 1. Abordagem: B (recomendada), só A ou C?
@@ -196,17 +207,15 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 
 ## Ordem sugerida (atualizada em 16/11)
 
-Fases 1, 1B, 2 e quase toda a 3 concluídas (16/11); 4.1, 4.3, 4.4 e a 1ª versão do .docx (4.7) feitas. Daqui para frente:
+Primeiro o que não depende de esperar; os experimentos ficam como pendências (P1–P4, no topo).
 
 ```
-17/11   E7 termina às 20:22 → preencher [RESULTADO E7] (resumo, 9.5, 11) → git push
-        S1 + S2 (ajuda e visão geral)
-18/11   S3 + S5 → S6 → capturas de tela (4.6)
-19/11   4.5 (referências ⚠) + enxugar o texto para o tamanho de artigo
-20/11   .docx final (4.7) + folga para imprevistos → orientador
+Agora    Fase 2B no moto: S1 → S2 → S3 → S5 → S6 (plano em docs/superpowers/plans/)
+Depois   4.6 capturas de tela (com a aba Serviço nova) → 4.5 referências ⚠ → enxugar o texto
+Quando der  P1 (E7, 24 h com o moto parado) → P2 → P4 → .docx final (4.7) → orientador
 ```
 
-Se o prazo for mais curto, corte nesta ordem: S5 → S3 (a visão geral mostra só o que já existe) → 1.6. **Não corte** o fim da E7 nem a ajuda "?" (S1): uma é a evidência da H1, a outra é o que a banca vai ver na demonstração.
+Se o prazo apertar, corte nesta ordem: S5 → S3 → P3. **Não corte** a ajuda "?" (S1) nem a E7 (P1): uma é o que a banca vê na demonstração, a outra é a evidência da H1.
 
 ## Riscos
 
