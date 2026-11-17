@@ -1,6 +1,6 @@
 # Aba Serviço mais amigável — proposta (aguardando decisões)
 
-Data: 16/11/2026 · Situação: **proposta**; as perguntas da seção 6 decidem o escopo antes de implementar.
+Data: 16/11/2026 · Situação: **abordagem B escolhida pelo usuário (16/11)**; demais decisões na seção 6 (propostas, aguardando aprovação).
 
 ## 1. Intenção
 
@@ -85,10 +85,16 @@ Worker demo_api · Alpine 3.24                              [Serviço] [Terminal
 - A contagem de reinícios pelo log se perde na rotação (1 MB × 3): aceitar "desde a última rotação" ou guardar um contador no agente.
 - Mudanças no agente só no POCO até a E7 terminar (17/11, ~14h).
 
-## 6. Perguntas em aberto (decidem o escopo)
+## 6. Decisões
 
-1. **Abordagem:** B (assistente que gera o `run.sh`, recomendada), só A (ajuda + informações) ou C (configuração estruturada)?
-2. **Como o código da aplicação chega ao `/app`?** Hoje só pelo terminal. Vale incluir no assistente um campo "repositório Git" (o Worker faz `git clone` na primeira execução) ou um **envio de arquivos** pelo painel (zip → `/app`)? É a maior barreira para quem não usa terminal, mas o envio de arquivos é o item mais caro desta lista.
-3. **Variáveis de ambiente** (ex.: *token* de um bot): precisa de um campo próprio (guardado no Worker, fora do `run.sh` e dos logs) ou podem ficar no próprio script por enquanto?
-4. **Quais tipos de aplicação** entram no assistente? Proposta: site estático, API Python, Node.js, bot/script Python e comando livre.
-5. **Para a defesa**, a prioridade é a ajuda e a tela de informações (rápidas e visíveis) ou o assistente completo?
+| # | Questão | Decisão | Origem |
+|---|---|---|---|
+| 1 | Abordagem | **B — assistente que gera o `run.sh`**, incluindo a ajuda "?" e a visão geral (A) | usuário |
+| 2 | Código no `/app` sem terminal | **Campo "repositório Git"** no assistente: o `run.sh` gerado faz `git clone` (instala o git se faltar) na 1ª execução e não clona de novo se `/app` já tiver o repositório. Envio de arquivos pelo painel fica para trabalhos futuros | proposta |
+| 3 | Variáveis de ambiente | **Campo próprio**: gravadas em `/app/.droidserver/env` (0600) e carregadas pelo lançador antes do `run.sh`; o painel lista só os **nomes** (valores não voltam ao navegador nem aparecem em logs); editar = substituir o valor | proposta |
+| 4 | Tipos do assistente | Site estático · API Python · Node.js · bot/script Python · comando livre | proposta |
+| 5 | Prioridade | S1 (ajuda "?") e S2 (visão geral) primeiro; depois S3, S4 (assistente), S5, S6 | proposta |
+
+**Consequências no agente** (além da seção 4): o lançador passa a carregar `/app/.droidserver/env` se existir (mudança de versão do lançador; a atualização automática já existe); nova ação `variaveis` (listar nomes, definir, remover) no canal `servico`; o editor do `run.sh` não exibe o arquivo de variáveis.
+
+**Fora desta fase:** envio de arquivos pelo painel, vários serviços por Worker, detecção automática de porta (bloqueada sem *root*).

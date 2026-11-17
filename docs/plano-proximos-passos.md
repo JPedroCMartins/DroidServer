@@ -145,7 +145,7 @@ Do protocolo da nota 09, executar **só o essencial**, com scripts no repositór
 
 Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatura e energia, que exigem Termux:API ou medidor USB) e o consumo de energia.
 
-## Fase 2B — Aba Serviço mais amigável 🟡 (proposta de 16/11, aguardando decisões)
+## Fase 2B — Aba Serviço mais amigável 🟡 (abordagem B escolhida em 16/11)
 
 Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que roda, se está funcionando, onde acessar e o que fazer quando falha** — e consegue pôr uma aplicação no ar pelo painel (útil na demonstração para a banca). Proposta completa, com telas e alternativas: [`docs/superpowers/specs/2026-11-16-aba-servico-amigavel-design.md`](superpowers/specs/2026-11-16-aba-servico-amigavel-design.md).
 
@@ -170,7 +170,7 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 
 **Total: ≈ 13 h** (só A: S1+S2+S3+S5+S6 ≈ 10 h). Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
 
-**Perguntas em aberto** (decidem o escopo)
+**Decisões** (16/11): abordagem **B** (usuário). Propostas aguardando aprovação: Git no assistente (envio de arquivos fica para depois), variáveis de ambiente em campo próprio (`/app/.droidserver/env`, só nomes no painel), os 5 tipos abaixo e a ordem S1 → S2 → S3 → S4 → S5 → S6. Perguntas originais:
 1. Abordagem: B (recomendada), só A ou C?
 2. Como o código chega ao `/app` sem terminal: campo "repositório Git" no assistente (barato) ou envio de arquivos pelo painel (caro)?
 3. Variáveis de ambiente (ex.: *token* de bot) num campo próprio, fora do script e dos logs, ou ficam no script por enquanto?
