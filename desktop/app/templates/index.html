@@ -1256,7 +1256,7 @@ exec python3 bot.py`)}
                 if (sv.falhas_hoje === undefined) $('svFalhas').textContent = '—';
                 else {
                     const u = sv.ultima_falha;
-                    $('svFalhas').innerHTML = `${sv.falhas_hoje} hoje` + (u
+                    $('svFalhas').innerHTML = `${esc(String(sv.falhas_hoje))} hoje` + (u
                         ? ` · última às ${esc(u.quando)} — <span class="text-bad">${esc(u.motivo)}</span> (código ${esc(String(u.codigo))})` : '');
                 }
 

@@ -828,7 +828,7 @@ class _Resp:
 def test_testar_endereco_ok(client, monkeypatch):
     _sync_com_porta(client, 8080)
     urls = []
-    monkeypatch.setattr(_routes().urllib.request, "urlopen",
+    monkeypatch.setattr(_routes(), "_abrir_servico",
                         lambda url, timeout=None: (urls.append((url, timeout)), _Resp())[1])
     r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
     assert r["ok"] is True and r["status"] == 200 and r["ms"] >= 0 and r["erro"] is None
@@ -848,7 +848,7 @@ def test_testar_recusado_e_timeout(client, monkeypatch, exc, trecho):
 
     def falha(url, timeout=None):
         raise exc
-    monkeypatch.setattr(_routes().urllib.request, "urlopen", falha)
+    monkeypatch.setattr(_routes(), "_abrir_servico", falha)
     r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
     assert r["ok"] is False and trecho in r["erro"]
 
@@ -858,7 +858,7 @@ def test_testar_erro_http_ainda_prova_que_esta_no_ar(client, monkeypatch):
 
     def http_404(url, timeout=None):
         raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
-    monkeypatch.setattr(_routes().urllib.request, "urlopen", http_404)
+    monkeypatch.setattr(_routes(), "_abrir_servico", http_404)
     r = client.post("/api/node/10.0.0.5/worker/w1/testar").get_json()
     assert r["ok"] is True and r["status"] == 404
 
@@ -867,3 +867,40 @@ def test_testar_node_ou_worker_desconhecido(client):
     _sync_com_porta(client, 8080)
     assert client.post("/api/node/10.9.9.9/worker/w1/testar").status_code == 404
     assert client.post("/api/node/10.0.0.5/worker/nope/testar").status_code == 404
+
+
+def test_testar_nao_segue_redirecionamento(client):
+    """Um 302 já prova que o serviço está no ar; seguir o Location sairia do Worker
+    (e podia passar de 3 s ou acessar outro endereço a partir do Host)."""
+    import http.server
+    import threading
+    import time as _t
+
+    class Redireciona(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", "http://10.255.255.1:9/")  # não roteável
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Redireciona)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        client.post("/api/node_sync", json={"ip": "127.0.0.1", "workers": ["w1"],
+                                            "servicos": {"w1": {"porta": srv.server_address[1]}}})
+        t0 = _t.monotonic()
+        r = client.post("/api/node/127.0.0.1/worker/w1/testar").get_json()
+        assert r["ok"] is True and r["status"] == 302
+        assert _t.monotonic() - t0 < 2
+    finally:
+        srv.shutdown()
+
+
+def test_testar_porta_invalida_vinda_do_node(client):
+    for porta in ("abc", 99999, True):
+        client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"],
+                                            "servicos": {"w1": {"porta": porta}}})
+        resp = client.post("/api/node/10.0.0.5/worker/w1/testar")
+        assert resp.status_code == 200 and "porta não informada" in resp.get_json()["erro"]

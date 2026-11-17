@@ -385,3 +385,37 @@ def test_disco_calcula_em_segundo_plano(termux, monkeypatch):
     d.mb("w1")
     time.sleep(0.3)
     assert len(calls) == 2                          # venceu: recalcula
+
+
+# ---------- revisão final da Fase 2B ----------
+
+def test_porta_com_digito_unicode_nao_derruba():
+    assert servico.ler_metadados("# droidserver: porta=8080²")["porta"] is None
+
+
+def test_estado_sobrevive_a_erro_num_worker(termux, comandos, monkeypatch):
+    servico.gravar_conf("w1")
+    def explode(alias):
+        raise RuntimeError("os-release corrompido")
+    monkeypatch.setattr(servico, "distro", explode)
+    est = servico.estado_servicos(["w1"], {})["w1"]   # não pode levantar: o sync do Node depende disso
+    assert est["distro"] is None and "porta" in est
+
+
+def test_falhas_contam_morte_por_sinal(termux):
+    conf = termux / "etc/supervisord.conf"
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(f"[supervisord]\nlogfile={termux}/sup.log\n")
+    (termux / "sup.log").write_text(
+        "2026-11-16 19:00:00,0 WARN exited: w1 (terminated by SIGKILL; not expected)\n")
+    r = servico.falhas_do_dia(["w1"], hoje="2026-11-16")["w1"]
+    assert r == {"falhas_hoje": 1, "ultima_falha": {"quando": "19:00:00", "codigo": 137,
+                                                    "motivo": "encerrado pelo sistema (memória ou kill)"}}
+
+
+def test_distro_ausente_nao_fica_em_cache(termux):
+    raiz = termux / "var/lib/proot-distro/containers/w1/rootfs"
+    assert servico.distro("w1") is None              # rootfs ainda sendo extraído
+    (raiz / "etc").mkdir()
+    (raiz / "etc/os-release").write_text('PRETTY_NAME="Debian GNU/Linux 13"\n')
+    assert servico.distro("w1") == "Debian GNU/Linux 13"

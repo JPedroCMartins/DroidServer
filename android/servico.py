@@ -16,6 +16,7 @@ grava o run.sh e o lançador diretamente, sem abrir uma sessão do proot.
 import logging
 import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -413,12 +414,16 @@ def ler_metadados(conteudo):
         if m:
             pares.update({k.lower(): v for k, v in PAR_RE.findall(m.group(1))})
     porta = pares.get("porta", "")
-    return {"porta": int(porta) if porta.isdigit() and 1 <= int(porta) <= 65535 else None}
+    # só dígitos ASCII: "8080²" passa em isdigit() mas quebra o int()
+    valida = re.fullmatch(r"[0-9]{1,5}", porta) and 1 <= int(porta) <= 65535
+    return {"porta": int(porta) if valida else None}
 
 
 # Falhas registradas pelo supervisord: "... WARN exited: w1 (exit status 127; not expected)"
+# ...também "exited: w1 (terminated by SIGKILL; not expected)", como o Android
+# encerra processos por falta de memória
 FALHA_RE = re.compile(r"^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ \w+ exited: (\S+) "
-                      r"\(exit status (\d+); not expected\)")
+                      r"\((?:exit status (\d+)|terminated by (SIG\w+))[^;]*; not expected\)")
 MOTIVOS = {126: "sem permissão de execução", 127: "comando não encontrado",
            137: "encerrado pelo sistema (memória ou kill)", 143: "encerrado (SIGTERM)"}
 
@@ -444,11 +449,18 @@ def falhas_do_dia(aliases, hoje=None):
         m = FALHA_RE.match(linha)
         if not m or m.group(1) != hoje or m.group(3) not in resultado:
             continue
-        codigo = int(m.group(4))
+        if m.group(4) is not None:
+            codigo = int(m.group(4))
+        else:  # morte por sinal: código de saída equivalente do shell (128 + n)
+            try:
+                codigo = 128 + signal.Signals[m.group(5)].value
+            except KeyError:
+                codigo = None
         r = resultado[m.group(3)]
         r["falhas_hoje"] += 1
         r["ultima_falha"] = {"quando": m.group(2), "codigo": codigo,
-                             "motivo": MOTIVOS.get(codigo, f"erro no programa (código {codigo})")}
+                             "motivo": MOTIVOS.get(codigo, f"erro no programa (código {codigo})"
+                                                   if codigo is not None else f"encerrado por {m.group(5)}")}
     return resultado
 
 
@@ -471,6 +483,8 @@ def distro(alias):
             if m:
                 nome = m.group(1)
                 break
+        if nome is None:
+            return None  # rootfs ainda sendo extraído: tenta de novo no próximo sync
         _cache_distro[raiz] = nome
     return _cache_distro[raiz]
 
@@ -529,7 +543,12 @@ def _salvo_em(alias):
 def estado_servicos(aliases, status=None):
     """Estado de cada serviço para o painel."""
     status = status if status is not None else status_supervisor()
-    falhas = falhas_do_dia(aliases)
+    try:
+        falhas = falhas_do_dia(aliases)
+    except Exception:
+        log.exception("[-] Falha ao ler o log do supervisord")
+        falhas = {}
+    falhas = {a: falhas.get(a, {"falhas_hoje": 0, "ultima_falha": None}) for a in aliases}
     resultado = {}
     for alias in aliases:
         opcoes = ler_opcoes(alias)
@@ -544,13 +563,25 @@ def estado_servicos(aliases, status=None):
             "gerenciado": bool(opcoes and opcoes["atual"]),
             "autostart": opcoes["autostart"] if opcoes else None,
             "autorestart": opcoes["autorestart"] if opcoes else None,
-            "porta": ler_metadados(ler_script(alias))["porta"],
-            "distro": distro(alias),
-            "script_salvo_em": _salvo_em(alias),
-            "disco_mb": disco.mb(alias),
             **falhas[alias],
         }
+        resultado[alias].update(_extras_visao_geral(alias))
     return resultado
+
+
+def _extras_visao_geral(alias):
+    """Campos da visão geral; um erro aqui não pode derrubar o sync do Node."""
+    extras = {}
+    for chave, obter in (("porta", lambda: ler_metadados(ler_script(alias))["porta"]),
+                         ("distro", lambda: distro(alias)),
+                         ("script_salvo_em", lambda: _salvo_em(alias)),
+                         ("disco_mb", lambda: disco.mb(alias))):
+        try:
+            extras[chave] = obter()
+        except Exception:
+            log.exception("[-] '%s': falha ao obter %s para a visão geral", alias, chave)
+            extras[chave] = None
+    return extras
 
 
 # ---------------------------------------------------------------------------
