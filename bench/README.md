@@ -10,7 +10,7 @@ mediu) e imprime um resumo com média, desvio-padrão, IC 95%, mediana e percent
 | `e1_provisionamento.py` | **E1** tempo de provisionamento (+ **E2** disco, **E5** entrega da tarefa) | QP1, QP2 | PC (API do painel) + SSH |
 | `e3_sobrecarga_proot.py` | **E3** sobrecarga do PRoot (nativo × Worker) | QP1 | SSH no celular |
 | `e4_latencia_terminal.py` | **E4** latência de eco do terminal | QP2 | PC (WebSocket do painel) |
-| `e7_disponibilidade.py` | **E7** disponibilidade em 24 h (+ **E6** quedas, **E10** consumo do agente) | QP3 / H1 | PC, em segundo plano |
+| `e7_disponibilidade.py` | **E7** disponibilidade em 24 h (+ **E6** lacunas do agente, **E10** consumo do agente) a partir do registro gravado no celular; o PC pode ficar desligado durante a medição | QP3 / H1 | Celular (registro do agente); PC só no fim, por SSH |
 | `capturas_tela.py` | Capturas do painel para a seção 8.8 (Dashboard, Node, aba Serviço, ajuda, terminal) em `docs/obsidian-valt/figuras/painel_*.png`; usa o Chrome do sistema. Rodar **antes** da E7 | — | PC |
 | `e8_vazao.py` | **E8** vazão da API no Worker × nativa | QP3 | PC (`hey`) + SSH |
 | `comum.py` | login no painel, SSH, CSV e estatística | — | — |
@@ -36,8 +36,9 @@ uv run bench/e4_latencia_terminal.py --worker demo_api --amostras 500
 uv run bench/e1_provisionamento.py --distros alpine debian --repeticoes 5 --cache com sem
 uv run bench/e3_sobrecarga_proot.py --worker demo_debian --repeticoes 10
 uv run bench/e8_vazao.py --worker demo_api --porta 8080 --concorrencias 1 10 50 --repeticoes 5 --duracao 20
-nohup uv run bench/e7_disponibilidade.py --worker demo_api --porta 8080 --horas 24 > bench/resultados/e7.log 2>&1 &
-uv run bench/e7_disponibilidade.py --resumo bench/resultados/e7_disponibilidade_<data>.csv   # parcial ou final
+# E7: anote a hora de início e deixe o celular parado; o PC e o painel podem ser desligados
+uv run bench/e7_disponibilidade.py --worker demo_api --inicio "2026-11-17 00:00" --horas 24   # no fim (ou parcial)
+uv run bench/e7_disponibilidade.py --resumo bench/resultados/e7_disponibilidade_<data>.csv
 ```
 
 ## Notas de método

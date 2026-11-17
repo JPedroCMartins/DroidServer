@@ -11,7 +11,7 @@
 - **Políticas do Android:** Doze, `lmkd` e *phantom process killer* podem encerrar o agente ou os Workers; as mitigações exigem configuração manual (e, para o *phantom process killer*, ADB ou opções de desenvolvedor).
 - **Segurança:** a Fase 2 acrescentou senha no painel, isolamento dos terminais por sala, autenticação do WebSocket dos Nodes e bloqueio de requisições de outros sites, mas **não há TLS**: senha e tokens trafegam em claro na rede local (mitigação: proxy HTTPS).
 - **Pareamento sem confirmação no aparelho:** um Node ainda não pareado aceita o pareamento de qualquer máquina da rede local; não há código de confirmação exibido no celular. Depois de pareado, só o mesmo Host pode parear de novo ou desfazer. O token trafega sem TLS.
-- **Estado volátil e ponto único de falha:** o Host guarda tudo em memória e não é replicado.
+- **Ponto único de falha no gerenciamento:** o Host não é replicado. Sem ele, não é possível criar ou remover Workers nem abrir terminais pelo painel; os serviços, os logs e as métricas, porém, continuam nos celulares (seção 8.5.1).
 - **Sem escalonamento:** o administrador escolhe manualmente em qual Node cada Worker roda.
 - **Serviços não expostos:** não há mapeamento de portas nem *proxy* reverso para acessar, a partir do Host, os serviços que rodam nos Workers.
 - **Temperatura e energia não medidas (E9):** sem *root*, `/sys/class/thermal` e `/sys/class/power_supply` são negados pelo Android; seria necessário o Termux:API (bateria) ou um medidor USB externo.

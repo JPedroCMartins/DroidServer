@@ -27,7 +27,7 @@ Recomenda-se ao menos três aparelhos de gerações diferentes para observar a h
 | E4 | QP2 | **Latência de eco do terminal** (ms) | Enviar um caractere e medir o tempo até o eco voltar ao navegador (instrumentar o JS com `performance.now()`) | 1000 amostras; reportar mediana, p95, p99 |
 | E5 | QP2 | **Latência de entrega de tarefa** (s) | Tempo entre o enfileiramento no Host e o início da execução no Node; esperado ≈ U(0, 10 s) | 50 |
 | E6 | QP2 | **Tempo de detecção de falha** (s) e falsos positivos | Desligar o Wi-Fi do Node e medir até o painel mostrar *Offline*; contar transições *Offline* indevidas em 24 h | 20 / 24 h |
-| E7 | QP3 | **Disponibilidade** (%) | Worker com um servidor HTTP simples; um *script* no Host faz `GET` a cada 10 s por 24–72 h; disponibilidade = respostas OK / total. Registrar cada `signal 9` e reinício | 1 rodada por configuração |
+| E7 | QP3 | **Disponibilidade** (%) | Worker com um servidor HTTP simples; o próprio agente faz `GET` local no serviço a cada 10 s e grava no registro do celular (seção 8.5.1), por 24 h, com o painel ligado ou não; disponibilidade = amostras OK / amostras esperadas (lacunas no registro contam como indisponibilidade). Registrar cada reinício (PID novo) | 1 rodada por configuração |
 | E8 | QP3 | **Vazão de um microsserviço** (req/s) e CPU do Worker (`cpu_workers`) | `wrk` ou `hey` contra uma API leve (Flask/FastAPI ou Go) no Worker; comparar com o mesmo serviço em uma VPS básica ou num Raspberry Pi, se disponível | 5 |
 | E9 | QP3 | **Temperatura e energia** | Ler `/sys/class/thermal/*/temp` e `/sys/class/power_supply/battery/*` (quando acessíveis) ou usar um medidor USB na tomada, em repouso e sob carga E8 | Contínuo durante E7/E8 |
 | E10 | QP3 | **Consumo do agente** | CPU (métrica `cpu_termux` com os Workers parados) e RSS do `node.py` e do `supervisord` em repouso | 1 h |
@@ -139,7 +139,9 @@ A rodada completa de 24 h no moto e40 ainda não foi concluída. Duas rodadas pa
 | 1 | 4,42 h (1593 amostras) | 99,94% | 1 *timeout* de 10 s | 0 | 0 | queda de energia no PC (o celular seguiu na bateria; o serviço ficou 6 h no ar sem reiniciar) |
 | 2 | 0,23 h (82 amostras) | 100% | 0 | 0 | 0 | adiada pelo usuário |
 
-*(Preencher com a rodada de 24 h: `uv run bench/e7_disponibilidade.py --resumo <csv>`.)*
+As rodadas 1 e 2 mediam a partir do PC, pelo painel; a rodada 1 terminou justamente porque o PC desligou. A rodada definitiva usa o registro local do Node (seção 8.5.1), que não depende do PC: o `GET` parte do próprio celular, pela interface local. Assim, a E7 mede se o serviço permanece vivo e respondendo no Android, que é o que a H1 afirma, e não a estabilidade do Wi-Fi entre o celular e o PC (a latência pela rede já é tratada na E4). Uma amostra ausente (agente parado, aparelho desligado ou Termux congelado pelo sistema) conta como indisponibilidade, o que torna a medida conservadora.
+
+*(Preencher com a rodada de 24 h: `uv run bench/e7_disponibilidade.py --worker demo_api --inicio "<data hora>" --horas 24`.)*
 
 ### E9 — Temperatura e energia
 

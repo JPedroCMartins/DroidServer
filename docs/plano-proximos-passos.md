@@ -16,7 +16,7 @@ Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega
 | Segurança mínima (Fase 2) e painel sem internet | |
 | Terminal no navegador, isolamento do `/sdcard`; CPU/RAM em tempo real | |
 | Experimentos E1–E5, E8 e E10 com figuras e resultados (nota 09) | |
-| 211 testes automatizados | |
+| 233 testes automatizados | |
 | Vault com 13 capítulos, título único, resumo/abstract e conclusão (faltando a E7) | |
 
 ---
@@ -27,7 +27,7 @@ A pedido do usuário, os experimentos que exigem esperar ficam para depois; prim
 
 | # | Pendência | Depende de |
 |---|---|---|
-| P1 | **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada). Rodadas anteriores interrompidas: 1ª por queda de energia (4,42 h, 99,94%, 1 *timeout*, 0 reinícios) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*`. Comando: `DROID_NODE_IP=192.168.1.100 DROID_SSH="-p 8022 192.168.1.100" nohup setsid uv run --directory bench e7_disponibilidade.py --worker demo_api --porta 8080 --horas 24 > bench/resultados/e7_moto_e40.log 2>&1 &` | Deixar o moto 24 h sem mexer |
+| P1 | **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada). Desde 16/11 a medição é feita **pelo próprio agente** (registro local, vault 8.5.1): basta anotar a hora de início e deixar o moto parado; o PC e o painel podem ser desligados. No fim: `DROID_SSH="-p 8022 192.168.1.100" uv run bench/e7_disponibilidade.py --worker demo_api --inicio "<data hora>" --horas 24`. Rodadas anteriores (medidas pelo PC) interrompidas: 1ª por queda de energia (4,42 h, 99,94%) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*` | Deixar o moto 24 h sem mexer |
 | P2 | Preencher os `[RESULTADO E7: ...]` do resumo/abstract (nota 00), da 9.5 e da conclusão (11.1 QP3 e 11.2), gerar a figura da E7 (`bench/graficos.py`) e decidir se a H1 fica **confirmada** ou **parcialmente confirmada** | P1 |
 | P3 | (Opcional) E7 com o Android em configuração padrão (otimização de bateria ativa), para saber se a condição (c) da H1 é necessária, não só suficiente | P1 + mais 24 h |
 | P4 | Regenerar o `.docx` com os números da E7 | P2 |
@@ -205,7 +205,7 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 Primeiro o que não depende de esperar; os experimentos ficam como pendências (P1–P4, no topo).
 
 ```
-Agora       ✅ 4.6 capturas de tela → iniciar P1 (E7, 24 h com o moto parado)
+Agora       ✅ 4.6 capturas de tela → ✅ registro local no Node → iniciar P1 (E7, 24 h com o moto parado; PC pode desligar)
 Durante a E7  4.5 referências ⚠ → enxugar o texto
 Depois      P2 → P4 → .docx final (4.7) → orientador
 ```
@@ -221,4 +221,4 @@ A E7 é o caminho crítico (P2, P4, 4.7 e 4.8 dependem dela): iniciar assim que 
 | Sem internet no local da defesa | 2.5 (painel com arquivos locais); o `apk`/`apt` também precisa de internet: deixar os Workers da demo com os pacotes já instalados |
 | O IP do celular ou do PC muda na hora (DHCP) | O painel acompanha o celular sozinho; se o PC mudar, "Adicionar" o Node de novo. Ensaiar uma vez antes |
 | Um único aparelho | ✅ Resolvido: dois Nodes (POCO X6 Pro e moto e40) |
-| Queda de energia (aconteceu em 16/11) | O Host é o ponto único de falha: os celulares seguem na bateria e os serviços não caem, mas o painel some. Na defesa, ligar o PC num *nobreak* ou usar um notebook com bateria |
+| Queda de energia (aconteceu em 16/11) | O Host é só gerenciamento: os celulares seguem na bateria, os serviços não caem e as métricas continuam no registro de cada celular (16/11); só o painel some. Na defesa, ligar o PC num *nobreak* ou usar um notebook com bateria |

@@ -240,6 +240,10 @@ $$\text{CPU}_\%=100\cdot\frac{\sum_p \Delta(\text{utime}_p+\text{stime}_p)}{\tex
 
 A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID obtido do `supervisorctl status`), a sessão de terminal e seus descendentes. Com dois laços infinitos dentro de um Worker, o painel exibiu 25,0% no total e 24,9% no Worker. A métrica não inclui outros aplicativos do aparelho, e processos que nascem e morrem entre duas amostras não são contabilizados.
 
+### 8.5.1 Registro local: o Node independe do painel
+
+O Host é apenas o plano de gerenciamento e pode ser desligado a qualquer momento. Por isso, a cada ciclo de 10 s, o agente primeiro mede o Node e grava a amostra no próprio celular, e só depois tenta sincronizar com o painel; com o painel desligado, ou antes do pareamento, a medição e o registro continuam. O registro (`~/.config/droidserver/registro/metricas.jsonl`, uma amostra JSON por linha, com rotação de 2 MB × 10 arquivos, cerca de uma semana) guarda a CPU do DroidServer, a RAM do aparelho, a memória do agente e do Supervisor e, para cada serviço, o estado no Supervisor, o PID e uma requisição HTTP local na porta declarada no `run.sh`. Quando o painel volta, a primeira resposta do *sync* pede o histórico, e o Node envia os últimos 30 minutos: o gráfico do painel é só um *cache* do que está no celular. Validado no moto e40 em 16/11/2026: com o Host desligado, o serviço manteve o PID, o registro seguiu sem lacunas, o agente gravou um único aviso e, ao religar o Host, o gráfico voltou com as amostras do período sem painel.
+
 ## 8.6 Decisões de projeto
 
 | Decisão | Motivo | Consequência |
@@ -250,7 +254,7 @@ A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID 
 | `--isolated` por padrão | Evita que o Worker veja o *home* do Termux e o `/sdcard` | Requer `proot-distro` recente |
 | `ulimit` por Worker | Único limite disponível sem *cgroups* | Não limita CPU nem memória |
 | Validação do alias (`^[A-Za-z0-9_-]{1,64}$`) no Host e no Node | O alias vira caminho, nome de serviço e nome de evento | Previne injeção de comandos e de caminhos |
-| Cadastro de Nodes em disco; estado de operação em memória | O cadastro (tokens) precisa sobreviver a reinícios; o resto é refeito pelos syncs | Reiniciar o Host não exige readicionar Nodes |
+| Cadastro de Nodes em disco no Host; métricas e logs no celular | O painel pode ser desligado a qualquer momento: o cadastro (tokens) sobrevive a reinícios e o histórico vem do registro de cada Node | O painel só mostra o que o Node já registrou; não há visão consolidada de longo prazo |
 | Node identificado por token, cadastrado pelo painel | O IP muda a cada reboot (DHCP); o celular não precisa saber o IP do Host | Um Node ainda não pareado aceita pareamento de qualquer máquina da LAN |
 | Senha única no painel (`DROID_PANEL_PASSWORD`) e sessão assinada | Só quem sabe a senha cria/apaga Workers e abre terminais; os Nodes seguem autenticados pelo token | Sem TLS, senha e tokens trafegam em claro: adequado a uma LAN confiável |
 | WebSocket do Node autenticado pelo token; salas por terminal e por log | A saída de um terminal ou de um serviço só chega a quem o abriu; navegadores não se passam por Nodes | Cada tela precisa entrar na sala ao (re)conectar |
@@ -259,7 +263,7 @@ A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID 
 
 ## 8.7 Garantia de qualidade
 
-O projeto possui 211 testes automatizados com `pytest` (85 no Host e 126 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 233 testes automatizados com `pytest` (87 no Host e 146 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
 ## 8.8 Interface
 
