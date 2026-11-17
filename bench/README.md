@@ -36,8 +36,11 @@ uv run bench/e4_latencia_terminal.py --worker demo_api --amostras 500
 uv run bench/e1_provisionamento.py --distros alpine debian --repeticoes 5 --cache com sem
 uv run bench/e3_sobrecarga_proot.py --worker demo_debian --repeticoes 10
 uv run bench/e8_vazao.py --worker demo_api --porta 8080 --concorrencias 1 10 50 --repeticoes 5 --duracao 20
-# E7: anote a hora de início e deixe o celular parado; o PC e o painel podem ser desligados
-uv run bench/e7_disponibilidade.py --worker demo_api --inicio "2026-11-17 00:00" --horas 24   # no fim (ou parcial)
+# E7: o início fica gravado no celular, que acompanha e calcula sozinho; o PC e o painel podem ser desligados
+uv run bench/e7_disponibilidade.py --iniciar --worker demo_api --horas 24
+uv run bench/e7_disponibilidade.py --status      # progresso (atualizado a cada 15 min no celular)
+uv run bench/e7_disponibilidade.py --retomar     # se o celular reiniciar: religa o acompanhamento (o registro não para)
+uv run bench/e7_disponibilidade.py               # no fim: baixa o registro e gera o CSV oficial em bench/resultados/
 uv run bench/e7_disponibilidade.py --resumo bench/resultados/e7_disponibilidade_<data>.csv
 ```
 

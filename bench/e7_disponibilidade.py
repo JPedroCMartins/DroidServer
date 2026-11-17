@@ -339,10 +339,15 @@ def _ligar_acompanhamento():
     subprocess.run(["scp", "-q", "-o", "BatchMode=yes", "-P", porta,
                     *[os.path.join(aqui, n) for n in SCRIPTS], f"{host}:DroidServer/bench/"], check=True)
     # setsid + nohup: segue rodando depois que o SSH fecha
-    comum.ssh(f"pkill -f 'e7_disponibilidade.py --acompanhar' ; cd ~/DroidServer/bench && "
-              f"setsid nohup python3 e7_disponibilidade.py --acompanhar > {PASTA_E7_CELULAR}/acompanhar.log 2>&1 "
-              "< /dev/null & sleep 2; pgrep -f 'e7_disponibilidade.py --acompanhar' >/dev/null && echo ok",
-              timeout=60)
+    # pelo pid gravado, não por nome: um pkill/pgrep -f casaria com este próprio comando
+    p = PASTA_E7_CELULAR
+    _, saida = comum.ssh(
+        f"[ -f {p}/acompanhar.pid ] && kill $(cat {p}/acompanhar.pid) 2>/dev/null; cd ~/DroidServer/bench && "
+        f"(setsid nohup python3 e7_disponibilidade.py --acompanhar > {p}/acompanhar.log 2>&1 < /dev/null & "
+        f"echo $! > {p}/acompanhar.pid); sleep 3; kill -0 $(cat {p}/acompanhar.pid) 2>/dev/null && echo ok",
+        timeout=60)
+    if "ok" not in saida:
+        raise SystemExit(f"O acompanhamento não ficou de pé no celular; veja {p}/acompanhar.log")
 
 
 def iniciar(args):
@@ -370,7 +375,7 @@ def retomar(args):
 def status(args):
     _, saida = comum.ssh(f"cd {PASTA_E7_CELULAR} 2>/dev/null && (cat resultado.txt 2>/dev/null || "
                          "cat progresso.txt 2>/dev/null || echo 'Ainda sem progresso (o 1º sai em instantes).'); "
-                         "pgrep -f 'e7_disponibilidade.py --acompanhar' >/dev/null && echo '[acompanhamento rodando]' "
+                         "kill -0 $(cat acompanhar.pid 2>/dev/null) 2>/dev/null && echo '[acompanhamento rodando]' "
                          "|| echo '[acompanhamento parado: se a E7 não terminou, use --retomar]'", timeout=60)
     print(saida or "Nenhuma E7 iniciada no celular.")
 
