@@ -336,3 +336,29 @@ def test_estado_traz_porta_distro_e_salvamento(termux, comandos):
 
 def test_exemplo_declara_a_porta():
     assert servico.ler_metadados(servico.EXEMPLO)["porta"] == 8080
+
+
+LOG_SUP = """2026-11-15 23:59:01,1 WARN exited: w1 (exit status 1; not expected)
+2026-11-16 18:07:45,172 WARN exited: w1 (exit status 127; not expected)
+2026-11-16 18:07:50,994 INFO spawned: 'w1' with pid 24542
+2026-11-16 18:08:00,000 WARN exited: w12 (exit status 1; not expected)
+2026-11-16 18:09:00,000 INFO exited: w1 (exit status 0; expected)
+2026-11-16 18:10:00,000 INFO stopped: w1 (terminated by SIGTERM)
+"""
+
+
+def test_falhas_do_dia(termux):
+    conf = termux / "etc/supervisord.conf"
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(f"[supervisord]\nlogfile={termux}/var/log/supervisor/supervisord.log\n")
+    log = termux / "var/log/supervisor/supervisord.log"
+    log.parent.mkdir(parents=True)
+    log.write_text(LOG_SUP)
+    r = servico.falhas_do_dia(["w1", "w12", "w9"], hoje="2026-11-16")
+    assert r["w1"] == {"falhas_hoje": 1, "ultima_falha":
+                       {"quando": "18:07:45", "codigo": 127, "motivo": "comando não encontrado"}}
+    assert r["w12"]["falhas_hoje"] == 1 and r["w9"] == {"falhas_hoje": 0, "ultima_falha": None}
+
+
+def test_falhas_sem_log(termux):
+    assert servico.falhas_do_dia(["w1"])["w1"] == {"falhas_hoje": 0, "ultima_falha": None}

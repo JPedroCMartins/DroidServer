@@ -416,6 +416,42 @@ def ler_metadados(conteudo):
     return {"porta": int(porta) if porta.isdigit() and 1 <= int(porta) <= 65535 else None}
 
 
+# Falhas registradas pelo supervisord: "... WARN exited: w1 (exit status 127; not expected)"
+FALHA_RE = re.compile(r"^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ \w+ exited: (\S+) "
+                      r"\(exit status (\d+); not expected\)")
+MOTIVOS = {126: "sem permissão de execução", 127: "comando não encontrado",
+           137: "encerrado pelo sistema (memória ou kill)", 143: "encerrado (SIGTERM)"}
+
+
+def supervisord_log():
+    """Log do supervisord, conforme o logfile= do supervisord.conf."""
+    try:
+        with open(supervisor_conf(), encoding="utf-8", errors="replace") as f:
+            m = re.search(r"^\s*logfile\s*=\s*(\S+)", f.read(), re.M)
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return os.path.join(_prefix(), "var", "log", "supervisor", "supervisord.log")
+
+
+def falhas_do_dia(aliases, hoje=None):
+    """{alias: {falhas_hoje, ultima_falha}} a partir das saídas inesperadas do dia."""
+    hoje = hoje or time.strftime("%Y-%m-%d")
+    resultado = {a: {"falhas_hoje": 0, "ultima_falha": None} for a in aliases}
+    linhas, _ = ultimas_linhas(supervisord_log(), n=3000)
+    for linha in linhas:
+        m = FALHA_RE.match(linha)
+        if not m or m.group(1) != hoje or m.group(3) not in resultado:
+            continue
+        codigo = int(m.group(4))
+        r = resultado[m.group(3)]
+        r["falhas_hoje"] += 1
+        r["ultima_falha"] = {"quando": m.group(2), "codigo": codigo,
+                             "motivo": MOTIVOS.get(codigo, f"erro no programa (código {codigo})")}
+    return resultado
+
+
 _cache_distro = {}
 
 
@@ -452,6 +488,7 @@ def _salvo_em(alias):
 def estado_servicos(aliases, status=None):
     """Estado de cada serviço para o painel."""
     status = status if status is not None else status_supervisor()
+    falhas = falhas_do_dia(aliases)
     resultado = {}
     for alias in aliases:
         opcoes = ler_opcoes(alias)
@@ -469,6 +506,7 @@ def estado_servicos(aliases, status=None):
             "porta": ler_metadados(ler_script(alias))["porta"],
             "distro": distro(alias),
             "script_salvo_em": _salvo_em(alias),
+            **falhas[alias],
         }
     return resultado
 
