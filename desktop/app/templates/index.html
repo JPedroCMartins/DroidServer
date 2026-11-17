@@ -1525,8 +1525,8 @@ exec python3 bot.py`)}
 
                 <div class="flex items-center justify-between gap-3 flex-wrap mb-3 px-3 py-2.5 bg-surface border border-slate-400/15 rounded-xl shrink-0">
                     <div class="flex gap-2 flex-wrap items-center">
-                        <button class="btn btn-dark" id="btnCopy" title="Copiar seleção (Ctrl+C com texto selecionado)" disabled>${svg(ICON.copy)}Copiar</button>
-                        <button class="btn btn-dark" id="btnPaste" title="Colar no terminal (Ctrl+Shift+V)">${svg(ICON.paste)}Colar</button>
+                        <button class="btn btn-dark" id="btnCopy" title="Copiar o texto selecionado no terminal" disabled>${svg(ICON.copy)}Copiar</button>
+                        <button class="btn btn-dark" id="btnPaste" title="Colar texto no terminal">${svg(ICON.paste)}Colar</button>
                         <button class="btn btn-dark" id="btnClear" title="Limpar a tela">${svg(ICON.eraser)}Limpar</button>
                     </div>
                     <div class="flex gap-2 flex-wrap items-center">
@@ -1540,8 +1540,21 @@ exec python3 bot.py`)}
                 </div>
 
                 <div class="text-[11.5px] text-muted text-center shrink-0">
-                    Clique no terminal para digitar · selecione para copiar (Ctrl+C) · cole com Ctrl+Shift+V
+                    Clique no terminal para digitar · selecione um trecho e use Copiar · use Colar para enviar texto
                 </div>
+            </div>
+            <div id="clipFundo" class="fixed inset-0 z-50 bg-black/50 items-center justify-center p-4 hidden">
+              <div id="clipModal" role="dialog" aria-modal="true" aria-labelledby="clipTitulo"
+                class="w-full max-w-[560px] bg-surface border border-slate-400/15 rounded-xl shadow-card p-5">
+                <h2 id="clipTitulo" class="text-[15px] font-bold text-white mb-1"></h2>
+                <p id="clipDica" class="text-[12.5px] text-muted mb-3"></p>
+                <textarea id="clipTexto" rows="7" spellcheck="false" autocomplete="off" autocapitalize="off"
+                    class="w-full px-3 py-2 rounded-lg bg-term border border-slate-400/15 font-mono text-[12.5px] text-slate-200 outline-none focus:border-accent/60 resize-y"></textarea>
+                <div class="flex justify-end gap-2 mt-3">
+                    <button type="button" class="btn btn-ghost" id="clipCancelar">Fechar</button>
+                    <button type="button" class="btn btn-primary" id="clipOk"></button>
+                </div>
+              </div>
             </div>`;
 
             const term = new Terminal({
@@ -1574,64 +1587,121 @@ exec python3 bot.py`)}
                 statusDot.className = 'dot dot-' + classe;
             }
 
-            // ---- Copiar ----
-            const btnCopy = $('btnCopy');
-            async function copiar() {
-                const sel = term.getSelection();
-                if (!sel) return;
-                try { await navigator.clipboard.writeText(sel); }
-                catch (e) {
-                    const ta = document.createElement('textarea');
-                    ta.value = sel; document.body.appendChild(ta); ta.select();
-                    document.execCommand('copy'); document.body.removeChild(ta);
-                }
-                toast('Copiado!');
-                term.clearSelection();
+            // ---- Copiar / Colar (só pelos botões) ----
+            // O painel costuma ser aberto por HTTP na LAN (http://IP:5050). Fora de
+            // contexto seguro (HTTPS/localhost) o navegador não expõe
+            // navigator.clipboard, então cada botão tem um caminho alternativo:
+            // copiar via execCommand e, se falhar, uma janela com o texto já
+            // selecionado; colar por uma janela onde o usuário cola e envia.
+            const clipboardApi = window.isSecureContext && navigator.clipboard ? navigator.clipboard : null;
+
+            let clipAcao = null;
+            function abrirClip({ titulo, dica, texto = '', ok, somenteLeitura, acao }) {
+                $('clipTitulo').innerText = titulo;
+                $('clipDica').innerText = dica;
+                $('clipOk').innerText = ok;
+                const ta = $('clipTexto');
+                ta.value = texto;
+                ta.readOnly = !!somenteLeitura;
+                clipAcao = acao;
+                $('clipFundo').classList.replace('hidden', 'flex');
+                ta.focus();
+                if (somenteLeitura) ta.select();
             }
-            term.onSelectionChange(() => { btnCopy.disabled = !term.hasSelection(); });
-            term.attachCustomKeyEventHandler((e) => {
-                if (e.type === 'keydown' && e.ctrlKey && !e.shiftKey && !e.altKey
-                    && e.key.toLowerCase() === 'c' && term.hasSelection()) { copiar(); return false; }
-                return true;
+            function fecharClip() {
+                $('clipFundo').classList.replace('flex', 'hidden');
+                $('clipTexto').value = '';
+                clipAcao = null;
+                term.focus();
+            }
+            $('clipCancelar').addEventListener('click', fecharClip);
+            $('clipFundo').addEventListener('click', (e) => { if (e.target === e.currentTarget) fecharClip(); });
+            $('clipOk').addEventListener('click', () => { if (clipAcao) clipAcao($('clipTexto').value); });
+            $('clipModal').addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') { e.preventDefault(); fecharClip(); }
+                else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && clipAcao) {
+                    e.preventDefault(); clipAcao($('clipTexto').value);
+                }
             });
+
+            // Copiar: guarda a última seleção, pois o clique no botão pode
+            // desfazer a seleção do xterm antes do handler rodar.
+            const btnCopy = $('btnCopy');
+            let ultimaSelecao = '';
+            term.onSelectionChange(() => {
+                if (term.hasSelection()) ultimaSelecao = term.getSelection();
+                btnCopy.disabled = !term.hasSelection() && !ultimaSelecao;
+            });
+            function copiarExecCommand(texto) {
+                const ta = document.createElement('textarea');
+                ta.value = texto;
+                ta.setAttribute('readonly', '');
+                ta.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, texto.length);
+                let ok = false;
+                try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+                document.body.removeChild(ta);
+                return ok;
+            }
+            function copiado() {
+                toast('Copiado!');
+                ultimaSelecao = '';
+                term.clearSelection();
+                btnCopy.disabled = true;
+                term.focus();
+            }
+            function copiar() {
+                const texto = term.getSelection() || ultimaSelecao;
+                if (!texto) { toast('Selecione um trecho do terminal primeiro'); return; }
+                if (clipboardApi) {
+                    clipboardApi.writeText(texto).then(copiado, () => {
+                        if (copiarExecCommand(texto)) copiado(); else copiarManual(texto);
+                    });
+                    return;
+                }
+                // Síncrono: execCommand só funciona dentro do clique do usuário.
+                if (copiarExecCommand(texto)) copiado(); else copiarManual(texto);
+            }
+            function copiarManual(texto) {
+                abrirClip({
+                    titulo: 'Copiar do terminal',
+                    dica: 'O navegador bloqueou a cópia automática. O texto já está selecionado: copie com Ctrl+C (ou toque e segure → Copiar).',
+                    texto, ok: 'Pronto', somenteLeitura: true,
+                    acao: () => { fecharClip(); ultimaSelecao = ''; term.clearSelection(); btnCopy.disabled = true; },
+                });
+            }
             btnCopy.addEventListener('click', copiar);
 
-            // ---- Colar ----
-            const normalizarPaste = (t) => t.replace(/\r?\n/g, '\r');
+            // Colar
             const emitirPaste = (t) => {
-                const input = normalizarPaste(t);
+                const input = t.replace(/\r?\n/g, '\r');
                 if (input) socket.emit('terminal_input', { ip, alias, input });
             };
-            let pasting = false;
-            $('termShell').addEventListener('paste', () => {
-                pasting = true; setTimeout(() => { pasting = false; }, 300);
-            }, true);
+            term.onData(data => socket.emit('terminal_input', { ip, alias, input: data }));
 
-            term.onData(data => {
-                let input = data;
-                if (pasting) { pasting = false; input = normalizarPaste(data); }
-                socket.emit('terminal_input', { ip, alias, input });
-            });
-
-            async function colar() {
-                try {
-                    const texto = await navigator.clipboard.readText();
-                    if (texto) { emitirPaste(texto); toast('Colado!'); return; }
-                } catch (e) { /* sem permissão de clipboard — fallback */ }
-
-                const ta = document.createElement('textarea');
-                ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
-                document.body.appendChild(ta);
-                ta.focus();
-                toast('Pressione Ctrl+V para colar...');
-                ta.addEventListener('paste', (ev) => {
-                    ev.preventDefault();
-                    const texto = ev.clipboardData.getData('text');
-                    document.body.removeChild(ta);
+            function colarManual() {
+                abrirClip({
+                    titulo: 'Colar no terminal',
+                    dica: 'Cole o texto abaixo (Ctrl+V ou toque e segure → Colar) e clique em Enviar.',
+                    ok: 'Enviar', somenteLeitura: false,
+                    acao: (texto) => {
+                        if (!texto) { toast('Nada para colar'); return; }
+                        fecharClip();
+                        emitirPaste(texto);
+                        toast('Colado!');
+                    },
+                });
+            }
+            function colar() {
+                if (!clipboardApi || !clipboardApi.readText) { colarManual(); return; }
+                clipboardApi.readText().then((texto) => {
+                    if (!texto) { colarManual(); return; }
                     emitirPaste(texto);
                     toast('Colado!');
-                }, { once: true });
-                setTimeout(() => { if (document.body.contains(ta)) document.body.removeChild(ta); }, 15000);
+                    term.focus();
+                }, colarManual);
             }
             $('btnPaste').addEventListener('click', colar);
 
