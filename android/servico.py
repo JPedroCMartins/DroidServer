@@ -475,6 +475,47 @@ def distro(alias):
     return _cache_distro[raiz]
 
 
+class DiscoCache:
+    """Tamanho do rootfs de cada worker, calculado com `du` em segundo plano.
+
+    O `du` de um Debian leva segundos: nunca roda no caminho do sync. A
+    consulta devolve o último valor conhecido (None até o 1º cálculo) e, se
+    ele venceu, dispara um novo cálculo numa thread.
+    """
+
+    def __init__(self, validade=600, relogio=time.monotonic):
+        self.validade, self.relogio = validade, relogio
+        self._valores = {}       # rootfs -> (mb ou None, quando)
+        self._calculando = set()
+        self._lock = threading.Lock()
+
+    def mb(self, alias):
+        raiz = rootfs(alias)
+        if not raiz:
+            return None
+        with self._lock:
+            valor, quando = self._valores.get(raiz, (None, None))
+            vencido = quando is None or self.relogio() - quando >= self.validade
+            if vencido and raiz not in self._calculando:
+                self._calculando.add(raiz)
+                threading.Thread(target=self._calcular, args=(raiz,), daemon=True).start()
+        return valor
+
+    def _calcular(self, raiz):
+        anterior = self._valores.get(raiz, (None, None))[0]
+        try:
+            proc = subprocess.run(["du", "-sk", raiz], capture_output=True, text=True, timeout=300)
+            valor = round(int(proc.stdout.split()[0]) / 1024, 1)
+        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+            valor = anterior  # falhou: mantém o último valor conhecido
+        with self._lock:
+            self._valores[raiz] = (valor, self.relogio())
+            self._calculando.discard(raiz)
+
+
+disco = DiscoCache()
+
+
 def _salvo_em(alias):
     caminho = caminho_app(alias, SCRIPT_NOME)
     if not caminho or not _dentro_do_container(alias, caminho):
@@ -506,6 +547,7 @@ def estado_servicos(aliases, status=None):
             "porta": ler_metadados(ler_script(alias))["porta"],
             "distro": distro(alias),
             "script_salvo_em": _salvo_em(alias),
+            "disco_mb": disco.mb(alias),
             **falhas[alias],
         }
     return resultado

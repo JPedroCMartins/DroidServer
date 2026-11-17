@@ -362,3 +362,26 @@ def test_falhas_do_dia(termux):
 
 def test_falhas_sem_log(termux):
     assert servico.falhas_do_dia(["w1"])["w1"] == {"falhas_hoje": 0, "ultima_falha": None}
+
+
+def test_disco_calcula_em_segundo_plano(termux, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        time.sleep(0.2)
+        return _Proc(0, out="51200\t/x\n")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    agora = [1000.0]
+    d = servico.DiscoCache(validade=600, relogio=lambda: agora[0])
+    assert d.mb("w1") is None                      # não bloqueia na 1ª consulta
+    for _ in range(50):
+        if d.mb("w1") is not None:
+            break
+        time.sleep(0.02)
+    assert d.mb("w1") == 50.0 and len(calls) == 1  # 51200 kB -> 50 MB, um du só
+    agora[0] += 601
+    d.mb("w1")
+    time.sleep(0.3)
+    assert len(calls) == 2                          # venceu: recalcula
