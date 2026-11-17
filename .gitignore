@@ -20,3 +20,6 @@ desktop/data/
 
 # Senha do painel para o docker compose
 desktop/.env
+
+# Configuração local do Claude Code (worktrees, launch.json)
+.claude/
