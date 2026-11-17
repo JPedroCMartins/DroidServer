@@ -234,7 +234,10 @@ def do_celular(args):
         fim = amostras[-1]["t"]
         inicio = max(fim - args.horas * 3600, amostras[0]["t"])
     linhas = montar_linhas(amostras, args.worker, inicio, fim, args.intervalo)
-    caminho = comum.arquivo_csv("e7_disponibilidade")
+    # Menos registro que o pedido: avisa e não deixa o CSV parecer a E7 completa
+    # (o gráfico usa o e7_disponibilidade_*.csv mais recente)
+    completo = fim - inicio >= args.horas * 3600 * 0.99
+    caminho = comum.arquivo_csv("e7_disponibilidade" if completo else "parcial_e7_disponibilidade")
     g = comum.GravadorCSV(caminho, CAMPOS)
     for l in linhas:
         g.linha(**{c: ("" if l.get(c) is None else l.get(c, "")) for c in CAMPOS})
@@ -243,6 +246,11 @@ def do_celular(args):
     print(f"Janela: {datetime.fromtimestamp(inicio):%d/%m %H:%M} a {datetime.fromtimestamp(fim):%d/%m %H:%M}; "
           f"amostras com o painel desligado/inacessível: {sem_painel}")
     resumir(caminho)
+    if not completo:
+        pronto = datetime.fromtimestamp(inicio + args.horas * 3600)
+        print(f"\n[!] PARCIAL: só há {(fim - inicio) / 3600:.2f} h de registro na janela, de {args.horas:g} h pedidas. "
+              f"Deixe o celular parado e rode de novo a partir de {pronto:%d/%m %H:%M}.\n"
+              f"    Este resultado foi salvo como parcial_* e não entra no gráfico da E7.")
 
 
 def main():
