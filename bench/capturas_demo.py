@@ -26,6 +26,7 @@ import json
 import math
 import os
 import random
+import socket
 import subprocess
 import sys
 import tempfile
@@ -146,7 +147,17 @@ class NodeDemo:
             parar.wait(2)
 
 
+def porta_ocupada():
+    with socket.socket() as s:
+        return s.connect_ex(("127.0.0.1", PORTA)) == 0
+
+
 def subir_host(pasta):
+    # Outro painel na mesma porta responderia no lugar deste (ex.: uma demo
+    # antiga ainda aberta), e as páginas mostrariam a versão velha.
+    if porta_ocupada():
+        raise SystemExit(f"A porta {PORTA} já está em uso (outra demonstração aberta?). "
+                         f"Feche-a com Ctrl+C ou use outra porta: DROID_DEMO_PORT=5100 uv run bench/capturas_demo.py --servir")
     with open(os.path.join(pasta, "nodes.json"), "w") as f:
         json.dump({IP: {"token": TOKEN, "nome": "moto e40 (demo)"}}, f)
     env = {**os.environ, "DROID_DATA_DIR": pasta, "DROID_LOG_DIR": pasta, "DROID_BIND": "127.0.0.1",
@@ -154,6 +165,8 @@ def subir_host(pasta):
     proc = subprocess.Popen(["uv", "run", "--project", os.path.join(RAIZ, "desktop"), "python", "main.py"],
                             cwd=os.path.join(RAIZ, "desktop"), env=env)
     for _ in range(60):
+        if proc.poll() is not None:
+            raise SystemExit("o Host de demonstração encerrou ao iniciar (veja o erro acima)")
         try:
             requests.get(HOST_URL + "/api/nodes", timeout=1)
             return proc
