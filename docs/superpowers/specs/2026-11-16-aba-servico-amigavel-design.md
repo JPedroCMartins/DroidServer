@@ -1,6 +1,6 @@
 # Aba Serviço mais amigável — proposta (aguardando decisões)
 
-Data: 16/11/2026 · Situação: **abordagem B escolhida pelo usuário (16/11)**; demais decisões na seção 6 (propostas, aguardando aprovação).
+Data: 16/11/2026 · Situação: **abordagem A escolhida pelo usuário (16/11, revendo a B)**: ajuda "?" + visão geral. Aguardando aprovação do desenho.
 
 ## 1. Intenção
 
@@ -36,6 +36,8 @@ Quem abre a aba Serviço de um Worker precisa entender, sem ler o README nem abr
 - RSS do processo do Supervisor é só o *wrapper* do proot (~3 MB): a RAM real exige somar a árvore de processos (o agente já percorre essa árvore para a CPU por Worker).
 
 ## 3. Abordagens consideradas
+
+> Escolhida: **A** (ver seção 6). A tabela fica como registro das alternativas.
 
 | | Abordagem | Como fica para o usuário | Custo | Trade-off |
 |---|---|---|---|---|
@@ -89,12 +91,10 @@ Worker demo_api · Alpine 3.24                              [Serviço] [Terminal
 
 | # | Questão | Decisão | Origem |
 |---|---|---|---|
-| 1 | Abordagem | **B — assistente que gera o `run.sh`**, incluindo a ajuda "?" e a visão geral (A) | usuário |
-| 2 | Código no `/app` sem terminal | **Campo "repositório Git"** no assistente: o `run.sh` gerado faz `git clone` (instala o git se faltar) na 1ª execução e não clona de novo se `/app` já tiver o repositório. Envio de arquivos pelo painel fica para trabalhos futuros | proposta |
-| 3 | Variáveis de ambiente | **Campo próprio**: gravadas em `/app/.droidserver/env` (0600) e carregadas pelo lançador antes do `run.sh`; o painel lista só os **nomes** (valores não voltam ao navegador nem aparecem em logs); editar = substituir o valor | proposta |
-| 4 | Tipos do assistente | Site estático · API Python · Node.js · bot/script Python · comando livre | proposta |
-| 5 | Prioridade | S1 (ajuda "?") e S2 (visão geral) primeiro; depois S3, S4 (assistente), S5, S6 | proposta |
+| 1 | Abordagem | **A — ajuda "?" + visão geral** (sem assistente). O usuário continua escrevendo o `run.sh`, agora com guia, exemplos e mais informação na tela | usuário (16/11; reviu a B) |
+| 2 | Repositório Git | **Fora desta fase.** Vira trabalho futuro como **integração de CI/CD** (webhook → atualiza `/app` → *build* → reinicia, com logs de implantação) — seção 10.3 do TCC | usuário |
+| 3 | Variáveis de ambiente | **Fora desta fase**, junto com o CI/CD (serão os segredos da implantação) | proposta (decorre de 1 e 2) |
+| 4 | Porta | Informada pelo usuário num **cabeçalho do `run.sh`** (`# droidserver: porta=8080`), explicado na ajuda; sem ele, a visão geral mostra "porta não informada" com um "?" que ensina a declarar | proposta (o Android nega `/proc/net/tcp`) |
+| 5 | Ordem | S1 (ajuda) → S2 (visão geral) → S3 (dados no agente) → S5 (layout/editor) → S6 (testes e docs). S4 (assistente) removida | proposta |
 
-**Consequências no agente** (além da seção 4): o lançador passa a carregar `/app/.droidserver/env` se existir (mudança de versão do lançador; a atualização automática já existe); nova ação `variaveis` (listar nomes, definir, remover) no canal `servico`; o editor do `run.sh` não exibe o arquivo de variáveis.
-
-**Fora desta fase:** envio de arquivos pelo painel, vários serviços por Worker, detecção automática de porta (bloqueada sem *root*).
+**Fora desta fase:** assistente, Git/CI/CD, variáveis de ambiente, envio de arquivos, vários serviços por Worker.

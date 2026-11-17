@@ -145,11 +145,11 @@ Do protocolo da nota 09, executar **só o essencial**, com scripts no repositór
 
 Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatura e energia, que exigem Termux:API ou medidor USB) e o consumo de energia.
 
-## Fase 2B — Aba Serviço mais amigável 🟡 (abordagem B escolhida em 16/11)
+## Fase 2B — Aba Serviço mais amigável 🟡 (abordagem A escolhida em 16/11)
 
 Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que roda, se está funcionando, onde acessar e o que fazer quando falha** — e consegue pôr uma aplicação no ar pelo painel (útil na demonstração para a banca). Proposta completa, com telas e alternativas: [`docs/superpowers/specs/2026-11-16-aba-servico-amigavel-design.md`](superpowers/specs/2026-11-16-aba-servico-amigavel-design.md).
 
-**Abordagens** (recomendada: B, que inclui A)
+**Abordagens** (escolhida: **A** — ajuda + visão geral; B e C ficam registradas)
 
 | | Abordagem | Para o usuário | Custo |
 |---|---|---|---|
@@ -157,20 +157,20 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 | **B** | **Assistente que gera o `run.sh`** (+ A) | Escolhe o tipo de aplicação e preenche porta/pasta/pacotes/comando; o painel gera o script, editável | Médio |
 | C | Configuração estruturada, sem shell (estilo Procfile) | Só formulário; o agente monta o processo | Alto, cria um segundo formato |
 
-**Etapas** (versão B)
+**Etapas** (versão A; S4 removida)
 
 | # | Tarefa | Onde | Esforço |
 |---|---|---|---|
 | S1 | **"?" com guia** em painel lateral: passo a passo (arquivos em `/app` → pacotes → `run.sh` → porta → salvar e reiniciar), regras do script, exemplos por tipo, erros comuns, significado de cada estado; "?" também nas opções | painel | 2 h |
 | S2 | **Visão geral**: endereço `http://<ip>:<porta>` com "Abrir" e "Testar" (GET a partir do Host), reinícios do dia e última falha, CPU/RAM do serviço, disco do Worker, distribuição, último salvamento; botões habilitados conforme o estado | painel + Host + agente | 3 h |
 | S3 | **Dados no agente**: porta/tipo lidos do cabeçalho do `run.sh` (`# droidserver: porta=8080`), RAM somando a árvore de processos, contagem de reinícios pelo log, `du` em segundo plano com cache de 10 min | agente | 2 h |
-| S4 | **Assistente** (2 passos): tipo → campos → prévia do `run.sh` → "Usar este script" | painel | 3 h |
+| ~~S4~~ | ~~Assistente~~ — fora desta fase (vai para trabalhos futuros, com o CI/CD) | — | — |
 | S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel | 1 h |
 | S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos | 2 h |
 
-**Total: ≈ 13 h** (só A: S1+S2+S3+S5+S6 ≈ 10 h). Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
+**Total: ≈ 10 h** (S1+S2+S3+S5+S6). Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
 
-**Decisões** (16/11): abordagem **B** (usuário). Propostas aguardando aprovação: Git no assistente (envio de arquivos fica para depois), variáveis de ambiente em campo próprio (`/app/.droidserver/env`, só nomes no painel), os 5 tipos abaixo e a ordem S1 → S2 → S3 → S4 → S5 → S6. Perguntas originais:
+**Decisões** (16/11, usuário): abordagem **A**; repositório Git fica para uma futura **integração de CI/CD** (seção 10.3 do TCC), e as variáveis de ambiente vão junto. A porta é declarada num cabeçalho do `run.sh` (`# droidserver: porta=8080`). Perguntas originais, já respondidas:
 1. Abordagem: B (recomendada), só A ou C?
 2. Como o código chega ao `/app` sem terminal: campo "repositório Git" no assistente (barato) ou envio de arquivos pelo painel (caro)?
 3. Variáveis de ambiente (ex.: *token* de bot) num campo próprio, fora do script e dos logs, ou ficam no script por enquanto?
@@ -200,13 +200,13 @@ Fases 1, 1B, 2 e quase toda a 3 concluídas (16/11); 4.1, 4.3, 4.4 e a 1ª vers�
 
 ```
 17/11   E7 termina às 20:22 → preencher [RESULTADO E7] (resumo, 9.5, 11) → git push
-        decisões da Fase 2B (perguntas acima) → S1 + S2 (ajuda e visão geral)
-18/11   S3 + S5 (e S4, se escolhida a abordagem B) → S6 → capturas de tela (4.6)
+        S1 + S2 (ajuda e visão geral)
+18/11   S3 + S5 → S6 → capturas de tela (4.6)
 19/11   4.5 (referências ⚠) + enxugar o texto para o tamanho de artigo
 20/11   .docx final (4.7) + folga para imprevistos → orientador
 ```
 
-Se o prazo for mais curto, corte nesta ordem: S4 (assistente) → S5 → 1.6. **Não corte** o fim da E7 nem a ajuda "?" (S1): uma é a evidência da H1, a outra é o que a banca vai ver na demonstração.
+Se o prazo for mais curto, corte nesta ordem: S5 → S3 (a visão geral mostra só o que já existe) → 1.6. **Não corte** o fim da E7 nem a ajuda "?" (S1): uma é a evidência da H1, a outra é o que a banca vai ver na demonstração.
 
 ## Riscos
 

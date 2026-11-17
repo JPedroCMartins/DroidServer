@@ -25,12 +25,12 @@
 
 ## 10.3 Trabalhos futuros
 
-1. Autenticação no painel, TLS e salas (*rooms*) por sessão no Socket.IO.
+1. TLS no painel e no canal Host–Node (por exemplo, um *proxy* HTTPS na frente do Host); a autenticação por senha e o isolamento dos terminais por sessão já foram implementados (seção 8.6).
 2. Código de confirmação exibido no celular durante o pareamento (como no Bluetooth) e TLS entre Host e Nodes.
 3. Persistência do estado do Host (SQLite) e reconciliação de estado desejado × real, ao estilo Kubernetes.
 4. Escalonador automático que escolha o Node com base em CPU, memória, temperatura e nível de bateria.
 5. *Proxy* reverso no Host para expor os serviços dos Workers (ex.: `http://host/w/<node>/<alias>/`).
-6. Imagens de Worker pré-configuradas (*templates*) e implantação de aplicações a partir de um repositório Git.
+6. **Integração de CI/CD**: associar um Worker a um repositório Git e, a cada *push* (via *webhook* do GitHub/GitLab recebido pelo Host), o Node atualizar o código em `/app`, rodar a etapa de *build* e reiniciar o serviço, com os logs da implantação no painel e segredos guardados como variáveis de ambiente do Worker (fora do `run.sh` e dos logs). Junto com isso, um assistente que gere o `/app/run.sh` a partir do tipo de aplicação e imagens de Worker pré-configuradas (*templates*).
 7. Comparação com contêineres reais em aparelhos com *root* (LXC, Docker com *kernel* compatível) e com *clusters* de Raspberry Pi.
 8. Gestão de bateria: limite de carga (quando o aparelho permitir) ou alimentação direta sem bateria.
 9. Cálculo da intensidade de carbono (CCI) do *cluster*, comparando com uma VPS equivalente (SWITZER et al., 2023).
