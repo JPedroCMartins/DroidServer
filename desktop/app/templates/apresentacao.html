@@ -3,21 +3,21 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="robots" content="noindex">
     <title>DroidServer — Apresentação do TCC</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/inter.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/poppins.css') }}">
     <style>
+        /* Padrão visual do portfolio-page (github.com/JPedroCMartins/portfolio-page). */
         :root {
-            --bg: #0b1220;
-            --surface: #111c33;
-            --borda: rgba(148, 163, 184, .16);
-            --texto: #e2e8f0;
-            --muted: #8aa0bf;
-            --accent: #6366f1;
-            --accent2: #22d3ee;
+            --dark-bg: #1a1a2e;
+            --dark-card: #16213e;
+            --dark-primary: #0f3460;
+            --highlight: #e94560;
+            --highlight-soft: rgba(233, 69, 96, .12);
+            --text-light: #f0f0f0;
+            --text-secondary: #a7a9be;
             --ok: #34d399;
-            --bad: #f87171;
             --warn: #fbbf24;
         }
 
@@ -26,14 +26,15 @@
         html, body { height: 100%; }
 
         body {
-            font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            color: var(--texto);
-            background: #05090f;
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-light);
+            background: #0d0d1a;
             overflow: hidden;
-            user-select: none;
+            -webkit-font-smoothing: antialiased;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        /* Palco 1280×720 escalado para caber na janela (ver ajustar()). */
+        /* ---------- Modo palco: 1280×720 escalado para caber na janela ---------- */
         #palco {
             position: absolute;
             left: 50%;
@@ -46,163 +47,246 @@
         .slide {
             position: absolute;
             inset: 0;
-            padding: 64px 80px 70px;
+            padding: 56px 80px 64px;
             display: flex;
             flex-direction: column;
-            background:
-                radial-gradient(1200px 600px at 10% -10%, rgba(99, 102, 241, .16), transparent 60%),
-                radial-gradient(900px 500px at 110% 10%, rgba(34, 211, 238, .10), transparent 60%),
-                var(--bg);
-            border-radius: 6px;
+            background: linear-gradient(135deg, var(--dark-bg) 0%, #16213e 60%, var(--dark-primary) 130%);
             overflow: hidden;
             opacity: 0;
             visibility: hidden;
-            transition: opacity .25s ease;
+            transition: opacity .3s ease;
         }
+
+        /* Brilho que segue o mouse (hero do portfolio) */
+        .slide::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle 600px at var(--mouse-x, 85%) var(--mouse-y, 10%), rgba(233, 69, 96, .10), transparent 45%);
+            pointer-events: none;
+        }
+
+        .slide > * { position: relative; }
 
         .slide.ativo { opacity: 1; visibility: visible; }
 
-        .rotulo {
+        /* Entrada dos blocos (equivalente ao AOS fade-up do portfolio) */
+        .slide.ativo > *:not(.rodape) { animation: subir .6s ease both; }
+        .slide.ativo > *:nth-child(2) { animation-delay: .08s; }
+        .slide.ativo > *:nth-child(3) { animation-delay: .16s; }
+        .slide.ativo > *:nth-child(4) { animation-delay: .24s; }
+        .slide.ativo > *:nth-child(5) { animation-delay: .32s; }
+        @keyframes subir { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: none; } }
+
+        /* ---------- Tipografia ---------- */
+        h1 { font-size: 50px; font-weight: 700; line-height: 1.12; }
+        h2 { font-size: 36px; font-weight: 600; line-height: 1.2; }
+        h3 { font-size: 21px; font-weight: 600; line-height: 1.3; margin-bottom: 8px; }
+        p, li, td { font-size: 20px; line-height: 1.55; color: var(--text-secondary); }
+        b, strong { color: var(--text-light); font-weight: 600; }
+        .destaque { color: var(--highlight); }
+        .pequeno { font-size: 16px; }
+
+        /* Título com a barra de destaque embaixo (.section-title do portfolio) */
+        .titulo { position: relative; margin-bottom: 40px; }
+        .titulo::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: -12px;
+            width: 80px;
+            height: 4px;
+            border-radius: 2px;
+            background: var(--highlight);
+        }
+        .titulo.centro { text-align: center; }
+        .titulo.centro::after { left: 50%; transform: translateX(-50%); }
+
+        .sobre {
             font-size: 14px;
             font-weight: 600;
             letter-spacing: .14em;
             text-transform: uppercase;
-            color: var(--accent2);
-            margin-bottom: 10px;
+            color: var(--highlight);
+            margin-bottom: 8px;
         }
 
-        h1 { font-size: 46px; font-weight: 800; line-height: 1.12; letter-spacing: -.01em; }
-        h2 { font-size: 38px; font-weight: 800; line-height: 1.15; letter-spacing: -.01em; margin-bottom: 28px; }
-        h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+        /* ---------- Ícones (SVG local, sem internet) ---------- */
+        .ico { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
 
-        p, li { font-size: 21px; line-height: 1.5; color: #cbd5e1; }
-        ul { list-style: none; display: grid; gap: 14px; }
-        ul li { padding-left: 26px; position: relative; }
-        ul li::before {
-            content: "";
-            position: absolute;
-            left: 0;
-            top: .62em;
-            width: 10px;
-            height: 10px;
-            border-radius: 3px;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
+        .lista { list-style: none; display: grid; gap: 18px; }
+        .lista li { display: flex; gap: 16px; align-items: flex-start; }
+        .lista .ico { font-size: 26px; color: var(--highlight); margin-top: 2px; }
+        .lista.checks .ico { font-size: 22px; }
+
+        /* ---------- Grades ---------- */
+        .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
+        .grade3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+        /* .meio ocupa o espaço que sobra no slide; nas grades, a linha única não passa da altura dele */
+        .meio { flex: 1; min-height: 0; }
+        .meio:not(.grade2):not(.grade3) { display: flex; flex-direction: column; justify-content: center; }
+        .grade2.meio, .grade3.meio { grid-template-rows: minmax(0, 1fr); align-content: center; }
+        .quadro { display: flex; flex-direction: column; justify-content: center; min-height: 0; height: 100%; }
+        .quadro .figura { flex: 0 1 auto; height: auto; }
+
+        /* ---------- Cards (skill-icon-box / card do portfolio) ---------- */
+        .card {
+            background: var(--dark-card);
+            border: 1px solid transparent;
+            border-radius: 12px;
+            padding: 26px 28px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, .3);
+            transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease;
         }
+        .card:hover { transform: translateY(-8px); box-shadow: 0 10px 30px rgba(233, 69, 96, .2); border-color: rgba(233, 69, 96, .4); }
+        .card p { font-size: 18px; }
+        .card > .ico { font-size: 40px; color: var(--highlight); margin-bottom: 16px; display: block; }
+        .card.borda { border-left: 4px solid var(--highlight); }
 
-        b, strong { color: #fff; font-weight: 700; }
-        code { font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: .88em; color: #a5b4fc; }
-        .muted { color: var(--muted); }
-        .pequeno { font-size: 16px; }
-
-        .grade2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 1; min-height: 0; }
-        .grade3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-
-        .cartao {
-            border: 1px solid var(--borda);
-            background: rgba(17, 28, 51, .8);
-            border-radius: 16px;
-            padding: 22px 24px;
-            box-shadow: 0 10px 30px rgba(2, 6, 23, .45);
-        }
-
-        .numero { font-size: 52px; font-weight: 800; line-height: 1.12; letter-spacing: -.02em;
-                  background: linear-gradient(135deg, #a5b4fc, var(--accent2));
-                  -webkit-background-clip: text; background-clip: text; color: transparent; }
-        .numero.ruim { background: none; color: var(--bad); }
-        .legenda { font-size: 16px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
-
-        .citacao {
-            border-left: 4px solid var(--accent);
-            padding: 14px 22px;
-            background: rgba(99, 102, 241, .08);
-            border-radius: 0 12px 12px 0;
-            font-size: 22px;
-            line-height: 1.5;
-            color: #e2e8f0;
-        }
-
-        .figura {
-            flex: 1;
-            min-height: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #fff;
-            border-radius: 14px;
-            padding: 10px;
-        }
-
-        .figura img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
-        .figura.escura { background: transparent; padding: 0; }
-        .figura.escura img { border-radius: 12px; border: 1px solid var(--borda); }
-
-        .marca {
+        .pilula {
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            width: 64px;
-            height: 64px;
-            border-radius: 18px;
-            font-weight: 800;
-            font-size: 24px;
-            color: #fff;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            padding: 5px 14px;
+            border-radius: 20px;
+            color: var(--highlight);
+            background: var(--highlight-soft);
+            margin-bottom: 12px;
         }
+        .pilula.ok { color: var(--ok); background: rgba(52, 211, 153, .12); }
+        .pilula.alerta { color: var(--warn); background: rgba(251, 191, 36, .12); }
 
-        .selo {
+        .badge {
             display: inline-block;
             font-size: 14px;
-            font-weight: 700;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            padding: 6px 12px;
-            border-radius: 999px;
+            font-weight: 500;
+            padding: 4px 12px;
+            border-radius: 6px;
+            background: var(--dark-primary);
+            color: var(--text-secondary);
         }
 
-        .selo.ok { background: rgba(52, 211, 153, .14); color: var(--ok); }
-        .selo.bad { background: rgba(248, 113, 113, .14); color: var(--bad); }
-        .selo.warn { background: rgba(251, 191, 36, .14); color: var(--warn); }
+        /* ---------- Números grandes ---------- */
+        .numero { font-size: 60px; font-weight: 700; line-height: 1.05; color: var(--highlight); }
+        .numero.alerta { color: var(--warn); }
+        .numero.ok { color: var(--ok); }
+        .compacto .card { padding: 18px 22px; }
+        .compacto .numero { font-size: 48px; }
+        .legenda { font-size: 17px; color: var(--text-secondary); margin-top: 8px; line-height: 1.45; }
 
-        /* Arquitetura desenhada em HTML (Figura 1 do artigo). */
-        .arq { display: grid; grid-template-columns: 180px 110px 220px 130px 1fr; align-items: center; flex: 1; }
-        .arq .caixa { border: 1px solid var(--borda); border-radius: 14px; background: rgba(17, 28, 51, .9); padding: 16px; text-align: center; }
-        .arq .caixa h3 { margin-bottom: 4px; }
-        .arq .caixa p { font-size: 15px; line-height: 1.4; color: var(--muted); }
-        .arq .seta { text-align: center; font-size: 13px; color: var(--accent2); line-height: 1.3; }
-        .arq .seta::before { content: "⟷"; display: block; font-size: 30px; color: var(--accent); }
-        .arq .seta.esq::before { content: "⟵"; }
-        .nodes { display: grid; gap: 16px; }
-        .node { border: 1px dashed rgba(34, 211, 238, .4); border-radius: 16px; padding: 14px 16px; background: rgba(34, 211, 238, .04); }
-        .node .titulo { font-size: 15px; font-weight: 700; color: var(--accent2); margin-bottom: 8px; }
-        .termux { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 12px; background: rgba(17, 28, 51, .9); }
-        .termux .linha { display: flex; gap: 8px; flex-wrap: wrap; font-size: 14px; }
-        .chip { border-radius: 8px; padding: 5px 10px; background: rgba(99, 102, 241, .18); color: #c7d2fe; font-weight: 600; font-size: 14px; }
-        .chip.w { background: rgba(52, 211, 153, .14); color: #a7f3d0; }
+        /* ---------- Figuras ---------- */
+        .figura { min-height: 0; height: 100%; display: flex; align-items: center; justify-content: center; }
+        .figura img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            display: block;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, .35);
+        }
+        .figura.tela img { border: 1px solid rgba(233, 69, 96, .25); }
+        .figcap { font-size: 15px; color: var(--text-secondary); text-align: center; margin-top: 8px; }
 
-        table { width: 100%; border-collapse: collapse; font-size: 19px; }
-        th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--borda); }
-        th { font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-        td { color: #cbd5e1; }
+        /* ---------- Capa ---------- */
+        .capa { display: grid; grid-template-columns: 1fr 1.05fr; gap: 48px; align-items: center; flex: 1; }
+        .capa .curso { font-size: 18px; font-weight: 600; letter-spacing: .08em; color: var(--highlight); text-transform: uppercase; }
+        .capa h1 { margin: 22px 0 14px; }
+        .capa .sub { font-size: 19px; }
+        .capa .barra { width: 90px; height: 4px; background: var(--highlight); border-radius: 2px; margin: 30px 0 22px; }
+        .capa .autor { font-size: 22px; color: var(--text-light); font-weight: 500; }
+        .capa .local { font-size: 16px; margin-top: 6px; }
 
+        /* ---------- Pergunta central ---------- */
+        .pergunta {
+            font-size: 34px;
+            font-weight: 500;
+            font-style: italic;
+            line-height: 1.45;
+            color: var(--text-light);
+            text-align: center;
+            max-width: 1000px;
+            margin: 0 auto;
+            position: relative;
+        }
+        .pergunta::before {
+            content: '“';
+            position: absolute;
+            left: -46px;
+            top: -30px;
+            font-size: 110px;
+            font-style: normal;
+            color: var(--highlight);
+            line-height: 1;
+        }
+
+        /* ---------- Fluxo (como funciona) ---------- */
+        .fluxo { display: grid; grid-template-columns: 1fr 70px 1fr 70px 1.35fr; align-items: center; }
+        .fluxo .card { text-align: center; padding: 22px 18px; }
+        .fluxo .card > .ico { margin: 0 auto 10px; }
+        .fluxo .card p { font-size: 16px; line-height: 1.4; }
+        .seta { color: var(--highlight); font-size: 34px; display: flex; justify-content: center; }
+        .celulares { display: grid; gap: 14px; }
+        .celular { text-align: left !important; }
+        .celular h3 { display: flex; align-items: center; gap: 10px; font-size: 18px; }
+        .celular h3 .ico { color: var(--highlight); font-size: 22px; }
+        .celular .badges { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+        .glossario { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 30px; justify-content: center; }
+        .glossario span { font-size: 16px; color: var(--text-secondary); }
+
+        /* ---------- Timeline (etapas) ---------- */
+        .timeline { display: grid; grid-template-columns: 1fr 50px 1fr 50px 1fr; align-items: stretch; }
+        .timeline .seta { align-items: center; }
+
+        /* ---------- Tabela simples ---------- */
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid rgba(167, 169, 190, .15); }
+        th { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--highlight); font-weight: 600; }
+        td { font-size: 18px; }
+
+        /* ---------- Comparação de custo (barras em HTML) ---------- */
+        .custos { display: grid; gap: 14px; }
+        .custo { display: grid; grid-template-columns: 300px 1fr 110px; align-items: center; gap: 16px;
+                 background: var(--dark-card); border-radius: 12px; padding: 14px 18px; box-shadow: 0 5px 20px rgba(0, 0, 0, .3); }
+        .custo.destaque-linha { border: 1px solid rgba(52, 211, 153, .45); }
+        .custo-nome { display: flex; gap: 12px; align-items: center; }
+        .custo-nome .ico { font-size: 26px; color: var(--highlight); }
+        .custo-nome b { display: block; font-size: 18px; }
+        .custo-nome small { display: block; font-size: 14px; color: var(--text-secondary); line-height: 1.35; }
+        .custo-barra { height: 12px; border-radius: 6px; background: var(--dark-primary); overflow: hidden; }
+        .custo-barra span { display: block; height: 100%; min-width: 6px; border-radius: 6px; background: var(--highlight); }
+        .destaque-linha .custo-barra span { background: var(--ok); }
+        .custo-valor { font-size: 20px; font-weight: 600; text-align: right; color: var(--text-light); white-space: nowrap; }
+        .destaque-linha .custo-valor { color: var(--ok); }
+
+        /* ---------- Encerramento ---------- */
+        .contato { text-align: center; }
+        .contato .grande { font-size: 92px; font-weight: 700; color: var(--highlight); line-height: 1.1; }
+        .contato .card { max-width: 640px; margin: 44px auto 0; }
+        .contato .card p { font-size: 18px; }
+
+        /* ---------- Rodapé e controles ---------- */
         .rodape {
             position: absolute;
             left: 80px;
             right: 80px;
-            bottom: 26px;
+            bottom: 22px;
             display: flex;
             justify-content: space-between;
             font-size: 13px;
-            color: #64748b;
+            color: rgba(167, 169, 190, .65);
+            border-top: 1px solid var(--dark-primary);
+            padding-top: 10px;
         }
 
-        /* Controles fora do palco */
         #progresso {
             position: fixed;
             left: 0;
             bottom: 0;
             height: 4px;
-            background: linear-gradient(90deg, var(--accent), var(--accent2));
-            transition: width .25s ease;
+            background: var(--highlight);
+            transition: width .3s ease;
             z-index: 5;
         }
 
@@ -214,266 +298,500 @@
             gap: 6px;
             align-items: center;
             font-size: 13px;
-            color: var(--muted);
+            color: var(--text-secondary);
             z-index: 5;
-            opacity: .35;
+            opacity: .4;
             transition: opacity .2s;
         }
-
-        #controles:hover { opacity: 1; }
-
+        #controles:hover, #controles:focus-within { opacity: 1; }
         #controles button {
             font: inherit;
-            color: var(--texto);
-            background: rgba(17, 28, 51, .9);
-            border: 1px solid var(--borda);
+            color: var(--text-light);
+            background: var(--dark-card);
+            border: 2px solid var(--dark-primary);
             border-radius: 8px;
-            padding: 6px 10px;
+            padding: 5px 11px;
             cursor: pointer;
+            transition: border-color .2s, color .2s;
+        }
+        #controles button:hover { border-color: var(--highlight); color: var(--highlight); }
+
+        /* =====================================================================
+           Modo fluido: celular em pé, tablet em pé ou janela muito pequena.
+           O slide ocupa a tela inteira, as grades viram uma coluna e o
+           conteúdo rola dentro do slide. Ativado pelo JS (ajustar()).
+           ===================================================================== */
+        body.fluido #palco {
+            position: fixed;
+            inset: 0;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            transform: none !important;
+        }
+        body.fluido .slide {
+            padding: 28px 20px 72px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+        }
+        body.fluido h1 { font-size: clamp(28px, 7.5vw, 44px); }
+        body.fluido h2 { font-size: clamp(24px, 6.4vw, 34px); }
+        body.fluido h3 { font-size: 18px; }
+        body.fluido p, body.fluido li { font-size: clamp(16px, 4.2vw, 19px); }
+        body.fluido .card p, body.fluido td { font-size: 16px; }
+        body.fluido .titulo { margin-bottom: 30px; }
+        body.fluido .grade2,
+        body.fluido .grade3,
+        body.fluido .capa { grid-template-columns: 1fr !important; gap: 18px; }
+        body.fluido .meio { flex: none; justify-content: flex-start; }
+        body.fluido .card { padding: 20px; }
+        body.fluido .card > .ico { font-size: 32px; margin-bottom: 10px; }
+        body.fluido .numero { font-size: clamp(40px, 11vw, 56px); }
+        body.fluido .pergunta { font-size: clamp(21px, 5.6vw, 30px); padding: 0 6px; }
+        body.fluido .pergunta::before { left: -4px; top: -64px; font-size: 80px; }
+        body.fluido .fluxo,
+        body.fluido .timeline { grid-template-columns: 1fr; gap: 6px; }
+        body.fluido .seta { transform: rotate(90deg); font-size: 28px; padding: 2px 0; }
+        body.fluido .figura, body.fluido .quadro { height: auto; }
+        body.fluido .figura img { max-height: none; }
+        body.fluido .grade2.meio, body.fluido .grade3.meio { grid-template-rows: none; }
+        body.fluido .contato .grande { font-size: clamp(52px, 15vw, 80px); }
+        body.fluido table, body.fluido tbody, body.fluido tr, body.fluido td { display: block; width: 100%; }
+        body.fluido thead { display: none; }
+        body.fluido tr { padding: 10px 0; border-bottom: 1px solid rgba(167, 169, 190, .15); }
+        body.fluido td { border: 0; padding: 2px 0; }
+        body.fluido td:first-child { color: var(--text-light); font-weight: 600; }
+        body.fluido .rodape { position: static; margin-top: 32px; }
+        body.fluido .custo { grid-template-columns: 1fr auto; gap: 8px 12px; padding: 12px 14px; }
+        body.fluido .custo-barra { grid-column: 1 / -1; grid-row: 2; }
+        body.fluido .custo-nome b { font-size: 16px; }
+        body.fluido .capa .figura { order: 2; }
+        body.fluido .so-palco { display: none; }
+
+        @media (hover: none) {
+            .card:hover { transform: none; box-shadow: 0 5px 20px rgba(0, 0, 0, .3); border-color: transparent; }
+            #controles { opacity: .75; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .slide, #progresso { transition: none; }
+            .slide, #progresso, .card { transition: none; }
+            .slide.ativo > * { animation: none !important; }
         }
     </style>
 </head>
 
 <body>
+    <!-- Ícones (traço, 24×24), servidos junto com a página -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></symbol>
+            <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+            <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+            <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/></symbol>
+            <symbol id="i-cpu" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></symbol>
+            <symbol id="i-recycle" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></symbol>
+            <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+            <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2M6 11v2"/></symbol>
+            <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+            <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+            <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></symbol>
+            <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+            <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+            <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/></symbol>
+            <symbol id="i-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></symbol>
+            <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+            <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+            <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></symbol>
+            <symbol id="i-swap" viewBox="0 0 24 24"><path d="M7 16H3l4 4M3 16h14M17 8h4l-4-4M21 8H7"/></symbol>
+            <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
+            <symbol id="i-mail" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></symbol>
+            <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6L4 19a2 2 0 0 0 1.7 3h12.6a2 2 0 0 0 1.7-3L14 9V3"/><path d="M7 15h10"/></symbol>
+        </defs>
+    </svg>
+
     <div id="palco">
 
         <!-- 1. Capa -->
-        <section class="slide" data-titulo="Capa" style="justify-content:center">
-            <div style="display:flex;align-items:center;gap:18px;margin-bottom:34px">
-                <span class="marca">DS</span>
+        <section class="slide" data-titulo="Capa">
+            <div class="capa">
                 <div>
-                    <div style="font-weight:700;font-size:22px">DroidServer</div>
-                    <div class="muted" style="font-size:14px;letter-spacing:.1em;text-transform:uppercase">Trabalho de Conclusão de Curso</div>
+                    <div class="curso">Engenharia da Computação · UNINORTE</div>
+                    <h1>Celulares antigos como <span class="destaque">servidores</span></h1>
+                    <p class="sub">Orquestração de servidores virtuais privados em smartphones Android reaproveitados</p>
+                    <div class="barra"></div>
+                    <p class="autor">João Pedro Correia Martins</p>
+                    <p class="local">TCC II · Manaus – 2026</p>
+                </div>
+                <div class="figura tela">
+                    <img src="{{ url_for('static', filename='apresentacao/painel_dashboard.png') }}" alt="Tela inicial do painel do DroidServer com um celular conectado">
                 </div>
             </div>
-            <h1 style="max-width:1040px">Orquestração de servidores virtuais privados em smartphones Android reaproveitados</h1>
-            <p style="margin-top:30px;font-size:24px"><b>João Pedro Correia Martins</b></p>
-            <p class="muted" style="font-size:19px">Engenharia da Computação · Centro Universitário do Norte — UNINORTE</p>
         </section>
 
-        <!-- 2. Problema -->
-        <section class="slide" data-titulo="Problema">
-            <div class="rotulo">Contexto e problema</div>
-            <h2>Lixo eletrônico cresce; celulares ainda capazes vão para a gaveta</h2>
-            <div class="grade2" style="grid-template-columns: 340px 1fr; flex:0">
-                <div class="cartao">
-                    <div class="numero">62 Mt</div>
-                    <div class="legenda">de lixo eletrônico em 2022 — só <b>22,3%</b> formalmente reciclado (BALDÉ et al., 2024)</div>
-                </div>
-                <ul style="align-content:center">
-                    <li>Smartphones descartados têm CPU <i>multicore</i> ARM e RAM comparáveis a uma VPS básica.</li>
-                    <li>Mas o Android, <b>sem root</b>, não permite Docker (sem <i>namespaces</i>/<i>cgroups</i>).</li>
-                    <li>Doze, <code>lmkd</code> e o <i>phantom process killer</i> encerram processos em segundo plano.</li>
+        <!-- 2. O que é -->
+        <section class="slide" data-titulo="O que é">
+            <h2 class="titulo">O que é este projeto?</h2>
+            <div class="grade2 meio" style="grid-template-columns: 1.05fr 1fr; align-items:center">
+                <p style="font-size:26px;line-height:1.55">
+                    Uma forma de <b>reaproveitar celulares Android parados na gaveta</b>, transformando cada um em um
+                    <b>pequeno servidor Linux</b> que pode ser usado e controlado pelo navegador.
+                </p>
+                <ul class="lista">
+                    <li><svg class="ico"><use href="#i-recycle"/></svg><span>Aparelho que viraria <b>lixo eletrônico</b> passa a ser infraestrutura útil.</span></li>
+                    <li><svg class="ico"><use href="#i-globe"/></svg><span>Tudo é <b>controlado por um painel web</b>, inclusive o terminal.</span></li>
+                    <li><svg class="ico"><use href="#i-layers"/></svg><span>Um mesmo celular roda <b>vários ambientes Linux</b> separados.</span></li>
+                    <li><svg class="ico"><use href="#i-lock"/></svg><span><b>Sem root</b> e sem trocar o sistema do aparelho.</span></li>
                 </ul>
             </div>
-            <div class="citacao" style="margin-top:30px">
-                Como orquestrar um <i>cluster</i> de smartphones Android reaproveitados, contornando as restrições
-                de privilégio e de gerenciamento de processos, para provisionar ambientes Linux isolados de forma estável?
-            </div>
         </section>
 
-        <!-- 3. Objetivos e hipótese -->
-        <section class="slide" data-titulo="Objetivos">
-            <div class="rotulo">Objetivos e hipótese</div>
-            <h2>Transformar celulares sem root em nós de um pequeno cluster</h2>
-            <div class="grade2">
-                <ul>
-                    <li><b>OE1</b> — Linux (Alpine e Debian) no aparelho com Termux + <code>proot-distro</code>, instalado por um script.</li>
-                    <li><b>OE2</b> — Agente em Python: métricas, tarefas e sincronização com o Host.</li>
-                    <li><b>OE3/OE4</b> — Painel web (Flask + Socket.IO) com ciclo de vida dos Workers e terminal no navegador.</li>
-                    <li><b>OE5</b> — Avaliar provisionamento, sobrecarga, latência e disponibilidade.</li>
+        <!-- 3. Contexto -->
+        <section class="slide" data-titulo="Contexto">
+            <h2 class="titulo">Contexto e sustentabilidade</h2>
+            <div class="grade2 meio" style="grid-template-columns: 1fr 1fr; align-items:center">
+                <ul class="lista">
+                    <li><svg class="ico"><use href="#i-phone"/></svg><span>Trocamos de celular com frequência, mas o aparelho antigo <b>ainda funciona</b>.</span></li>
+                    <li><svg class="ico"><use href="#i-cpu"/></svg><span>Um celular de poucos anos tem <b>processador e memória</b> parecidos com os de um servidor básico alugado na nuvem.</span></li>
+                    <li><svg class="ico"><use href="#i-leaf"/></svg><span><b>TI Verde:</b> usar por mais tempo o que já foi fabricado é uma das formas mais eficazes de reduzir o impacto ambiental.</span></li>
                 </ul>
-                <div class="cartao" style="align-self:start">
-                    <h3 style="color:var(--accent2)">Hipótese H1</h3>
-                    <p style="font-size:19px">É possível manter ambientes Linux disponíveis por longos períodos, para cargas leves, <b>sem root</b>, desde que:</p>
-                    <ul style="margin-top:12px;gap:8px">
-                        <li style="font-size:18px">(a) a comunicação parta do próprio nó (<i>pull</i>);</li>
-                        <li style="font-size:18px">(b) os processos sejam supervisionados;</li>
-                        <li style="font-size:18px">(c) as otimizações de bateria sejam desativadas para o Termux.</li>
-                    </ul>
+                <div class="grade2 compacto" style="gap:18px">
+                    <div class="card">
+                        <div class="numero">62 Mt</div>
+                        <div class="legenda">de lixo eletrônico no mundo em 2022</div>
+                    </div>
+                    <div class="card">
+                        <div class="numero">22%</div>
+                        <div class="legenda">foi reciclado de forma adequada</div>
+                    </div>
+                    <div class="card" style="grid-column: 1 / -1">
+                        <div class="numero">85–95%</div>
+                        <div class="legenda">da poluição de um celular vem da <b>fabricação</b>, não do uso</div>
+                    </div>
+                    <p class="pequeno" style="grid-column: 1 / -1">Fontes: Baldé et al. (2024), Global E-waste Monitor; Belkhir e Elmeligi (2018).</p>
                 </div>
             </div>
         </section>
 
-        <!-- 4. Arquitetura -->
-        <section class="slide" data-titulo="Arquitetura">
-            <div class="rotulo">Arquitetura</div>
-            <h2>Host controla Nodes; cada Node hospeda Workers</h2>
-            <div class="arq">
-                <div class="caixa">
-                    <h3>Administrador</h3>
-                    <p>navegador</p>
-                </div>
-                <div class="seta">HTTP +<br>WebSocket</div>
-                <div class="caixa">
-                    <h3>Host</h3>
-                    <p>Flask + Socket.IO<br>painel na porta 5050<br>fila de tarefas</p>
-                </div>
-                <div class="seta esq">sync a cada 10 s<br>+ WebSocket<br><span class="muted">(parte do Node)</span></div>
-                <div class="nodes">
-                    <div class="node">
-                        <div class="titulo">Node Android 01</div>
-                        <div class="termux">
-                            <div class="linha" style="margin-bottom:8px"><span class="chip">Termux</span><span class="chip">agente node.py</span><span class="chip">Supervisor</span></div>
-                            <div class="linha"><span class="muted">proot-distro:</span><span class="chip w">Worker alpine_api</span><span class="chip w">Worker debian_bd</span></div>
-                        </div>
-                    </div>
-                    <div class="node">
-                        <div class="titulo">Node Android 02</div>
-                        <div class="termux">
-                            <div class="linha" style="margin-bottom:8px"><span class="chip">Termux</span><span class="chip">agente node.py</span><span class="chip">Supervisor</span></div>
-                            <div class="linha"><span class="muted">proot-distro:</span><span class="chip w">Worker</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <p class="pequeno muted" style="margin-top:16px">Worker = ambiente Linux em PRoot, usado como uma VPS. O Host só contata o Node (porta 5051) para varredura e pareamento.</p>
-        </section>
-
-        <!-- 5. Decisões de projeto -->
-        <section class="slide" data-titulo="Protocolo">
-            <div class="rotulo">Como funciona</div>
-            <h2>Decisões que contornam as restrições do Android</h2>
+        <!-- 4. Barreiras -->
+        <section class="slide" data-titulo="Barreiras">
+            <h2 class="titulo">Por que não é tão simples?</h2>
+            <p style="margin-bottom:30px">O Android foi feito para ser um celular, não um servidor. Três barreiras aparecem:</p>
             <div class="grade3">
-                <div class="cartao">
-                    <h3>Comunicação parte do Node</h3>
-                    <p style="font-size:18px">O agente faz <code>POST /api/node_sync</code> a cada 10 s, envia estado e recebe tarefas. Sobrevive a troca de IP por DHCP e a reinícios do Host.</p>
+                <div class="card">
+                    <svg class="ico"><use href="#i-lock"/></svg>
+                    <h3>Sem acesso de administrador</h3>
+                    <p>Sem "root", não dá para instalar um Linux tradicional nem ferramentas como o Docker.</p>
                 </div>
-                <div class="cartao">
-                    <h3>Terminal por WebSocket</h3>
-                    <p style="font-size:18px">xterm.js no navegador ↔ Host ↔ agente ↔ PTY com <code>proot-distro login</code>. Cada terminal fica numa sala própria.</p>
+                <div class="card">
+                    <svg class="ico"><use href="#i-battery"/></svg>
+                    <h3>Economia de bateria</h3>
+                    <p>O sistema fecha programas que ficam rodando em segundo plano para poupar energia.</p>
                 </div>
-                <div class="cartao">
-                    <h3>Supervisão e registro local</h3>
-                    <p style="font-size:18px">O Supervisor reinicia os serviços; o Node grava métricas e verificações no próprio celular — independe do painel.</p>
-                </div>
-            </div>
-            <ul style="margin-top:30px">
-                <li>Nodes adicionados pelo painel: varredura da rede + pareamento com <b>token exclusivo</b> por Node.</li>
-                <li>Painel com senha, proteção contra requisições de outros sites e <b>233 testes</b> automatizados.</li>
-            </ul>
-        </section>
-
-        <!-- 6. Interface -->
-        <section class="slide" data-titulo="Interface">
-            <div class="rotulo">Protótipo</div>
-            <h2>Painel web e terminal no navegador</h2>
-            <div class="grade2">
-                <div class="figura escura"><img src="{{ url_for('static', filename='apresentacao/painel_dashboard.png') }}" alt="Dashboard do painel com os Nodes cadastrados"></div>
-                <div class="figura escura"><img src="{{ url_for('static', filename='apresentacao/painel_terminal.png') }}" alt="Terminal de um Worker aberto no navegador"></div>
-            </div>
-        </section>
-
-        <!-- 7. Ambiente de testes -->
-        <section class="slide" data-titulo="Avaliação">
-            <div class="rotulo">Avaliação experimental</div>
-            <h2>Dois aparelhos de gerações diferentes, em Wi-Fi doméstico</h2>
-            <div class="grade2" style="flex:0">
-                <div class="cartao">
-                    <h3>Node 1 — POCO X6 Pro 5G</h3>
-                    <p style="font-size:18px">Dimensity 8300 · 7,3 GB RAM · <b>Android 16</b><br><span class="muted">E1–E5, E8</span></p>
-                </div>
-                <div class="cartao">
-                    <h3>Node 2 — Motorola moto e40</h3>
-                    <p style="font-size:18px">Unisoc T700 · 3,4 GB RAM · <b>Android 11</b><br><span class="muted">E7 (24 h), E10</span></p>
-                </div>
-            </div>
-            <table style="margin-top:26px">
-                <tr><th>Questão</th><th>O que foi medido</th></tr>
-                <tr><td><b>QP1</b> Isolamento</td><td>Tempo de provisionamento (E1), disco (E2), sobrecarga do PRoot (E3)</td></tr>
-                <tr><td><b>QP2</b> Rede</td><td>Latência de eco do terminal (E4), entrega de tarefa (E5)</td></tr>
-                <tr><td><b>QP3</b> Estabilidade</td><td>Disponibilidade em 24 h (E7), vazão (E8), consumo do agente (E10)</td></tr>
-            </table>
-            <p class="pequeno muted" style="margin-top:14px">Host cabeado ao roteador · scripts e dados brutos em <code>bench/</code></p>
-        </section>
-
-        <!-- 8. E1 -->
-        <section class="slide" data-titulo="E1">
-            <div class="rotulo">E1 · Provisionamento</div>
-            <h2>Criar um Worker leva segundos; o painel espera o próximo sync</h2>
-            <div class="grade2" style="grid-template-columns: 330px 1fr">
-                <div style="display:grid;gap:18px;align-content:start">
-                    <div class="cartao"><div class="numero">1,9 s</div><div class="legenda">Alpine instalado no aparelho (imagem em cache) · 9 MB</div></div>
-                    <div class="cartao"><div class="numero">16 s</div><div class="legenda">até aparecer no painel (mediana) — dominado pelo ciclo de 10 s</div></div>
-                    <span class="selo ok">Critério ≤ 2 min atendido</span>
-                </div>
-                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e1_provisionamento.png') }}" alt="Gráfico do tempo de provisionamento"></div>
-            </div>
-        </section>
-
-        <!-- 9. E3 + E8 -->
-        <section class="slide" data-titulo="E3 e E8">
-            <div class="rotulo">E3 · E8 · Custo do PRoot</div>
-            <h2>Barato para CPU e escrita; caro para arquivos pequenos</h2>
-            <div class="grade3" style="margin-bottom:22px">
-                <div class="cartao"><div class="numero">+15%</div><div class="legenda">CPU pura · escrita sequencial +2%</div></div>
-                <div class="cartao"><div class="numero ruim">13×</div><div class="legenda">mais lento em metadados de arquivo (<code>ptrace</code> intercepta cada chamada)</div></div>
-                <div class="cartao"><div class="numero">~60 req/s</div><div class="legenda">API HTTP no Worker ≈ 40–45% da vazão nativa</div></div>
-            </div>
-            <div class="grade2">
-                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e3_sobrecarga_proot.png') }}" alt="Gráfico da sobrecarga do PRoot por carga"></div>
-                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e8_vazao.png') }}" alt="Gráfico da vazão por conexões simultâneas"></div>
-            </div>
-        </section>
-
-        <!-- 10. E4 -->
-        <section class="slide" data-titulo="E4">
-            <div class="rotulo">E4 · Latência do terminal</div>
-            <h2>O terminal responde rápido — se a rede ajudar</h2>
-            <div class="grade2" style="grid-template-columns: 360px 1fr">
-                <div style="display:grid;gap:18px;align-content:start">
-                    <div class="cartao"><div class="numero">58 ms</div><div class="legenda">p95 em 5 GHz (mediana 17 ms)</div><span class="selo ok" style="margin-top:12px">≤ 200 ms</span></div>
-                    <div class="cartao"><div class="numero ruim">360 ms</div><div class="legenda">p95 em 2,4 GHz — efeito do meio sem fio</div><span class="selo bad" style="margin-top:12px">acima do critério</span></div>
-                    <p class="pequeno muted">A medição revelou um defeito: o agente ficava em <i>long-polling</i> (p95 321 ms). Corrigido para WebSocket direto.</p>
-                </div>
-                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e4_latencia_terminal_cdf.png') }}" alt="Distribuição acumulada da latência de eco"></div>
-            </div>
-        </section>
-
-        <!-- 11. E7 — resultado pendente: troque só o bloco #e7-resultado -->
-        <section class="slide" data-titulo="E7">
-            <div class="rotulo">E7 · Disponibilidade em 24 h</div>
-            <h2>O serviço continua no ar sozinho no celular?</h2>
-            <div class="grade2" style="grid-template-columns: 1fr 420px">
-                <ul style="align-content:start">
-                    <li>moto e40 (Android 11), Worker Alpine com a API de demonstração, na tomada e com a tela apagada.</li>
-                    <li>O próprio agente faz <code>GET</code> no serviço a cada 10 s e grava no registro local — não depende do PC.</li>
-                    <li>Amostra ausente conta como indisponível (medida conservadora).</li>
-                    <li>Parcial: <b>99,94%</b> em 4,4 h, sem reinícios; o serviço ficou 6 h no ar mesmo com o PC desligado.</li>
-                </ul>
-                <div class="cartao" id="e7-resultado" style="align-self:start;text-align:center">
-                    <span class="selo warn">Resultado pendente</span>
-                    <div class="numero" style="margin-top:18px">— %</div>
-                    <div class="legenda">disponibilidade em 24 h · critério ≥ 99%</div>
+                <div class="card">
+                    <svg class="ico"><use href="#i-shield"/></svg>
+                    <h3>Aplicativos isolados</h3>
+                    <p>Cada app fica fechado na sua "caixa", o que dificulta oferecer serviços na rede.</p>
                 </div>
             </div>
         </section>
 
-        <!-- 12. Conclusão -->
-        <section class="slide" data-titulo="Conclusão">
-            <div class="rotulo">Conclusão</div>
-            <h2>Celulares reaproveitados sustentam serviços leves, sem root</h2>
-            <div class="grade2">
-                <ul style="align-content:start">
-                    <li>Comunicação a partir do nó + supervisão de processos funcionaram: trocas de IP e reinícios foram absorvidos.</li>
-                    <li>Agente leve: 25–43 MB de RAM e &lt; 1% de CPU em repouso.</li>
-                    <li>Limites claros: PRoot não é virtualização, arquivos ficam ~13× mais lentos e a qualidade do Wi-Fi pesa tanto quanto o sistema.</li>
-                </ul>
-                <div class="cartao" style="align-self:start">
-                    <h3>Limitações e trabalhos futuros</h3>
-                    <ul style="gap:8px;margin-top:10px">
-                        <li style="font-size:18px">Sem TLS e sem limites de CPU/memória (sem <i>cgroups</i>)</li>
-                        <li style="font-size:18px">Temperatura e energia não medidas sem root</li>
-                        <li style="font-size:18px">Escalonamento automático entre Nodes</li>
-                        <li style="font-size:18px">Proxy reverso para expor os serviços</li>
+        <!-- 5. Problema -->
+        <section class="slide" data-titulo="Problema" style="justify-content:center">
+            <div class="sobre" style="text-align:center;margin-bottom:34px">Problema central</div>
+            <p class="pergunta">
+                Como transformar celulares Android comuns, <span class="destaque">sem root</span>, em servidores Linux
+                que <span class="destaque">continuem funcionando</span> e possam ser
+                <span class="destaque">controlados à distância</span>?
+            </p>
+        </section>
+
+        <!-- 6. Objetivos -->
+        <section class="slide" data-titulo="Objetivos">
+            <h2 class="titulo">Objetivos do trabalho</h2>
+            <div class="grade2 meio" style="align-items:start">
+                <div class="card borda">
+                    <div class="pilula"><svg class="ico"><use href="#i-target"/></svg>Geral</div>
+                    <p style="font-size:21px">
+                        Desenvolver e avaliar um sistema que transforma <b>celulares Android sem root</b> em
+                        <b>servidores Linux de baixo custo</b>, gerenciados por um painel web.
+                    </p>
+                </div>
+                <div>
+                    <div class="pilula">Específicos</div>
+                    <ul class="lista checks">
+                        <li><svg class="ico"><use href="#i-check"/></svg><span>Rodar Linux (Alpine e Debian) no celular <b>sem root</b>.</span></li>
+                        <li><svg class="ico"><use href="#i-check"/></svg><span>Instalar tudo <b>automaticamente</b>, com um único script.</span></li>
+                        <li><svg class="ico"><use href="#i-check"/></svg><span>Criar um <b>painel web</b> para gerenciar os celulares, com terminal no navegador.</span></li>
+                        <li><svg class="ico"><use href="#i-check"/></svg><span><b>Medir</b> velocidade, desempenho e estabilidade.</span></li>
                     </ul>
                 </div>
             </div>
-            <p style="margin-top:22px;font-size:26px;font-weight:700">Obrigado! <span class="muted" style="font-weight:500">Perguntas?</span></p>
+        </section>
+
+        <!-- 7. A técnica -->
+        <section class="slide" data-titulo="A técnica">
+            <h2 class="titulo">A técnica: um Linux dentro de um aplicativo</h2>
+            <div class="grade2 meio" style="grid-template-columns: 1fr 1.1fr; align-items:center">
+                <div>
+                    <p style="margin-bottom:24px">
+                        O app <b>Termux</b> traz um terminal para o Android. Dentro dele, a ferramenta <b>PRoot</b>
+                        faz um Linux completo <b>"acreditar" que tem acesso total</b> ao aparelho, sem mexer no sistema.
+                    </p>
+                    <ul class="lista checks">
+                        <li><svg class="ico"><use href="#i-check"/></svg><span>Não precisa de root nem de desbloqueio.</span></li>
+                        <li><svg class="ico"><use href="#i-check"/></svg><span>Instala Alpine ou Debian completos.</span></li>
+                        <li><svg class="ico"><use href="#i-check"/></svg><span>Cada ambiente fica separado dos outros.</span></li>
+                    </ul>
+                </div>
+                <div class="quadro">
+                    <div class="figura tela">
+                        <img src="{{ url_for('static', filename='apresentacao/painel_terminal.png') }}" alt="Terminal de um ambiente Alpine Linux aberto no navegador">
+                    </div>
+                    <p class="figcap">Terminal de um ambiente Linux aberto pelo painel (dados de demonstração)</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 8. Como funciona -->
+        <section class="slide" data-titulo="Como funciona">
+            <h2 class="titulo">Como funciona</h2>
+            <div class="meio">
+                <div class="fluxo">
+                    <div class="card">
+                        <svg class="ico"><use href="#i-globe"/></svg>
+                        <h3>Você</h3>
+                        <p>abre o painel no navegador</p>
+                    </div>
+                    <div class="seta"><svg class="ico"><use href="#i-arrow"/></svg></div>
+                    <div class="card">
+                        <svg class="ico"><use href="#i-monitor"/></svg>
+                        <h3>Painel (no PC)</h3>
+                        <p>mostra os celulares e envia as ordens</p>
+                    </div>
+                    <div class="seta"><svg class="ico"><use href="#i-swap"/></svg></div>
+                    <div class="celulares">
+                        <div class="card celular">
+                            <h3><svg class="ico"><use href="#i-phone"/></svg>Celular 1 <span class="badge">Node</span></h3>
+                            <div class="badges"><span class="badge">Linux: site</span><span class="badge">Linux: banco de dados</span></div>
+                        </div>
+                        <div class="card celular">
+                            <h3><svg class="ico"><use href="#i-phone"/></svg>Celular 2 <span class="badge">Node</span></h3>
+                            <div class="badges"><span class="badge">Linux: API</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="glossario">
+                    <span><b class="destaque">Node</b> = um celular do grupo</span>
+                    <span><b class="destaque">Worker</b> = um ambiente Linux dentro do celular</span>
+                    <span><b class="destaque">A cada 10 s</b> o celular avisa o painel que está vivo e busca novas ordens</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 9. Painel na prática -->
+        <section class="slide" data-titulo="Painel">
+            <h2 class="titulo">O painel na prática</h2>
+            <div class="grade2 meio" style="align-items:center">
+                <div class="quadro">
+                    <div class="figura tela"><img src="{{ url_for('static', filename='apresentacao/painel_node.png') }}" alt="Página de um celular no painel, com os ambientes Linux e o botão para criar um novo"></div>
+                    <p class="figcap">Página de um celular: criar, ligar e desligar ambientes Linux</p>
+                </div>
+                <div class="quadro">
+                    <div class="figura tela"><img src="{{ url_for('static', filename='apresentacao/painel_dashboard.png') }}" alt="Tela inicial do painel com o uso de processador e memória em tempo real"></div>
+                    <p class="figcap">Tela inicial: celulares conectados e uso em tempo real</p>
+                </div>
+            </div>
+            <p class="pequeno" style="text-align:center;margin-top:14px">Imagens com dados de demonstração. O painel funciona sem internet e pede senha.</p>
+        </section>
+
+        <!-- 10. Etapas -->
+        <section class="slide" data-titulo="Etapas">
+            <h2 class="titulo">Etapas do desenvolvimento</h2>
+            <div class="meio">
+                <div class="timeline">
+                    <div class="card borda">
+                        <div class="pilula"><svg class="ico"><use href="#i-wrench"/></svg>Etapa 1</div>
+                        <h3>Instalação automática</h3>
+                        <p>Um script prepara o celular: Termux, PRoot, o programa que conversa com o painel e o que mantém os serviços ligados.</p>
+                    </div>
+                    <div class="seta"><svg class="ico"><use href="#i-arrow"/></svg></div>
+                    <div class="card borda">
+                        <div class="pilula"><svg class="ico"><use href="#i-monitor"/></svg>Etapa 2</div>
+                        <h3>Comunicação e painel</h3>
+                        <p>Painel web para adicionar celulares com segurança, criar ambientes Linux e abrir o terminal no navegador.</p>
+                    </div>
+                    <div class="seta"><svg class="ico"><use href="#i-arrow"/></svg></div>
+                    <div class="card borda">
+                        <div class="pilula"><svg class="ico"><use href="#i-flask"/></svg>Etapa 3</div>
+                        <h3>Testes</h3>
+                        <p>Medições em dois celulares reais: velocidade, desempenho, tempo de resposta e 24 horas ligado.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 11. Como foi testado -->
+        <section class="slide" data-titulo="Testes">
+            <h2 class="titulo">Como foi testado</h2>
+            <div class="grade2" style="gap:24px;margin-bottom:26px">
+                <div class="card" style="display:flex;gap:18px;align-items:center">
+                    <svg class="ico" style="font-size:40px;color:var(--highlight)"><use href="#i-phone"/></svg>
+                    <div><h3 style="margin:0">POCO X6 Pro · Android 16</h3><p>celular recente, 8 GB de RAM</p></div>
+                </div>
+                <div class="card" style="display:flex;gap:18px;align-items:center">
+                    <svg class="ico" style="font-size:40px;color:var(--highlight)"><use href="#i-phone"/></svg>
+                    <div><h3 style="margin:0">Moto e40 · Android 11</h3><p>celular simples, 4 GB de RAM</p></div>
+                </div>
+            </div>
+            <table>
+                <thead><tr><th>Pergunta</th><th>O que foi medido</th></tr></thead>
+                <tbody>
+                    <tr><td><b>Criar um ambiente é rápido?</b></td><td>Tempo para instalar um Linux novo e ele aparecer no painel</td></tr>
+                    <tr><td><b>Fica muito mais lento?</b></td><td>Mesmas tarefas dentro e fora do ambiente Linux</td></tr>
+                    <tr><td><b>O terminal responde bem?</b></td><td>Tempo entre apertar uma tecla e ela aparecer na tela</td></tr>
+                    <tr><td><b>Fica no ar sozinho?</b></td><td>Um serviço ligado por 24 horas, verificado a cada 10 s</td></tr>
+                </tbody>
+            </table>
+            <p class="pequeno" style="margin-top:12px">Rede Wi-Fi doméstica · scripts e dados brutos na pasta <b>bench/</b> do repositório</p>
+        </section>
+
+        <!-- 12. Resultado: criar -->
+        <section class="slide" data-titulo="Criar">
+            <div class="sobre">Resultado 1</div>
+            <h2 class="titulo">Criar um ambiente Linux leva segundos</h2>
+            <div class="grade2 meio" style="grid-template-columns: 330px 1fr; align-items:center">
+                <div style="display:grid;gap:18px">
+                    <div class="card"><div class="numero">1,9 s</div><div class="legenda">para instalar um Alpine no celular (já baixado)</div></div>
+                    <div class="card"><div class="numero">16 s</div><div class="legenda">até aparecer no painel, por causa do aviso a cada 10 s</div></div>
+                    <div><span class="pilula ok"><svg class="ico"><use href="#i-check"/></svg>Meta: até 2 minutos</span></div>
+                </div>
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e1_provisionamento.png') }}" alt="Gráfico do tempo para criar um ambiente Linux, por sistema"></div>
+            </div>
+        </section>
+
+        <!-- 13. Energia e custo: ESTIMATIVA com fontes (não medido neste trabalho; ver E9 no vault).
+             Conta: watts × 730 h/mês × R$ 0,876/kWh (tarifa residencial B1, Amazonas, mai/2026);
+             VPS: US$ 6/mês (DigitalOcean 1 GB) × R$ 5,56 (BCB, 11/11/2026). -->
+        <section class="slide" data-titulo="Energia e custo">
+            <div class="sobre">Comparação · estimativa</div>
+            <h2 class="titulo">Quanto custa manter um servidor ligado o mês todo?</h2>
+            <div class="grade2 meio" style="grid-template-columns: 1.25fr 1fr; align-items:center; gap:40px">
+                <div class="custos">
+                    <div class="custo destaque-linha">
+                        <div class="custo-nome"><svg class="ico"><use href="#i-phone"/></svg><span><b>Celular reaproveitado</b><small>~2 W · aparelho que já existe</small></span></div>
+                        <div class="custo-barra"><span style="width:2%"></span></div>
+                        <div class="custo-valor">≈ R$ 1,30</div>
+                    </div>
+                    <div class="custo">
+                        <div class="custo-nome"><svg class="ico"><use href="#i-cpu"/></svg><span><b>Raspberry Pi 5</b><small>~3 W · compra de R$ 650 a R$ 1.000</small></span></div>
+                        <div class="custo-barra"><span style="width:3%"></span></div>
+                        <div class="custo-valor">≈ R$ 2</div>
+                    </div>
+                    <div class="custo">
+                        <div class="custo-nome"><svg class="ico"><use href="#i-globe"/></svg><span><b>VPS básica na nuvem</b><small>1 vCPU, 1 GB · aluguel, em dólar</small></span></div>
+                        <div class="custo-barra"><span style="width:52%"></span></div>
+                        <div class="custo-valor">≈ R$ 33</div>
+                    </div>
+                    <div class="custo">
+                        <div class="custo-nome"><svg class="ico"><use href="#i-monitor"/></svg><span><b>PC de mesa ligado 24 h</b><small>~100 W parado, sem fazer nada</small></span></div>
+                        <div class="custo-barra"><span style="width:100%"></span></div>
+                        <div class="custo-valor">≈ R$ 64</div>
+                    </div>
+                    <p class="pequeno" style="margin-top:6px">Custo por mês: energia na tarifa do Amazonas (≈ R$ 0,88/kWh) ou aluguel da VPS.</p>
+                </div>
+                <div style="display:grid;gap:18px">
+                    <div class="card">
+                        <div class="numero ok">50×</div>
+                        <div class="legenda">menos energia que um PC de mesa ligado o tempo todo</div>
+                    </div>
+                    <div class="card">
+                        <div class="numero">≈ R$ 15</div>
+                        <div class="legenda">de energia <b>por ano</b> por celular, contra ≈ R$ 400 de uma VPS básica</div>
+                    </div>
+                </div>
+            </div>
+            <p class="pequeno" style="margin-top:14px">
+                Valores estimados, não medidos neste trabalho: consumo do celular de Switzer et al. (2023), que mediram 1,5 a 2,5 W
+                em celulares reaproveitados como servidor. O desempenho não é o mesmo: a comparação vale para serviços leves.
+            </p>
+        </section>
+
+        <!-- 14. Resultado: terminal -->
+        <section class="slide" data-titulo="Terminal">
+            <div class="sobre">Resultado 2</div>
+            <h2 class="titulo">O terminal responde rápido, se o Wi-Fi ajudar</h2>
+            <div class="grade2 meio" style="grid-template-columns: 340px 1fr; align-items:center">
+                <div style="display:grid;gap:18px">
+                    <div class="card">
+                        <span class="pilula ok"><svg class="ico"><use href="#i-wifi"/></svg>Wi-Fi 5 GHz</span>
+                        <div class="numero ok">58 ms</div>
+                        <div class="legenda">no pior caso comum (95% das teclas). Meta: até 200 ms</div>
+                    </div>
+                    <div class="card">
+                        <span class="pilula alerta"><svg class="ico"><use href="#i-wifi"/></svg>Wi-Fi 2,4 GHz</span>
+                        <div class="numero alerta">360 ms</div>
+                        <div class="legenda">acima da meta: a qualidade da rede pesa tanto quanto o sistema</div>
+                    </div>
+                </div>
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e4_latencia_terminal_cdf.png') }}" alt="Gráfico do tempo de resposta do terminal em cada rede Wi-Fi"></div>
+            </div>
+            <p class="pequeno" style="margin-top:10px">O teste também revelou uma falha na conexão do terminal, que foi corrigida (linha "versão antiga" no gráfico).</p>
+        </section>
+
+        <!-- 15. Resultado: 24 h. Resultado pendente: troque só o bloco #e7-resultado -->
+        <section class="slide" data-titulo="24 horas">
+            <div class="sobre">Resultado 3</div>
+            <h2 class="titulo">O serviço continua no ar sozinho?</h2>
+            <div class="grade2 meio" style="grid-template-columns: 1fr 400px; align-items:center">
+                <ul class="lista">
+                    <li><svg class="ico"><use href="#i-phone"/></svg><span>Moto e40 na tomada, <b>tela apagada</b>, com um site de teste rodando no ambiente Linux.</span></li>
+                    <li><svg class="ico"><use href="#i-clock"/></svg><span>O próprio celular testa o site <b>a cada 10 segundos</b> e anota o resultado, sem depender do PC.</span></li>
+                    <li><svg class="ico"><use href="#i-activity"/></svg><span>Até agora: <b>99,94%</b> no ar em 4,4 h, sem reinícios. O serviço ficou 6 h ligado mesmo com o PC desligado.</span></li>
+                </ul>
+                <div class="card" id="e7-resultado" style="text-align:center">
+                    <span class="pilula alerta">Resultado pendente</span>
+                    <div class="numero" style="margin-top:12px">— %</div>
+                    <div class="legenda">do tempo no ar em 24 h · meta: 99% ou mais</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 16. Considerações finais -->
+        <section class="slide" data-titulo="Conclusão">
+            <h2 class="titulo">Considerações finais e próximos passos</h2>
+            <div class="grade3 meio" style="align-items:stretch;align-content:center">
+                <div class="card">
+                    <svg class="ico"><use href="#i-check"/></svg>
+                    <h3>Funciona sem root</h3>
+                    <p>Celulares reaproveitados rodam serviços leves de forma estável, gerenciados por um painel, com o próprio celular mantendo tudo ligado.</p>
+                </div>
+                <div class="card">
+                    <svg class="ico"><use href="#i-leaf"/></svg>
+                    <h3>Impacto direto</h3>
+                    <p>Infraestrutura de custo quase zero para laboratórios, estudantes e testes, dando nova vida a aparelhos parados.</p>
+                </div>
+                <div class="card">
+                    <svg class="ico"><use href="#i-wrench"/></svg>
+                    <h3>Limites e próximos passos</h3>
+                    <p>Conexão ainda sem criptografia, sem limite de uso por ambiente e arquivos pequenos lentos. Próximo: publicar os serviços na internet com segurança.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 17. Perguntas -->
+        <section class="slide" data-titulo="Perguntas" style="justify-content:center">
+            <div class="contato">
+                <div class="grande">Perguntas?</div>
+                <p style="margin-top:8px">Obrigado pela atenção!</p>
+                <div class="card">
+                    <p><b>João Pedro Correia Martins</b></p>
+                    <p><span class="destaque">jpedro7682@gmail.com</span></p>
+                    <p>Engenharia da Computação · UNINORTE</p>
+                </div>
+            </div>
         </section>
 
     </div>
@@ -493,23 +811,32 @@
             const total = slides.length;
             let atual = 0;
 
-            // Rodapé com autor e número em todos os slides, menos a capa.
+            // Rodapé em todos os slides, menos a capa.
             slides.forEach((s, i) => {
                 if (i === 0) return;
                 const r = document.createElement('div');
                 r.className = 'rodape';
-                r.innerHTML = '<span>DroidServer · TCC</span><span>' + (i + 1) + ' / ' + total + '</span>';
+                // o número do slide fica nos controles, no canto direito
+                r.innerHTML = '<span>DroidServer · TCC II</span>';
                 s.appendChild(r);
             });
 
+            // Palco 16:9 escalado quando cabe com texto legível; senão (celular em
+            // pé, tablet em pé, janela pequena) o slide ocupa a tela e rola.
             function ajustar() {
-                const escala = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
-                palco.style.transform = 'translate(-50%, -50%) scale(' + escala + ')';
+                // clientWidth/Height = área visível sem o zoom que o celular aplica
+                // quando o palco de 1280 px ainda não foi escalado
+                const w = document.documentElement.clientWidth, h = document.documentElement.clientHeight;
+                const escala = Math.min(w / 1280, h / 720);
+                const fluido = w < h || escala < 0.6;
+                document.body.classList.toggle('fluido', fluido);
+                palco.style.transform = fluido ? '' : 'translate(-50%, -50%) scale(' + escala + ')';
             }
 
             function ir(n, atualizarHash = true) {
                 atual = Math.max(0, Math.min(total - 1, n));
                 slides.forEach((s, i) => s.classList.toggle('ativo', i === atual));
+                slides[atual].scrollTop = 0;
                 document.getElementById('contador').textContent = (atual + 1) + ' / ' + total;
                 document.getElementById('progresso').style.width = ((atual + 1) / total * 100) + '%';
                 if (atualizarHash) history.replaceState(null, '', '#' + (atual + 1));
@@ -528,8 +855,10 @@
             document.addEventListener('keydown', (e) => {
                 if (e.altKey || e.ctrlKey || e.metaKey) return;
                 const k = e.key;
-                if (['ArrowRight', 'ArrowDown', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); ir(atual + 1); }
-                else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); ir(atual - 1); }
+                if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); ir(atual + 1); }
+                else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); ir(atual - 1); }
+                else if (k === 'ArrowDown' && !document.body.classList.contains('fluido')) { e.preventDefault(); ir(atual + 1); }
+                else if (k === 'ArrowUp' && !document.body.classList.contains('fluido')) { e.preventDefault(); ir(atual - 1); }
                 else if (k === 'Home') ir(0);
                 else if (k === 'End') ir(total - 1);
                 else if (k === 'f' || k === 'F') telaCheia();
@@ -539,20 +868,33 @@
             document.getElementById('prox').addEventListener('click', (e) => { e.stopPropagation(); ir(atual + 1); });
             document.getElementById('tela').addEventListener('click', (e) => { e.stopPropagation(); telaCheia(); });
 
-            // Clique: metade direita avança, metade esquerda volta.
+            // Clique: metade direita avança, metade esquerda volta (só no palco;
+            // no modo fluido, navegue deslizando ou pelos botões).
             document.addEventListener('click', (e) => {
-                if (e.target.closest('#controles')) return;
+                if (e.target.closest('#controles') || document.body.classList.contains('fluido')) return;
                 ir(e.clientX > window.innerWidth / 2 ? atual + 1 : atual - 1);
             });
 
-            // Deslizar no celular.
-            let toqueX = null;
-            document.addEventListener('touchstart', (e) => { toqueX = e.touches[0].clientX; }, { passive: true });
+            // Deslizar para os lados no celular (rolagem vertical continua livre).
+            let toque = null;
+            document.addEventListener('touchstart', (e) => {
+                toque = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            }, { passive: true });
             document.addEventListener('touchend', (e) => {
-                if (toqueX === null) return;
-                const dx = e.changedTouches[0].clientX - toqueX;
-                toqueX = null;
-                if (Math.abs(dx) > 40) ir(dx < 0 ? atual + 1 : atual - 1);
+                if (!toque) return;
+                const dx = e.changedTouches[0].clientX - toque.x;
+                const dy = e.changedTouches[0].clientY - toque.y;
+                toque = null;
+                if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) ir(dx < 0 ? atual + 1 : atual - 1);
+            });
+
+            // Brilho que segue o mouse no slide atual.
+            document.addEventListener('mousemove', (e) => {
+                const s = slides[atual];
+                const r = s.getBoundingClientRect();
+                const k = r.width / s.offsetWidth || 1;
+                s.style.setProperty('--mouse-x', ((e.clientX - r.left) / k) + 'px');
+                s.style.setProperty('--mouse-y', ((e.clientY - r.top) / k) + 'px');
             });
 
             window.addEventListener('resize', ajustar);

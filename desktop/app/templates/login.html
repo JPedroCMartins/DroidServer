@@ -5,51 +5,143 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DroidServer — Entrar</title>
-    <script src="{{ url_for('static', filename='vendor/tailwind-3.4.17.js') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/inter.css') }}">
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'] },
-                    colors: { bg: '#0b1220', surface: '#111c33', muted: '#8aa0bf', accent: '#6366f1', accent2: '#22d3ee', bad: '#f87171' },
-                },
-            },
-        };
-    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/poppins.css') }}">
     <style>
-        body {
-            background:
-                radial-gradient(1200px 600px at 10% -10%, rgba(99, 102, 241, .16), transparent 60%),
-                radial-gradient(900px 500px at 110% 10%, rgba(34, 211, 238, .10), transparent 60%),
-                #0b1220;
+        /* Padrão visual do portfolio-page: fundo #1a1a2e, card #16213e, detalhe #0f3460, destaque #e94560. */
+        :root {
+            --dark-bg: #1a1a2e;
+            --dark-card: #16213e;
+            --dark-primary: #0f3460;
+            --highlight: #e94560;
+            --text-light: #f0f0f0;
+            --text-secondary: #a7a9be;
         }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body { height: 100%; }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: var(--text-light);
+            background: linear-gradient(135deg, var(--dark-bg) 0%, var(--dark-primary) 100%);
+            display: grid;
+            place-items: center;
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Brilho que segue o mouse (hero do portfolio) */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle 600px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(233, 69, 96, .15), transparent 40%);
+            pointer-events: none;
+        }
+
+        main {
+            width: 100%;
+            max-width: 400px;
+            position: relative;
+            animation: fadeUp .8s ease both;
+        }
+
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+        .marca { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 28px; }
+        .marca .logo {
+            width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+            background: var(--highlight); color: #fff; font-weight: 700; font-size: 16px;
+            box-shadow: 0 0 20px rgba(233, 69, 96, .35);
+        }
+        .marca strong { display: block; font-size: 18px; font-weight: 700; }
+        .marca span { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-secondary); }
+
+        form {
+            background: var(--dark-card);
+            border-radius: 16px;
+            padding: 32px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, .3);
+        }
+
+        h1 { font-size: 24px; font-weight: 600; text-align: center; position: relative; margin-bottom: 30px; }
+        h1::after {
+            content: ''; position: absolute; left: 50%; bottom: -10px; transform: translateX(-50%);
+            width: 60px; height: 4px; border-radius: 2px; background: var(--highlight);
+        }
+
+        label { display: block; font-size: 13px; font-weight: 500; color: var(--text-secondary); margin-bottom: 8px; }
+
+        input[type=password] {
+            width: 100%;
+            font: inherit;
+            font-size: 15px;
+            color: var(--text-light);
+            background: var(--dark-bg);
+            border: 2px solid var(--dark-primary);
+            border-radius: 8px;
+            padding: 10px 14px;
+            outline: none;
+            transition: border-color .2s;
+        }
+        input[type=password]:focus { border-color: var(--highlight); }
+
+        .erro { margin-top: 12px; font-size: 13px; color: #ff8fa3; }
+
+        button {
+            margin-top: 22px;
+            width: 100%;
+            font: inherit;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-light);
+            background: var(--highlight);
+            border: 2px solid var(--highlight);
+            border-radius: 8px;
+            padding: 11px;
+            cursor: pointer;
+            transition: all .3s;
+        }
+        button:hover, button:focus-visible { background: transparent; color: var(--highlight); }
+
+        .dica { margin-top: 18px; text-align: center; font-size: 12px; color: var(--text-secondary); }
+        .dica code { color: var(--text-light); }
+
+        @media (prefers-reduced-motion: reduce) { main { animation: none; } button { transition: none; } }
     </style>
 </head>
 
-<body class="font-sans text-slate-200 min-h-screen grid place-items-center px-4">
-    <main class="w-full max-w-sm">
-        <div class="flex items-center gap-3 mb-6 justify-center">
-            <div class="w-11 h-11 rounded-xl grid place-items-center font-extrabold text-white bg-gradient-to-br from-accent to-accent2">DS</div>
+<body>
+    <main>
+        <div class="marca">
+            <div class="logo">DS</div>
             <div>
-                <div class="font-bold text-[17px] leading-tight">DroidServer</div>
-                <div class="text-[11px] uppercase tracking-wider text-muted">Painel de orquestração</div>
+                <strong>DroidServer</strong>
+                <span>Painel de orquestração</span>
             </div>
         </div>
 
-        <form method="post" action="/login" class="rounded-2xl border border-slate-400/15 bg-surface/80 p-6 shadow-[0_10px_30px_rgba(2,6,23,.45)]">
+        <form method="post" action="/login">
+            <h1>Entrar</h1>
             <input type="hidden" name="proximo" value="{{ proximo }}">
-            <label for="senha" class="block text-[11px] font-semibold uppercase tracking-wider text-muted mb-2">Senha do painel</label>
-            <input id="senha" name="senha" type="password" autocomplete="current-password" required autofocus
-                class="w-full rounded-xl bg-[#0a1428] border border-slate-400/20 px-3.5 py-2.5 text-[14px] outline-none focus:border-accent focus:ring-2 focus:ring-accent/30">
+            <label for="senha">Senha do painel</label>
+            <input id="senha" name="senha" type="password" autocomplete="current-password" required autofocus>
             {% if erro %}
-            <p class="mt-3 text-[13px] text-bad" role="alert">{{ erro }}</p>
+            <p class="erro" role="alert">{{ erro }}</p>
             {% endif %}
-            <button type="submit"
-                class="mt-5 w-full rounded-xl bg-accent hover:bg-indigo-500 transition-colors py-2.5 text-[14px] font-semibold text-white">Entrar</button>
+            <button type="submit">Entrar</button>
         </form>
-        <p class="mt-4 text-center text-[12px] text-muted">A senha é definida no Host pela variável <code class="text-slate-300">DROID_PANEL_PASSWORD</code>.</p>
+        <p class="dica">A senha é definida no Host pela variável <code>DROID_PANEL_PASSWORD</code>.</p>
     </main>
+
+    <script>
+        document.addEventListener('mousemove', (e) => {
+            document.body.style.setProperty('--mouse-x', e.clientX + 'px');
+            document.body.style.setProperty('--mouse-y', e.clientY + 'px');
+        });
+    </script>
 </body>
 
 </html>

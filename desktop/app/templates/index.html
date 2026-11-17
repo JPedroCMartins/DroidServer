@@ -9,30 +9,35 @@
     <!-- Bibliotecas servidas pelo próprio Host: o painel funciona sem internet
          (versões e licenças em static/vendor/LEIAME.md) -->
     <script src="{{ url_for('static', filename='vendor/tailwind-3.4.17.js') }}"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/inter.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/poppins.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm-5.3.0.css') }}">
     <script src="{{ url_for('static', filename='vendor/xterm-5.3.0.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/xterm-addon-fit-0.8.0.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}"></script>
 
     <script>
+        // Tema no padrão do portfolio-page (github.com/JPedroCMartins/portfolio-page):
+        // fundo #1a1a2e, cards #16213e, detalhe #0f3460, destaque #e94560, fonte Poppins.
         tailwind.config = {
             theme: {
                 extend: {
-                    fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'] },
+                    fontFamily: { sans: ['Poppins', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'] },
                     colors: {
-                        bg: '#0b1220',
-                        surface: '#111c33',
-                        surface2: '#16223c',
-                        term: '#050a15',
-                        muted: '#8aa0bf',
-                        accent: '#6366f1',
-                        accent2: '#22d3ee',
+                        bg: '#1a1a2e',
+                        surface: '#16213e',
+                        surface2: '#0f3460',
+                        term: '#12121f',
+                        muted: '#a7a9be',
+                        accent: '#e94560',
+                        accent2: '#ff8fa3',
                         ok: '#34d399',
                         bad: '#f87171',
                         warn: '#fbbf24',
                     },
-                    boxShadow: { card: '0 10px 30px rgba(2,6,23,.45)' },
+                    boxShadow: {
+                        card: '0 5px 20px rgba(0,0,0,.3)',
+                        glow: '0 10px 30px rgba(233,69,96,.2)',
+                    },
                     keyframes: {
                         pulseDot: {
                             '0%': { boxShadow: '0 0 0 0 rgba(52,211,153,.55)' },
@@ -40,10 +45,12 @@
                             '100%': { boxShadow: '0 0 0 0 rgba(52,211,153,0)' },
                         },
                         shimmer: { from: { backgroundPosition: '200% 0' }, to: { backgroundPosition: '-200% 0' } },
+                        fadeUp: { from: { opacity: '0', transform: 'translateY(18px)' }, to: { opacity: '1', transform: 'none' } },
                     },
                     animation: {
                         pulseDot: 'pulseDot 2s infinite',
                         shimmer: 'shimmer 1.4s infinite',
+                        fadeUp: 'fadeUp .6s ease both',
                     },
                 }
             }
@@ -53,47 +60,63 @@
     <style type="text/tailwindcss">
         @layer components {
             .card {
-                @apply bg-gradient-to-br from-surface to-surface2 border border-slate-400/15 rounded-2xl shadow-card;
+                @apply bg-surface border border-transparent rounded-xl shadow-card transition duration-300 hover:-translate-y-1 hover:shadow-glow hover:border-accent/40;
             }
+            .card-static { @apply hover:translate-y-0 hover:shadow-card hover:border-transparent; }
             .btn {
-                @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-transparent text-[12.5px] font-semibold leading-none cursor-pointer transition-all duration-200 disabled:opacity-45 disabled:cursor-not-allowed;
+                @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border-2 border-transparent text-[12.5px] font-semibold leading-none cursor-pointer transition-all duration-300 disabled:opacity-45 disabled:cursor-not-allowed;
             }
             .btn svg { @apply w-4 h-4; }
-            .btn-primary { @apply bg-gradient-to-br from-accent to-indigo-400 text-white shadow-lg shadow-indigo-500/30 hover:-translate-y-px hover:shadow-indigo-500/50; }
-            .btn-success { @apply bg-gradient-to-br from-emerald-500 to-ok text-[#04251a] shadow-lg shadow-emerald-400/30 hover:-translate-y-px px-[18px] py-[11px] text-[13.5px]; }
-            .btn-danger { @apply bg-bad/10 text-bad border-bad/30 hover:bg-bad/20 hover:-translate-y-px; }
-            .btn-dark { @apply bg-accent2/10 text-cyan-300 border-accent2/30 hover:bg-accent2/20 hover:-translate-y-px; }
-            .btn-ghost { @apply bg-slate-400/10 text-muted border-slate-400/15 hover:text-slate-200 hover:bg-slate-400/20; }
+            .btn-primary { @apply bg-accent border-accent text-white hover:bg-transparent hover:text-accent; }
+            .btn-success { @apply bg-accent border-accent text-white hover:bg-transparent hover:text-accent px-[18px] py-[11px] text-[13.5px]; }
+            .btn-danger { @apply bg-bad/10 text-bad border-bad/30 hover:bg-bad/20; }
+            .btn-dark { @apply bg-transparent text-accent border-accent/60 hover:bg-accent hover:text-white hover:border-accent; }
+            .btn-ghost { @apply bg-surface2 text-muted border-surface2 hover:text-white hover:border-accent/50; }
             .pill { @apply text-[11.5px] font-semibold px-3 py-1 rounded-full tracking-wide uppercase; }
             .pill-online { @apply bg-ok/15 text-ok; }
             .pill-offline { @apply bg-bad/15 text-bad; }
             .pill-warn { @apply bg-warn/15 text-warn; }
             .pill-muted { @apply bg-slate-400/15 text-slate-400; }
-            .chip { @apply inline-flex items-center gap-1.5 text-xs font-medium bg-accent2/10 text-cyan-300 border border-accent2/25 px-3 py-1 rounded-full; }
+            .chip { @apply inline-flex items-center gap-1.5 text-xs font-medium bg-surface2 text-muted px-3 py-1 rounded-md; }
             .dot { @apply w-2.5 h-2.5 rounded-full shrink-0; }
             .dot-online { @apply bg-ok shadow-[0_0_12px_rgba(52,211,153,.7)]; }
             .dot-offline { @apply bg-bad shadow-[0_0_12px_rgba(248,113,113,.6)]; }
             .dot-idle { @apply bg-warn shadow-[0_0_12px_rgba(251,191,36,.6)]; }
-            .nav-item { @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13.5px] font-medium text-muted transition hover:bg-accent/10 hover:text-slate-200; }
-            .nav-item.active { @apply bg-gradient-to-r from-accent/25 to-accent2/10 text-white shadow-[inset_3px_0_0_#6366f1]; }
+            .nav-item { @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] font-medium text-muted transition duration-300 hover:text-accent; }
+            .nav-item.active { @apply text-accent bg-accent/10 shadow-[inset_3px_0_0_#e94560]; }
             .label-xs { @apply text-[10.5px] uppercase tracking-widest text-muted font-semibold; }
-            .input { @apply w-full px-3.5 py-2.5 bg-slate-950/45 border border-slate-400/15 rounded-xl text-sm text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-accent focus:ring-4 focus:ring-indigo-500/20; }
-            .spinner { @apply w-3.5 h-3.5 rounded-full border-2 border-accent2/25 border-t-accent2 animate-spin shrink-0; }
+            .input { @apply w-full px-3.5 py-2.5 bg-bg border-2 border-surface2 rounded-lg text-sm text-[#f0f0f0] outline-none transition placeholder:text-slate-500 focus:border-accent; }
+            .spinner { @apply w-3.5 h-3.5 rounded-full border-2 border-accent/25 border-t-accent animate-spin shrink-0; }
             .spinner-muted { @apply border-slate-400/20 border-t-muted; }
+            /* Título com a barra de destaque embaixo (.section-title do portfolio) */
+            .section-title { @apply relative pb-3 font-semibold; }
+            .section-title::after { content: ''; @apply absolute left-0 bottom-0 w-20 h-1 rounded-sm bg-accent; }
+            /* Hero: gradiente 135° + brilho que segue o mouse (#inicio do portfolio) */
+            .hero { @apply relative overflow-hidden rounded-xl shadow-card bg-[linear-gradient(135deg,#1a1a2e_0%,#0f3460_100%)]; }
+            .hero::before { content: ''; @apply absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-500;
+                background: radial-gradient(circle 500px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(233, 69, 96, .15), transparent 40%); }
+            .hero:hover::before { @apply opacity-100; }
+            .hero > * { @apply relative; }
         }
     </style>
 
     <style>
         body {
-            background:
-                radial-gradient(1200px 600px at 85% -10%, rgba(99, 102, 241, .14), transparent 60%),
-                radial-gradient(900px 500px at -10% 110%, rgba(34, 211, 238, .10), transparent 55%),
-                #0b1220;
+            background: #1a1a2e;
+            color: #f0f0f0;
             -webkit-font-smoothing: antialiased;
         }
+        h1, h2, h3, h4 { font-weight: 600; color: #f0f0f0; }
         .skeleton {
-            background: linear-gradient(90deg, rgba(148,163,184,.08) 25%, rgba(148,163,184,.16) 50%, rgba(148,163,184,.08) 75%);
+            background: linear-gradient(90deg, rgba(167,169,190,.08) 25%, rgba(167,169,190,.16) 50%, rgba(167,169,190,.08) 75%);
             background-size: 200% 100%;
+        }
+        /* Entrada suave dos blocos ao trocar de tela (equivale ao AOS fade-up do portfolio) */
+        #view > * { animation: fadeUpIn .6s ease both; }
+        @keyframes fadeUpIn { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) {
+            #view > * { animation: none; }
+            .card, .btn { transition: none !important; }
         }
         .xterm .xterm-viewport { background-color: transparent !important; }
         .xterm-screen { padding: 12px; }
@@ -104,9 +127,9 @@
     <div class="flex flex-col md:flex-row md:h-screen min-h-screen">
 
         <!-- ================= Sidebar ================= -->
-        <aside class="md:w-64 shrink-0 bg-gradient-to-b from-[#0d1730] to-[#0a1324] border-b md:border-b-0 md:border-r border-slate-400/15 px-4 py-4 md:py-6 flex md:flex-col items-center md:items-stretch justify-between md:justify-start gap-3 md:gap-7 md:overflow-y-auto">
+        <aside class="md:w-64 shrink-0 bg-surface shadow-[0_4px_10px_rgba(0,0,0,.3)] border-b md:border-b-0 md:border-r border-surface2 px-4 py-4 md:py-6 flex md:flex-col items-center md:items-stretch justify-between md:justify-start gap-3 md:gap-7 md:overflow-y-auto">
             <a href="/" data-link class="flex items-center gap-3 px-2">
-                <div class="w-10 h-10 rounded-xl grid place-items-center bg-gradient-to-br from-accent to-accent2 shadow-lg shadow-indigo-500/40 text-white font-extrabold text-[15px] tracking-wide">DS</div>
+                <div class="w-10 h-10 rounded-xl grid place-items-center bg-accent shadow-lg shadow-accent/30 text-white font-bold text-[15px] tracking-wide">DS</div>
                 <div class="flex flex-col leading-tight">
                     <strong class="text-[15px] font-bold tracking-wide">DroidServer</strong>
                     <span class="text-[11px] text-muted uppercase tracking-wider">Cluster</span>
@@ -127,7 +150,7 @@
         <main id="view" class="flex-1 min-w-0 md:overflow-y-auto"></main>
     </div>
 
-    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg border border-slate-400/15 bg-[#0d1730]/95 text-slate-200 shadow-card text-[12.5px] font-semibold opacity-0 pointer-events-none transition-opacity duration-300"></div>
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-lg border border-slate-400/15 bg-[#16213e]/95 text-slate-200 shadow-card text-[12.5px] font-semibold opacity-0 pointer-events-none transition-opacity duration-300"></div>
 
     <script>
         // =====================================================================
@@ -199,7 +222,7 @@
                     <span class="text-xs font-bold">${val}</span>
                 </div>
                 <div class="h-1.5 rounded-full bg-slate-950/45 border border-slate-400/15 overflow-hidden">
-                    <div class="h-full rounded-full bg-gradient-to-r from-accent to-accent2 transition-[width] duration-500" style="width:${p}%"></div>
+                    <div class="h-full rounded-full bg-accent transition-[width] duration-500" style="width:${p}%"></div>
                 </div>
                 ${sub ? `<div class="text-[11px] text-muted mt-1">${sub}</div>` : ''}
             </div>`;
@@ -233,7 +256,7 @@
         function abasWorker(ip, alias, ativa) {
             const aba = (id, href, icone, texto) => `
                 <a href="${href}" data-link class="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition
-                    ${ativa === id ? 'bg-accent/20 text-white shadow-[inset_0_-2px_0_#6366f1]' : 'text-muted hover:text-slate-200 hover:bg-slate-400/10'}">
+                    ${ativa === id ? 'bg-accent/20 text-white shadow-[inset_0_-2px_0_#e94560]' : 'text-muted hover:text-slate-200 hover:bg-slate-400/10'}">
                     ${svg(icone, 'w-4 h-4')}${texto}</a>`;
             const base = `/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}`;
             return `<nav class="flex gap-1 p-1 rounded-xl bg-surface border border-slate-400/15 w-fit">
@@ -244,7 +267,7 @@
             return `
             <header class="flex items-end justify-between gap-4 flex-wrap mb-7">
                 <div>
-                    <h1 class="text-[26px] font-extrabold tracking-tight">${title}</h1>
+                    <h1 class="section-title text-[26px] tracking-tight">${title}</h1>
                     <p class="mt-1.5 text-[13.5px] text-muted" id="subtitle">${subtitle}</p>
                 </div>
                 <div class="flex items-center gap-3.5">${actions}</div>
@@ -267,11 +290,11 @@
 
         // =====================================================================
         // Gráfico de uso (CPU DroidServer + RAM) — SVG puro, sem biblioteca.
-        // Paleta validada (dataviz) contra o fundo #111c33: todas as checagens ok.
+        // Paleta validada (dataviz) contra o fundo #16213e: todas as checagens ok.
         // =====================================================================
         const SERIES = [
-            { chave: 'cpu', nome: 'CPU DroidServer', cor: '#6366f1' },
-            { chave: 'ram', nome: 'RAM', cor: '#0b9fb3' },
+            { chave: 'cpu', nome: 'CPU DroidServer', cor: '#e94560' },
+            { chave: 'ram', nome: 'RAM', cor: '#4ea8de' },
         ];
         const JANELA_S = 600; // últimos 10 minutos
         const graficosAbertos = new Set(); // IPs com o card de gráfico aberto
@@ -285,7 +308,7 @@
                     <span class="inline-block w-3 h-[3px] rounded-full" style="background:${s.cor}"></span>${s.nome}
                 </span>`).join('');
             return `
-            <article class="card relative p-5 flex flex-col gap-3" id="${id}" aria-label="Uso em tempo real do node ${esc(ip)}">
+            <article class="card card-static relative p-5 flex flex-col gap-3" id="${id}" aria-label="Uso em tempo real do node ${esc(ip)}">
                 <div class="flex items-start justify-between gap-3">
                     <div>
                         <h3 class="text-[14px] font-bold">Uso em tempo real</h3>
@@ -327,7 +350,7 @@
             };
             const grade = [0, 50, 100].map(v => `
                 <line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(148,163,184,.14)" stroke-width="1"/>
-                <text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="#8aa0bf">${v}%</text>`).join('');
+                <text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="#a7a9be">${v}%</text>`).join('');
 
             // Rótulo direto do valor atual de cada série, afastados se colidirem
             const ultimo = vis[vis.length - 1];
@@ -338,21 +361,21 @@
                 if (rotulos[i].yy - rotulos[i - 1].yy < 13) rotulos[i].yy = rotulos[i - 1].yy + 13;
             }
             const marcas = rotulos.map(s => `
-                <circle cx="${x(ultimo.t)}" cy="${y(s.v)}" r="4" fill="${s.cor}" stroke="#111c33" stroke-width="2"/>
-                <text x="${x(ultimo.t) + 8}" y="${s.yy + 3.5}" font-size="11" font-weight="700" fill="#e2e8f0">${s.v}%</text>`).join('');
+                <circle cx="${x(ultimo.t)}" cy="${y(s.v)}" r="4" fill="${s.cor}" stroke="#16213e" stroke-width="2"/>
+                <text x="${x(ultimo.t) + 8}" y="${s.yy + 3.5}" font-size="11" font-weight="700" fill="#f0f0f0">${s.v}%</text>`).join('');
 
             const resumo = SERIES.map(s => `${s.nome} ${ultimo[s.chave] ?? 'indisponível'}${ultimo[s.chave] != null ? '%' : ''}`).join(', ');
             area.innerHTML = `
                 <svg viewBox="0 0 ${W} ${H}" class="w-full h-[150px] overflow-visible" role="img" aria-label="Últimos 10 minutos: ${esc(resumo)}">
                     ${grade}
-                    <text x="${L}" y="${H - 4}" font-size="10" fill="#8aa0bf">−10 min</text>
-                    <text x="${W - R}" y="${H - 4}" font-size="10" fill="#8aa0bf" text-anchor="end">agora</text>
+                    <text x="${L}" y="${H - 4}" font-size="10" fill="#a7a9be">−10 min</text>
+                    <text x="${W - R}" y="${H - 4}" font-size="10" fill="#a7a9be" text-anchor="end">agora</text>
                     ${SERIES.map(s => `<path d="${caminho(s.chave)}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
                     ${marcas}
-                    <line data-mira x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#8aa0bf" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
+                    <line data-mira x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#a7a9be" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
                     <rect data-alvo x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
                 </svg>
-                <div data-dica class="hidden absolute top-0 pointer-events-none px-2.5 py-1.5 rounded-lg border border-slate-400/20 bg-[#0d1730]/95 text-[11.5px] leading-snug shadow-card whitespace-nowrap"></div>
+                <div data-dica class="hidden absolute top-0 pointer-events-none px-2.5 py-1.5 rounded-lg border border-slate-400/20 bg-[#16213e]/95 text-[11.5px] leading-snug shadow-card whitespace-nowrap"></div>
                 <details class="mt-1 text-[11.5px] text-muted">
                     <summary class="cursor-pointer select-none">Ver como tabela</summary>
                     <table class="mt-2 w-full text-left">
@@ -414,6 +437,15 @@
         });
         window.addEventListener('popstate', route);
 
+        // Brilho que segue o mouse nos blocos .hero (efeito do portfolio-page)
+        document.addEventListener('mousemove', (e) => {
+            const hero = e.target.closest && e.target.closest('.hero');
+            if (!hero) return;
+            const r = hero.getBoundingClientRect();
+            hero.style.setProperty('--mouse-x', (e.clientX - r.left) + 'px');
+            hero.style.setProperty('--mouse-y', (e.clientY - r.top) + 'px');
+        });
+
         function setNav(ip) {
             const items = [`<a href="/" data-link class="nav-item ${!ip ? 'active' : ''}">${svg(ICON.dash, 'w-[18px] h-[18px] shrink-0')}Dashboard</a>`];
             if (ip) items.push(`<a href="/node/${esc(ip)}" data-link class="nav-item active">${svg(ICON.pulse, 'w-[18px] h-[18px] shrink-0')}<span class="truncate">Node ${esc(ip)}</span></a>`);
@@ -450,10 +482,10 @@
                 <div class="mt-2 text-[11.5px]">Host Flask + Socket.IO — porta 5050</div>`);
 
             const statCard = (color, icon, id, label) => `
-                <div class="card relative overflow-hidden px-6 py-5 flex items-center gap-4 transition hover:-translate-y-0.5 hover:border-indigo-500/40">
+                <div class="card relative overflow-hidden px-6 py-5 flex items-center gap-4">
                     <div class="w-11 h-11 rounded-xl grid place-items-center shrink-0 ${color}">${svg(icon, 'w-[22px] h-[22px]')}</div>
                     <div>
-                        <div class="text-[26px] font-extrabold tracking-tight leading-none" id="${id}">0</div>
+                        <div class="text-[26px] font-bold tracking-tight leading-none" id="${id}">0</div>
                         <div class="mt-1.5 text-[12.5px] text-muted font-medium">${label}</div>
                     </div>
                 </div>`;
@@ -468,7 +500,7 @@
                     <button class="btn btn-ghost" id="btnRefresh">${svg(ICON.refresh)}Atualizar</button>
                     <button class="btn btn-primary" id="btnAdicionar" aria-expanded="false">${svg(ICON.plus)}Adicionar node</button>`)}
 
-                <section id="painelAdicionar" class="hidden card p-5 mb-7">
+                <section id="painelAdicionar" class="hidden card card-static p-5 mb-7">
                     <div class="flex items-start justify-between gap-3 mb-4">
                         <div>
                             <h3 class="text-[15px] font-bold">Adicionar node</h3>
@@ -496,9 +528,9 @@
                 </section>
 
                 <section class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-9">
-                    ${statCard('bg-accent/15 text-indigo-300', ICON.server, 'statNodes', 'Nodes totais')}
-                    ${statCard('bg-ok/15 text-emerald-300', ICON.check, 'statOnline', 'Nodes online')}
-                    ${statCard('bg-accent2/15 text-cyan-300', ICON.box, 'statWorkers', 'Workers ativos')}
+                    ${statCard('bg-surface2 text-accent', ICON.server, 'statNodes', 'Nodes totais')}
+                    ${statCard('bg-surface2 text-accent', ICON.check, 'statOnline', 'Nodes online')}
+                    ${statCard('bg-surface2 text-accent', ICON.box, 'statWorkers', 'Workers ativos')}
                 </section>
 
                 <div class="flex items-center justify-between mb-4">
@@ -526,8 +558,8 @@
                     : '<span class="text-[12.5px] text-muted">Nenhum worker instalado</span>';
 
                 return `
-                <article class="card relative overflow-hidden p-5 flex flex-col gap-4 transition hover:-translate-y-1 hover:border-indigo-500/45">
-                    <div class="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-accent to-accent2 opacity-80"></div>
+                <article class="card relative overflow-hidden p-5 pl-6 flex flex-col gap-4">
+                    <div class="absolute inset-y-0 left-0 w-1 bg-accent"></div>
                     <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2.5">
                             <span class="dot ${online ? 'dot-online' : aguardando ? 'dot-idle' : 'dot-offline'}"></span>
@@ -667,7 +699,7 @@
                         return `
                         <div class="flex items-center justify-between gap-3 flex-wrap px-3.5 py-3 rounded-xl border border-slate-400/15 bg-slate-950/35">
                             <div class="flex items-center gap-3 min-w-0">
-                                ${svg(ICON.server, 'w-5 h-5 text-cyan-300 shrink-0')}
+                                ${svg(ICON.server, 'w-5 h-5 text-accent2 shrink-0')}
                                 <div class="min-w-0">
                                     <div class="text-[14px] font-bold">${esc(n.ip)}</div>
                                     <div class="text-[11.5px] text-muted truncate">${esc(n.modelo || 'Android')}${n.android ? ' · Android ' + esc(n.android) : ''}</div>
@@ -727,18 +759,18 @@
             <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14">
                 <header class="flex items-end justify-between gap-4 flex-wrap mb-7">
                     <div>
-                        <h1 class="text-[26px] font-extrabold tracking-tight">Node <span class="text-indigo-400">${esc(ip)}</span></h1>
+                        <h1 class="section-title text-[26px] tracking-tight">Node <span class="text-accent2">${esc(ip)}</span></h1>
                         <p class="mt-1.5 text-[13.5px] text-muted" id="heroSub">Carregando...</p>
                     </div>
                     <a href="/" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao Dashboard</a>
                 </header>
 
-                <section class="rounded-2xl border border-slate-400/15 shadow-card p-6 md:p-7 mb-7 bg-gradient-to-br from-accent/20 to-accent2/10 bg-surface">
+                <section class="hero p-6 md:p-7 mb-7">
                     <div class="flex items-center justify-between gap-5 flex-wrap">
                         <div class="flex items-center gap-4">
-                            <div class="w-[54px] h-[54px] rounded-2xl grid place-items-center shrink-0 bg-gradient-to-br from-accent to-accent2 text-white shadow-lg shadow-indigo-500/40">${svg(ICON.server, 'w-[26px] h-[26px]')}</div>
+                            <div class="w-[54px] h-[54px] rounded-2xl grid place-items-center shrink-0 bg-accent text-white shadow-lg shadow-accent/30">${svg(ICON.server, 'w-[26px] h-[26px]')}</div>
                             <div>
-                                <h2 class="text-xl font-extrabold tracking-tight">${esc(ip)}</h2>
+                                <h2 class="text-xl font-bold tracking-tight">${esc(ip)}</h2>
                                 <p class="mt-1 text-[12.5px] text-muted" id="heroLastSeen">Último contato: —</p>
                             </div>
                         </div>
@@ -747,13 +779,13 @@
                     <div class="flex gap-6 flex-wrap mt-5 pt-5 border-t border-slate-400/15" id="heroMetrics"></div>
                 </section>
 
-                <div class="card p-5 mb-7">
+                <div class="card card-static p-5 mb-7">
                     <h3 class="text-[15px] font-bold mb-1">Criar novo worker</h3>
                     <p class="text-[12.5px] text-muted mb-4">Cria um container via proot-distro e registra como serviço no Supervisor do node. Prefira <strong class="text-slate-300">Alpine</strong>: imagem de ~50 MB, criada em segundos. O <strong class="text-slate-300">Debian</strong> (~150 MB) é a alternativa quando o software exige glibc ou pacotes <code>apt</code>.</p>
                     <form id="deployForm" class="flex gap-3 items-end flex-wrap">
                         <div class="w-full sm:w-48">
                             <label for="imagem" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Distribuição</label>
-                            <select class="input cursor-pointer [&>option]:bg-[#111c33]" id="imagem" name="imagem">
+                            <select class="input cursor-pointer [&>option]:bg-[#16213e]" id="imagem" name="imagem">
                                 <option value="alpine" selected>Alpine (recomendado)</option>
                                 <option value="debian">Debian</option>
                             </select>
@@ -763,7 +795,7 @@
                             <input class="input" type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required pattern="[A-Za-z0-9_\\-]{1,64}" autocomplete="off">
                         </div>
                         <label class="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-950/45 border border-slate-400/15 rounded-xl cursor-pointer select-none" title="Não monta o home do Termux nem o armazenamento do aparelho dentro do container. apt/apk/pacman continuam funcionando.">
-                            <input type="checkbox" id="isolado" name="isolado" checked class="w-4 h-4 accent-indigo-500 cursor-pointer">
+                            <input type="checkbox" id="isolado" name="isolado" checked class="w-4 h-4 accent-accent cursor-pointer">
                             <span class="text-[13px] font-medium">Isolar do host</span>
                         </label>
                         <button type="submit" class="btn btn-success">${svg(ICON.plus)}Criar Container</button>
@@ -805,7 +837,7 @@
                 pend.forEach(t => items += item('spinner-muted', t.acao === ACAO_CRIAR ? 'Criar' : 'Deletar', t.alias, 'aguardando o node'));
 
                 el.innerHTML = `
-                <div class="card p-5 mb-7">
+                <div class="card card-static p-5 mb-7">
                     <h3 class="text-[15px] font-bold mb-1">Em processamento</h3>
                     <p class="text-[12.5px] text-muted mb-4">O node processa as tarefas em segundo plano — criar um container pode levar alguns minutos.</p>
                     <div class="flex flex-col gap-2">${items}</div>
@@ -818,7 +850,7 @@
                 if (!res.length) { el.innerHTML = ''; return; }
                 const items = res.slice().reverse().map(r => `
                     <div class="flex items-start gap-2.5 text-[13px] px-3 py-2.5 rounded-xl border bg-slate-950/35 ${r.ok ? 'border-ok/30' : 'border-bad/30'}">
-                        <span class="font-extrabold shrink-0 leading-tight ${r.ok ? 'text-ok' : 'text-bad'}">${r.ok ? '✓' : '✗'}</span>
+                        <span class="font-bold shrink-0 leading-tight ${r.ok ? 'text-ok' : 'text-bad'}">${r.ok ? '✓' : '✗'}</span>
                         <span>
                             ${r.acao === ACAO_CRIAR ? 'Criação' : 'Deleção'}
                             ${r.alias ? `<strong>${esc(r.alias)}</strong>` : ''}
@@ -827,7 +859,7 @@
                         </span>
                     </div>`).join('');
                 el.innerHTML = `
-                <div class="card p-5 mb-7">
+                <div class="card card-static p-5 mb-7">
                     <h3 class="text-[15px] font-bold mb-3">Últimas operações</h3>
                     <div class="flex flex-col gap-2">${items}</div>
                 </div>`;
@@ -878,12 +910,12 @@
                     const t = TONES[tone];
 
                     return `
-                    <article class="card relative overflow-hidden p-5 flex flex-col gap-4 transition hover:-translate-y-1 hover:border-accent2/40 ${apagando ? 'opacity-60' : ''}">
-                        <div class="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r ${t.bar}"></div>
+                    <article class="card relative overflow-hidden p-5 pl-6 flex flex-col gap-4 ${apagando ? 'opacity-60' : ''}">
+                        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${t.bar}"></div>
 
                         <div class="flex items-start justify-between gap-3">
                             <div class="flex items-center gap-3 min-w-0">
-                                <div class="relative w-11 h-11 rounded-xl grid place-items-center shrink-0 bg-gradient-to-br from-accent2/20 to-accent/20 text-cyan-300">
+                                <div class="relative w-11 h-11 rounded-xl grid place-items-center shrink-0 bg-surface2 text-accent">
                                     ${svg(ICON.box, 'w-5 h-5')}
                                     <span class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full ring-2 ring-surface2 ${t.dot}"></span>
                                 </div>
@@ -1097,14 +1129,14 @@ exec python3 bot.py`)}
             <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14 flex flex-col gap-6">
                 <header class="flex items-end justify-between gap-4 flex-wrap">
                     <div>
-                        <h1 class="text-[26px] font-extrabold tracking-tight flex items-center gap-2.5">Worker <span class="chip">${esc(alias)}</span></h1>
+                        <h1 class="section-title text-[26px] tracking-tight flex items-center gap-2.5">Worker <span class="chip">${esc(alias)}</span></h1>
                         <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — o serviço é o arquivo <code class="text-slate-300">/app/run.sh</code>, executado e vigiado pelo DroidServer.</p>
                         <div class="mt-3">${abasWorker(ip, alias, 'servico')}</div>
                     </div>
                     <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao node</a>
                 </header>
 
-                <section class="card p-5 flex flex-col gap-4">
+                <section class="card card-static p-5 flex flex-col gap-4">
                     <div class="flex items-center justify-between gap-4 flex-wrap">
                         <div class="flex items-center gap-3">
                             <span class="dot dot-idle" id="svDot"></span>
@@ -1134,17 +1166,17 @@ exec python3 bot.py`)}
                     </div>
                     <div class="flex gap-6 flex-wrap pt-3 border-t border-slate-400/15 text-[13px]">
                         <label class="flex items-center gap-2.5 cursor-pointer select-none" title="Quando o celular (ou o Supervisor) liga, o serviço sobe sozinho.">
-                            <input type="checkbox" id="optAutostart" class="w-4 h-4 accent-indigo-500 cursor-pointer"> Iniciar junto com o celular
+                            <input type="checkbox" id="optAutostart" class="w-4 h-4 accent-accent cursor-pointer"> Iniciar junto com o celular
                         </label>
                         <label class="flex items-center gap-2.5 cursor-pointer select-none" title="Se o run.sh terminar ou o processo cair, o DroidServer o executa de novo.">
-                            <input type="checkbox" id="optAutorestart" class="w-4 h-4 accent-indigo-500 cursor-pointer"> Reiniciar automaticamente se cair
+                            <input type="checkbox" id="optAutorestart" class="w-4 h-4 accent-accent cursor-pointer"> Reiniciar automaticamente se cair
                         </label>
                         ${botaoAjuda('opcoes', 'Ajuda: opções do serviço')}
                         <span class="text-[11.5px] text-muted self-center" id="optNota"></span>
                     </div>
                 </section>
 
-                <section class="card p-5 flex flex-col gap-3">
+                <section class="card card-static p-5 flex flex-col gap-3">
                     <div class="flex items-center justify-between gap-3 flex-wrap">
                         <div class="flex items-center gap-2.5">
                             <h2 class="text-[15px] font-bold font-mono">/app/run.sh</h2>
@@ -1167,7 +1199,7 @@ exec python3 bot.py`)}
                     <p class="text-[11.5px] text-muted">Primeiro plano, <code>exec</code> no último comando e <code># droidserver: porta=N</code> para o painel saber o endereço. Instale programas pelo <a class="underline" href="/node/${esc(ip)}/worker/${esc(alias)}/terminal" data-link>Terminal</a>. Dúvidas? Clique em <strong>?</strong>.</p>
                 </section>
 
-                <section class="card p-5 flex flex-col gap-3">
+                <section class="card card-static p-5 flex flex-col gap-3">
                     <div class="flex items-center justify-between gap-3 flex-wrap">
                         <div class="flex items-center gap-2.5">
                             <h2 class="text-[15px] font-bold">Logs</h2>
@@ -1476,7 +1508,7 @@ exec python3 bot.py`)}
             <div class="h-[calc(100vh-72px)] md:h-full flex flex-col p-5 box-border min-w-0">
                 <header class="flex items-end justify-between gap-4 flex-wrap mb-3.5 shrink-0">
                     <div>
-                        <h1 class="text-[26px] font-extrabold tracking-tight flex items-center gap-2.5">
+                        <h1 class="section-title text-[26px] tracking-tight flex items-center gap-2.5">
                             Worker <span class="chip">${esc(alias)}</span>
                         </h1>
                         <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — sessão interativa via WebSocket.</p>
@@ -1518,10 +1550,10 @@ exec python3 bot.py`)}
                 scrollback: 5000,
                 fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
                 theme: {
-                    background: '#050a15', foreground: '#e2e8f0', cursor: '#67e8f9', cursorAccent: '#050a15',
-                    selectionBackground: 'rgba(99,102,241,0.35)',
-                    black: '#050a15', red: '#f87171', green: '#34d399', yellow: '#fbbf24',
-                    blue: '#818cf8', magenta: '#c084fc', cyan: '#67e8f9', white: '#e2e8f0',
+                    background: '#12121f', foreground: '#f0f0f0', cursor: '#e94560', cursorAccent: '#12121f',
+                    selectionBackground: 'rgba(233,69,96,0.35)',
+                    black: '#12121f', red: '#f87171', green: '#34d399', yellow: '#fbbf24',
+                    blue: '#818cf8', magenta: '#c084fc', cyan: '#67e8f9', white: '#f0f0f0',
                     brightBlack: '#64748b', brightRed: '#fb7185', brightGreen: '#6ee7b7', brightYellow: '#fcd34d',
                     brightBlue: '#a5b4fc', brightMagenta: '#d8b4fe', brightCyan: '#a5f3fc', brightWhite: '#f8fafc'
                 }
