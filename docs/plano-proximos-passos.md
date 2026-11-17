@@ -127,7 +127,9 @@ Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitaçõe
 
 A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o painel não abre. É barata e protege a demonstração.
 
-## Fase 3 — Dados para o TCC 🟡 (16/11: E1–E5, E8 e E10 feitos; E7 rodando até 17/11 ~14h)
+## Fase 3 — Dados para o TCC 🟡 (16/11: E1–E5, E8 e E10 feitos; E7 rodando até 17/11 20:22)
+
+> **16/11, 18:37:** uma queda de energia desligou o PC (e com ele o Host e o *script* da E7) depois de 4,4 h de medição (rodada 1, 99,9%, guardada em `bench/resultados/e7_rodada1_interrompida_*.csv`). O moto e40 seguiu na bateria e o serviço **não reiniciou** (6 h no ar). A E7 foi reiniciada às 20:22 (rodada 2, 24 h).
 
 **Feito em 16/11** (resultados na nota 09, seção 9.5; *scripts* e CSVs em `bench/`): E1/E2/E5 (20 criações, Alpine e Debian, com e sem cache), E3 (10 repetições), E4 (1000 medições em 5 GHz com *polling*, 5 GHz com WebSocket e 2,4 GHz), E8 (Worker × nativo, 1/10/50 conexões) e E10 parcial. Um **segundo Node** (moto e40, Android 11) foi adicionado ao cluster, o que também cumpre a 1.6. A E7 roda no moto e40 desde 14:11; pode ser encerrada depois de uma noite com a tela apagada (`--resumo` funciona com dados parciais). Defeitos achados nas medições: 2.32–2.34 do overview.
 
@@ -142,6 +144,38 @@ Do protocolo da nota 09, executar **só o essencial**, com scripts no repositór
 | 3.5 | **E8** — Vazão da aplicação (`hey` ou `wrk`) com a CPU do Worker | QP3 | No PC | 1 h |
 
 Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatura e energia, que exigem Termux:API ou medidor USB) e o consumo de energia.
+
+## Fase 2B — Aba Serviço mais amigável 🟡 (proposta de 16/11, aguardando decisões)
+
+Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que roda, se está funcionando, onde acessar e o que fazer quando falha** — e consegue pôr uma aplicação no ar pelo painel (útil na demonstração para a banca). Proposta completa, com telas e alternativas: [`docs/superpowers/specs/2026-11-16-aba-servico-amigavel-design.md`](superpowers/specs/2026-11-16-aba-servico-amigavel-design.md).
+
+**Abordagens** (recomendada: B, que inclui A)
+
+| | Abordagem | Para o usuário | Custo |
+|---|---|---|---|
+| A | Ajuda "?" + tela de informações | Continua escrevendo o `run.sh`, mas com guia, exemplos e mais dados na tela | Baixo |
+| **B** | **Assistente que gera o `run.sh`** (+ A) | Escolhe o tipo de aplicação e preenche porta/pasta/pacotes/comando; o painel gera o script, editável | Médio |
+| C | Configuração estruturada, sem shell (estilo Procfile) | Só formulário; o agente monta o processo | Alto, cria um segundo formato |
+
+**Etapas** (versão B)
+
+| # | Tarefa | Onde | Esforço |
+|---|---|---|---|
+| S1 | **"?" com guia** em painel lateral: passo a passo (arquivos em `/app` → pacotes → `run.sh` → porta → salvar e reiniciar), regras do script, exemplos por tipo, erros comuns, significado de cada estado; "?" também nas opções | painel | 2 h |
+| S2 | **Visão geral**: endereço `http://<ip>:<porta>` com "Abrir" e "Testar" (GET a partir do Host), reinícios do dia e última falha, CPU/RAM do serviço, disco do Worker, distribuição, último salvamento; botões habilitados conforme o estado | painel + Host + agente | 3 h |
+| S3 | **Dados no agente**: porta/tipo lidos do cabeçalho do `run.sh` (`# droidserver: porta=8080`), RAM somando a árvore de processos, contagem de reinícios pelo log, `du` em segundo plano com cache de 10 min | agente | 2 h |
+| S4 | **Assistente** (2 passos): tipo → campos → prévia do `run.sh` → "Usar este script" | painel | 3 h |
+| S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel | 1 h |
+| S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos | 2 h |
+
+**Total: ≈ 13 h** (só A: S1+S2+S3+S5+S6 ≈ 10 h). Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
+
+**Perguntas em aberto** (decidem o escopo)
+1. Abordagem: B (recomendada), só A ou C?
+2. Como o código chega ao `/app` sem terminal: campo "repositório Git" no assistente (barato) ou envio de arquivos pelo painel (caro)?
+3. Variáveis de ambiente (ex.: *token* de bot) num campo próprio, fora do script e dos logs, ou ficam no script por enquanto?
+4. Tipos no assistente: site estático, API Python, Node.js, bot/script Python e comando livre — falta algum?
+5. Para a defesa, a prioridade é a ajuda + informações (rápido) ou o assistente completo?
 
 ## Fase 4 — Fechar o texto (≈ 3 dias)
 
@@ -162,17 +196,17 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 
 ## Ordem sugerida (atualizada em 16/11)
 
-Fases 1, 1B e 2 concluídas (16/11), com duas rodadas de revisão. Daqui para frente:
+Fases 1, 1B, 2 e quase toda a 3 concluídas (16/11); 4.1, 4.3, 4.4 e a 1ª versão do .docx (4.7) feitas. Daqui para frente:
 
 ```
-Dia 1   scripts 3.1, 3.3, 3.4 → iniciar E7 (24 h)    ← dados rodando de noite
-Dia 2   3.2, 3.5, 3.1 executado → git push            ← dados completos
-Dia 3   4.1, 4.2, 4.6                                 ← resultados
-Dia 4   4.3, 4.4, 4.5                                 ← texto fechado
-Dia 5   4.7 + folga para imprevistos → orientador
+17/11   E7 termina às 20:22 → preencher [RESULTADO E7] (resumo, 9.5, 11) → git push
+        decisões da Fase 2B (perguntas acima) → S1 + S2 (ajuda e visão geral)
+18/11   S3 + S5 (e S4, se escolhida a abordagem B) → S6 → capturas de tela (4.6)
+19/11   4.5 (referências ⚠) + enxugar o texto para o tamanho de artigo
+20/11   .docx final (4.7) + folga para imprevistos → orientador
 ```
 
-Se o prazo for mais curto, corte nesta ordem: 1.6 → 3.5 → 3.2. **Não corte** 3.4, 3.1 nem 4.2: sem eles não há resultado.
+Se o prazo for mais curto, corte nesta ordem: S4 (assistente) → S5 → 1.6. **Não corte** o fim da E7 nem a ajuda "?" (S1): uma é a evidência da H1, a outra é o que a banca vai ver na demonstração.
 
 ## Riscos
 
@@ -182,4 +216,5 @@ Se o prazo for mais curto, corte nesta ordem: 1.6 → 3.5 → 3.2. **Não corte*
 | A rede da faculdade isola os dispositivos no Wi-Fi | Levar um roteador próprio ou usar o roteador do celular do Host (*hotspot*) na defesa |
 | Sem internet no local da defesa | 2.5 (painel com arquivos locais); o `apk`/`apt` também precisa de internet: deixar os Workers da demo com os pacotes já instalados |
 | O IP do celular ou do PC muda na hora (DHCP) | O painel acompanha o celular sozinho; se o PC mudar, "Adicionar" o Node de novo. Ensaiar uma vez antes |
-| Um único aparelho | Assumir explicitamente como limitação ("prova de conceito com 1 nó") |
+| Um único aparelho | ✅ Resolvido: dois Nodes (POCO X6 Pro e moto e40) |
+| Queda de energia (aconteceu em 16/11) | O Host é o ponto único de falha: os celulares seguem na bateria e os serviços não caem, mas o painel some. Na defesa, ligar o PC num *nobreak* ou usar um notebook com bateria |
