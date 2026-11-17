@@ -927,6 +927,8 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
 
     monkeypatch.setattr(agente.cpu_processos, "sample", fake_sample)
     monkeypatch.setattr(agente.logs, "ativos", lambda: {"w1"})
+    grupos_ram = {}
+    monkeypatch.setattr(node, "memoria_grupos", lambda g: (grupos_ram.update(g), {"w1": 21.5})[1])
     agente._poll_once()
 
     assert grupos_recebidos == {"w1": [200, 555]}
@@ -935,6 +937,8 @@ def test_poll_once_envia_cpu_dos_workers_incluindo_terminal(monkeypatch):
     assert payload["worker_status"] == {"w1": "RUNNING"}
     assert payload["servicos"]["w1"]["estado"] == "RUNNING" and payload["servicos"]["w1"]["pid"] == 200
     assert payload["logs_ativos"] == ["w1"]  # o host reconcilia com quem assiste
+    assert grupos_ram == {"w1": [200]}        # RAM só do serviço, não da sessão de terminal
+    assert payload["servicos"]["w1"]["ram_mb"] == 21.5
 
 
 # ---------- Ordem da criação ----------
@@ -1189,3 +1193,14 @@ def test_websocket_cai_para_polling_se_preciso(monkeypatch):
     monkeypatch.setattr(agente.sio, "disconnect", lambda: None)
     assert agente._conectar_ws() is True
     assert usados == ["websocket", "polling"]
+
+
+
+def test_memoria_grupos_soma_a_arvore(tmp_path):
+    for pid, ppid, rss in [(10, 1, 1024), (11, 10, 2048), (12, 11, 1024), (20, 1, 4096)]:
+        d = tmp_path / str(pid)
+        d.mkdir()
+        (d / "stat").write_text(f"{pid} (x) S {ppid} 0 0 0 0 0 0 0 0 0 5 5 0 0")
+        (d / "status").write_text(f"Name:\tx\nVmRSS:\t   {rss} kB\n")
+    assert sysinfo.memoria_grupos({"w1": [10], "w2": [20], "w3": [99]}, proc_dir=str(tmp_path)) == \
+        {"w1": 4.0, "w2": 4.0, "w3": 0.0}

@@ -205,6 +205,10 @@ O administrador controla o serviço pela aba **Serviço** do painel:
 | Como | Iniciar / Parar / Reiniciar | `supervisorctl start/stop/restart`; um `.conf` alterado é aplicado com `update` |
 | Quando | "Iniciar junto com o celular" / "Reiniciar se cair" | `autostart` / `autorestart` no `.conf` |
 | Diagnóstico | Logs ao vivo, aviso de `&`/`nohup`, explicação de `FATAL` | log único com rotação; o agente lê só o que foi acrescentado, 1×/s, enquanto alguém assiste |
+| Onde acessar | Endereço com "Abrir" e "Testar" | porta declarada no próprio `run.sh` (`# droidserver: porta=8080`), porque o Android nega `/proc/net/tcp` sem *root*; o "Testar" é um GET feito pelo Host, com *timeout* de 3 s |
+| Saúde | Falhas do dia e causa da última | saídas inesperadas lidas do log do supervisord (`exited: … (exit status 127; not expected)`), com o código traduzido (127 = comando não encontrado, 126 = sem permissão, 137 = encerrado pelo sistema) |
+| Recursos | CPU, RAM e disco do Worker | RAM somando o `VmRSS` da árvore de processos do serviço (o pid do Supervisor é só o *wrapper* do proot, ~3 MB); disco com `du` em segundo plano, com *cache* de 10 min, para não atrasar o *sync* |
+| Aprender a usar | Botões "?" com um guia lateral | passo a passo, regras, porta, exemplos, estados, erros comuns e opções, no próprio painel |
 
 Os comandos e os logs usam o WebSocket já aberto pelo Node, e não o *sync* de 10 s: a resposta de um botão chega em menos de 1 s. As respostas vão só ao navegador que pediu e os logs só à sala Socket.IO daquele Worker.
 
@@ -255,7 +259,7 @@ A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID 
 
 ## 8.7 Garantia de qualidade
 
-O projeto possui 180 testes automatizados com `pytest` (73 no Host e 107 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
+O projeto possui 205 testes automatizados com `pytest` (83 no Host e 122 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
 
 ## 8.8 Interface
 

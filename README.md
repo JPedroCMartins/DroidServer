@@ -102,17 +102,21 @@ Na página do Worker, aba **Serviço**:
 |---|---|
 | **O que roda** | Editor do `/app/run.sh` (com "Inserir exemplo"; `Ctrl+S` salva). "Salvar e reiniciar" aplica na hora |
 | **Controle** | Iniciar · Parar · Reiniciar, com estado, pid e tempo no ar |
+| **Visão geral** | Endereço `http://<ip>:<porta>` com **Abrir** e **Testar** (o Host acessa o serviço e mostra o código HTTP e o tempo), falhas do dia com a causa da última (ex.: "comando não encontrado (127)", lida do log do supervisord), CPU, RAM do serviço, disco do Worker (calculado em segundo plano), distribuição e quando o `run.sh` foi salvo |
 | **Quando** | "Iniciar junto com o celular" (`autostart`) e "Reiniciar automaticamente se cair" (`autorestart`); valem a partir da próxima reinicialização do serviço |
 | **Logs** | Saída e erros ao vivo (últimas 200 linhas ao abrir), com pausar, limpar e baixar |
-| **Ajuda** | Aviso se o `run.sh` manda o serviço para segundo plano (`&`, `nohup`) e explicação quando o serviço falha logo ao iniciar |
+| **Ajuda** | Botões **?** abrem um guia lateral: passo a passo, regras do `run.sh`, porta, exemplos (site estático, API Python, Node.js, bot), estados, erros comuns e opções. Avisos de `&`/`nohup` e explicação quando o serviço falha logo ao iniciar |
 
 Regras do `run.sh`: o serviço precisa ficar em **primeiro plano**, use `exec` no último comando e lembre que a rede não é isolada (a porta aberta fica em `http://<ip-do-celular>:<porta>`; dois Workers não podem usar a mesma). Exemplo:
 
 ```sh
 #!/bin/sh
+# droidserver: porta=8080
 cd /app
 exec python3 -m http.server 8080
 ```
+
+A linha `# droidserver: porta=8080` informa ao painel em que porta o serviço escuta (o Android não permite descobrir isso sem *root*: `/proc/net/tcp` é negado). Sem ela, a visão geral mostra "Porta não informada".
 
 O *shebang* é respeitado: um `run.sh` com `#!/bin/bash` ou `#!/usr/bin/env python3` roda com esse interpretador (instale-o antes; o Alpine só traz o `sh`). Sem *shebang*, o arquivo roda com `sh`. Por segurança, `/app/run.sh` não pode ser um link simbólico.
 
@@ -345,7 +349,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 180 testes (73 no Host e 107 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 205 testes (83 no Host e 122 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 

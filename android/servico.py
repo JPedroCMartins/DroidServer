@@ -16,6 +16,7 @@ grava o run.sh e o lançador diretamente, sem abrir uma sessão do proot.
 import logging
 import os
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -65,6 +66,8 @@ exec sh /app/run.sh
 SCRIPT_OCIOSO_ANTIGO = "while true; do sleep 30; done"
 
 EXEMPLO = """#!/bin/sh
+# droidserver: porta=8080
+# (a linha acima informa ao painel em que porta o serviço escuta)
 # Serviço deste worker. O DroidServer executa este arquivo e o reinicia se ele
 # terminar. Regras:
 #   - o serviço precisa ficar em PRIMEIRO PLANO (sem "&" nem "nohup");
@@ -398,9 +401,154 @@ def status_supervisor():
     return status
 
 
+# Metadados no próprio run.sh, em comentário: "# droidserver: porta=8080 tipo=api"
+METADADOS_RE = re.compile(r"^\s*#\s*droidserver:\s*(.*)$", re.I)
+PAR_RE = re.compile(r"(\w+)\s*=\s*(\S+)")
+
+
+def ler_metadados(conteudo):
+    """Lê os metadados do cabeçalho do run.sh. A porta só vale se for 1-65535."""
+    pares = {}
+    for linha in (conteudo or "").splitlines():
+        m = METADADOS_RE.match(linha)
+        if m:
+            pares.update({k.lower(): v for k, v in PAR_RE.findall(m.group(1))})
+    porta = pares.get("porta", "")
+    # só dígitos ASCII: "8080²" passa em isdigit() mas quebra o int()
+    valida = re.fullmatch(r"[0-9]{1,5}", porta) and 1 <= int(porta) <= 65535
+    return {"porta": int(porta) if valida else None}
+
+
+# Falhas registradas pelo supervisord: "... WARN exited: w1 (exit status 127; not expected)"
+# ...também "exited: w1 (terminated by SIGKILL; not expected)", como o Android
+# encerra processos por falta de memória
+FALHA_RE = re.compile(r"^(\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d),\d+ \w+ exited: (\S+) "
+                      r"\((?:exit status (\d+)|terminated by (SIG\w+))[^;]*; not expected\)")
+MOTIVOS = {126: "sem permissão de execução", 127: "comando não encontrado",
+           137: "encerrado pelo sistema (memória ou kill)", 143: "encerrado (SIGTERM)"}
+
+
+def supervisord_log():
+    """Log do supervisord, conforme o logfile= do supervisord.conf."""
+    try:
+        with open(supervisor_conf(), encoding="utf-8", errors="replace") as f:
+            m = re.search(r"^\s*logfile\s*=\s*(\S+)", f.read(), re.M)
+        if m:
+            return m.group(1)
+    except OSError:
+        pass
+    return os.path.join(_prefix(), "var", "log", "supervisor", "supervisord.log")
+
+
+def falhas_do_dia(aliases, hoje=None):
+    """{alias: {falhas_hoje, ultima_falha}} a partir das saídas inesperadas do dia."""
+    hoje = hoje or time.strftime("%Y-%m-%d")
+    resultado = {a: {"falhas_hoje": 0, "ultima_falha": None} for a in aliases}
+    linhas, _ = ultimas_linhas(supervisord_log(), n=3000)
+    for linha in linhas:
+        m = FALHA_RE.match(linha)
+        if not m or m.group(1) != hoje or m.group(3) not in resultado:
+            continue
+        if m.group(4) is not None:
+            codigo = int(m.group(4))
+        else:  # morte por sinal: código de saída equivalente do shell (128 + n)
+            try:
+                codigo = 128 + signal.Signals[m.group(5)].value
+            except KeyError:
+                codigo = None
+        r = resultado[m.group(3)]
+        r["falhas_hoje"] += 1
+        r["ultima_falha"] = {"quando": m.group(2), "codigo": codigo,
+                             "motivo": MOTIVOS.get(codigo, f"erro no programa (código {codigo})"
+                                                   if codigo is not None else f"encerrado por {m.group(5)}")}
+    return resultado
+
+
+_cache_distro = {}
+
+
+def distro(alias):
+    """PRETTY_NAME do os-release do container (em cache por rootfs)."""
+    raiz = rootfs(alias)
+    if not raiz:
+        return None
+    if raiz not in _cache_distro:
+        nome = None
+        for rel in ("etc/os-release", "usr/lib/os-release"):
+            try:
+                with open(os.path.join(raiz, rel), encoding="utf-8", errors="replace") as f:
+                    m = re.search(r'^PRETTY_NAME=["\']?(.*?)["\']?\s*$', f.read(), re.M)
+            except OSError:
+                continue
+            if m:
+                nome = m.group(1)
+                break
+        if nome is None:
+            return None  # rootfs ainda sendo extraído: tenta de novo no próximo sync
+        _cache_distro[raiz] = nome
+    return _cache_distro[raiz]
+
+
+class DiscoCache:
+    """Tamanho do rootfs de cada worker, calculado com `du` em segundo plano.
+
+    O `du` de um Debian leva segundos: nunca roda no caminho do sync. A
+    consulta devolve o último valor conhecido (None até o 1º cálculo) e, se
+    ele venceu, dispara um novo cálculo numa thread.
+    """
+
+    def __init__(self, validade=600, relogio=time.monotonic):
+        self.validade, self.relogio = validade, relogio
+        self._valores = {}       # rootfs -> (mb ou None, quando)
+        self._calculando = set()
+        self._lock = threading.Lock()
+
+    def mb(self, alias):
+        raiz = rootfs(alias)
+        if not raiz:
+            return None
+        with self._lock:
+            valor, quando = self._valores.get(raiz, (None, None))
+            vencido = quando is None or self.relogio() - quando >= self.validade
+            if vencido and raiz not in self._calculando:
+                self._calculando.add(raiz)
+                threading.Thread(target=self._calcular, args=(raiz,), daemon=True).start()
+        return valor
+
+    def _calcular(self, raiz):
+        anterior = self._valores.get(raiz, (None, None))[0]
+        try:
+            proc = subprocess.run(["du", "-sk", raiz], capture_output=True, text=True, timeout=300)
+            valor = round(int(proc.stdout.split()[0]) / 1024, 1)
+        except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+            valor = anterior  # falhou: mantém o último valor conhecido
+        with self._lock:
+            self._valores[raiz] = (valor, self.relogio())
+            self._calculando.discard(raiz)
+
+
+disco = DiscoCache()
+
+
+def _salvo_em(alias):
+    caminho = caminho_app(alias, SCRIPT_NOME)
+    if not caminho or not _dentro_do_container(alias, caminho):
+        return None
+    try:
+        return os.path.getmtime(caminho)
+    except OSError:
+        return None
+
+
 def estado_servicos(aliases, status=None):
     """Estado de cada serviço para o painel."""
     status = status if status is not None else status_supervisor()
+    try:
+        falhas = falhas_do_dia(aliases)
+    except Exception:
+        log.exception("[-] Falha ao ler o log do supervisord")
+        falhas = {}
+    falhas = {a: falhas.get(a, {"falhas_hoje": 0, "ultima_falha": None}) for a in aliases}
     resultado = {}
     for alias in aliases:
         opcoes = ler_opcoes(alias)
@@ -415,8 +563,25 @@ def estado_servicos(aliases, status=None):
             "gerenciado": bool(opcoes and opcoes["atual"]),
             "autostart": opcoes["autostart"] if opcoes else None,
             "autorestart": opcoes["autorestart"] if opcoes else None,
+            **falhas[alias],
         }
+        resultado[alias].update(_extras_visao_geral(alias))
     return resultado
+
+
+def _extras_visao_geral(alias):
+    """Campos da visão geral; um erro aqui não pode derrubar o sync do Node."""
+    extras = {}
+    for chave, obter in (("porta", lambda: ler_metadados(ler_script(alias))["porta"]),
+                         ("distro", lambda: distro(alias)),
+                         ("script_salvo_em", lambda: _salvo_em(alias)),
+                         ("disco_mb", lambda: disco.mb(alias))):
+        try:
+            extras[chave] = obter()
+        except Exception:
+            log.exception("[-] '%s': falha ao obter %s para a visão geral", alias, chave)
+            extras[chave] = None
+    return extras
 
 
 # ---------------------------------------------------------------------------

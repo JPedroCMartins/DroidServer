@@ -308,3 +308,114 @@ def test_migrar_todos_atualiza_lancador_antigo(termux, comandos):
     lancador.write_text("#!/bin/sh\nexec sh /app/run.sh\n")  # versão anterior
     assert servico.migrar_todos(["w1"]) == []                  # .conf já atual: nada a migrar
     assert lancador.read_text() == servico.LANCADOR
+
+
+# ---------- Fase 2B: visão geral do serviço ----------
+
+@pytest.mark.parametrize("cab,porta", [
+    ("#!/bin/sh\n# droidserver: porta=8080\nexec x", 8080),
+    ("# droidserver: tipo=api porta=3000", 3000),
+    ("#   DroidServer:  porta = 5000", 5000),
+    ("exec x", None), ("# droidserver: porta=abc", None),
+    ("# droidserver: porta=0", None), ("# droidserver: porta=70000", None), (None, None),
+])
+def test_ler_metadados_porta(cab, porta):
+    assert servico.ler_metadados(cab)["porta"] == porta
+
+
+def test_estado_traz_porta_distro_e_salvamento(termux, comandos):
+    raiz = termux / "var/lib/proot-distro/containers/w1/rootfs"
+    (raiz / "etc").mkdir()
+    (raiz / "etc/os-release").write_text('NAME="Alpine"\nPRETTY_NAME="Alpine Linux v3.24"\n')
+    servico.gravar_conf("w1")
+    servico.salvar_script("w1", "# droidserver: porta=8080\nexec sleep 9")
+    est = servico.estado_servicos(["w1"], {})["w1"]
+    assert est["porta"] == 8080 and est["distro"] == "Alpine Linux v3.24"
+    assert abs(est["script_salvo_em"] - time.time()) < 5
+
+
+def test_exemplo_declara_a_porta():
+    assert servico.ler_metadados(servico.EXEMPLO)["porta"] == 8080
+
+
+LOG_SUP = """2026-11-15 23:59:01,1 WARN exited: w1 (exit status 1; not expected)
+2026-11-16 18:07:45,172 WARN exited: w1 (exit status 127; not expected)
+2026-11-16 18:07:50,994 INFO spawned: 'w1' with pid 24542
+2026-11-16 18:08:00,000 WARN exited: w12 (exit status 1; not expected)
+2026-11-16 18:09:00,000 INFO exited: w1 (exit status 0; expected)
+2026-11-16 18:10:00,000 INFO stopped: w1 (terminated by SIGTERM)
+"""
+
+
+def test_falhas_do_dia(termux):
+    conf = termux / "etc/supervisord.conf"
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(f"[supervisord]\nlogfile={termux}/var/log/supervisor/supervisord.log\n")
+    log = termux / "var/log/supervisor/supervisord.log"
+    log.parent.mkdir(parents=True)
+    log.write_text(LOG_SUP)
+    r = servico.falhas_do_dia(["w1", "w12", "w9"], hoje="2026-11-16")
+    assert r["w1"] == {"falhas_hoje": 1, "ultima_falha":
+                       {"quando": "18:07:45", "codigo": 127, "motivo": "comando não encontrado"}}
+    assert r["w12"]["falhas_hoje"] == 1 and r["w9"] == {"falhas_hoje": 0, "ultima_falha": None}
+
+
+def test_falhas_sem_log(termux):
+    assert servico.falhas_do_dia(["w1"])["w1"] == {"falhas_hoje": 0, "ultima_falha": None}
+
+
+def test_disco_calcula_em_segundo_plano(termux, monkeypatch):
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        time.sleep(0.2)
+        return _Proc(0, out="51200\t/x\n")
+
+    monkeypatch.setattr("subprocess.run", fake_run)
+    agora = [1000.0]
+    d = servico.DiscoCache(validade=600, relogio=lambda: agora[0])
+    assert d.mb("w1") is None                      # não bloqueia na 1ª consulta
+    for _ in range(50):
+        if d.mb("w1") is not None:
+            break
+        time.sleep(0.02)
+    assert d.mb("w1") == 50.0 and len(calls) == 1  # 51200 kB -> 50 MB, um du só
+    agora[0] += 601
+    d.mb("w1")
+    time.sleep(0.3)
+    assert len(calls) == 2                          # venceu: recalcula
+
+
+# ---------- revisão final da Fase 2B ----------
+
+def test_porta_com_digito_unicode_nao_derruba():
+    assert servico.ler_metadados("# droidserver: porta=8080²")["porta"] is None
+
+
+def test_estado_sobrevive_a_erro_num_worker(termux, comandos, monkeypatch):
+    servico.gravar_conf("w1")
+    def explode(alias):
+        raise RuntimeError("os-release corrompido")
+    monkeypatch.setattr(servico, "distro", explode)
+    est = servico.estado_servicos(["w1"], {})["w1"]   # não pode levantar: o sync do Node depende disso
+    assert est["distro"] is None and "porta" in est
+
+
+def test_falhas_contam_morte_por_sinal(termux):
+    conf = termux / "etc/supervisord.conf"
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(f"[supervisord]\nlogfile={termux}/sup.log\n")
+    (termux / "sup.log").write_text(
+        "2026-11-16 19:00:00,0 WARN exited: w1 (terminated by SIGKILL; not expected)\n")
+    r = servico.falhas_do_dia(["w1"], hoje="2026-11-16")["w1"]
+    assert r == {"falhas_hoje": 1, "ultima_falha": {"quando": "19:00:00", "codigo": 137,
+                                                    "motivo": "encerrado pelo sistema (memória ou kill)"}}
+
+
+def test_distro_ausente_nao_fica_em_cache(termux):
+    raiz = termux / "var/lib/proot-distro/containers/w1/rootfs"
+    assert servico.distro("w1") is None              # rootfs ainda sendo extraído
+    (raiz / "etc").mkdir()
+    (raiz / "etc/os-release").write_text('PRETTY_NAME="Debian GNU/Linux 13"\n')
+    assert servico.distro("w1") == "Debian GNU/Linux 13"
