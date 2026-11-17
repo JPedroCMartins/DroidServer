@@ -26,18 +26,18 @@ Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega
 
 ---
 
-## Fase 1 — Deixar a demonstração funcionando (≈ 2 dias)
+## Fase 1 — Deixar a demonstração funcionando
 
 Objetivo: na defesa, criar um Worker pelo painel e abrir no navegador um serviço rodando nele.
 
-| # | Tarefa | Por quê | Esforço |
-|---|---|---|---|
-| 1.1 | ✅ *Feito na Fase 1B (aba Serviço).* **Rodar uma aplicação num Worker** (API Flask ou `python -m http.server`) via `/app/run_server.sh` e acessá-la em `http://192.168.1.7:<porta>` | É a promessa central ("VPS no celular"). O PRoot não isola a rede, então a porta do Worker deve abrir direto no IP do celular — **confirmar** | 2 h |
-| 1.2 | ✅ *Substituído pela aba Serviço (editor do `run.sh` + "Inserir exemplo").* Criar um **template de aplicação**: campo opcional "comando de inicialização" no formulário, gravado no `run_server.sh` na criação | Hoje é preciso editar o arquivo pelo terminal; na demonstração isso confunde | 3 h |
-| 1.3 | ~~Testar **Debian e Arch** no aparelho~~ ✅ Debian ok (80 s com `apt`); Arch retirado (sem imagem arm64) | — | feito |
-| 1.4 | ✅ *Reboot validado (Termux:Boot); falta o teste de horas de uso (E7).* **Sobreviver a reboot e a horas de uso:** ativar o Termux:Boot, liberar o "Início automático" e o "Sem restrições" de bateria (Xiaomi/HyperOS é agressivo), desativar o *phantom process killer* e reiniciar o celular | Se o agente morrer durante a apresentação, nada funciona | 2 h |
-| 1.5 | ~~Reservar IP fixo no roteador~~ — **desnecessário**: o painel identifica o Node pelo token e acompanha a troca de IP do celular (2.22, validado: .7 → .5); se o PC mudar de IP, basta "Adicionar" o Node de novo (2.27) | Contorna o Node identificado por IP (2.9) sem escrever código | 15 min |
-| 1.6 | Segundo aparelho, **se houver um disponível** | "Cluster" com um nó só enfraquece a defesa | 1 h |
+| # | Tarefa | Por quê |
+|---|---|---|
+| 1.1 | ✅ *Feito na Fase 1B (aba Serviço).* **Rodar uma aplicação num Worker** (API Flask ou `python -m http.server`) via `/app/run_server.sh` e acessá-la em `http://192.168.1.7:<porta>` | É a promessa central ("VPS no celular"). O PRoot não isola a rede, então a porta do Worker deve abrir direto no IP do celular — **confirmar** |
+| 1.2 | ✅ *Substituído pela aba Serviço (editor do `run.sh` + "Inserir exemplo").* Criar um **template de aplicação**: campo opcional "comando de inicialização" no formulário, gravado no `run_server.sh` na criação | Hoje é preciso editar o arquivo pelo terminal; na demonstração isso confunde |
+| 1.3 | ~~Testar **Debian e Arch** no aparelho~~ ✅ Debian ok (80 s com `apt`); Arch retirado (sem imagem arm64) | — |
+| 1.4 | ✅ *Reboot validado (Termux:Boot); falta o teste de horas de uso (E7).* **Sobreviver a reboot e a horas de uso:** ativar o Termux:Boot, liberar o "Início automático" e o "Sem restrições" de bateria (Xiaomi/HyperOS é agressivo), desativar o *phantom process killer* e reiniciar o celular | Se o agente morrer durante a apresentação, nada funciona |
+| 1.5 | ~~Reservar IP fixo no roteador~~ — **desnecessário**: o painel identifica o Node pelo token e acompanha a troca de IP do celular (2.22, validado: .7 → .5); se o PC mudar de IP, basta "Adicionar" o Node de novo (2.27) | Contorna o Node identificado por IP (2.9) sem escrever código |
+| 1.6 | Segundo aparelho, **se houver um disponível** | "Cluster" com um nó só enfraquece a defesa |
 
 ### Feito além do plano (pedido em 15/11)
 
@@ -94,18 +94,18 @@ Teste de ponta a ponta no aparelho (agente 100 testes, Host 59) e pelo painel: W
 
 ### Etapas
 
-| # | Tarefa | Onde | Esforço |
-|---|---|---|---|
-| B1 | **Lançador** no lugar do `run_server.sh`: um script interno (`/app/.droidserver/lancador.sh`) que espera o `/app/run.sh` existir, avisa no log enquanto espera e executa o `run.sh` em primeiro plano (`exec`). O Supervisor passa a rodar o lançador; saída e erro num único log com rotação (1 MB × 3) | agente | 1 h |
-| B2 | **Migração dos Workers existentes** ao iniciar o agente: reescreve o `.conf` para o lançador e, se houver um `run_server.sh` personalizado (ex.: `demo_api`), o renomeia para `run.sh`; o script ocioso padrão é descartado | agente | 45 min |
-| B3 | **Comandos do serviço** pelo WebSocket: `iniciar`, `parar`, `reiniciar` (via `supervisorctl`), `ler_script`, `salvar_script` (até 64 KB, gravação atômica, `chmod +x`), `configurar` (liga/desliga `autostart` e `autorestart` no `.conf` + `reread/update`), com resposta de sucesso ou erro | agente + Host | 2 h |
-| B4 | **Logs ao vivo:** ao abrir a aba, o agente manda as últimas 200 linhas e passa a enviar as novas a cada ~1 s enquanto alguém estiver assistindo; para quando ninguém está vendo | agente + Host | 1,5 h |
-| B5 | **Estado detalhado no sync:** estado do Supervisor, pid, tempo no ar, se o `run.sh` existe, `autostart`/`autorestart` e o motivo da última falha | agente + Host | 45 min |
-| B6 | **Aba Serviço no painel** (layout acima), com o botão "Inserir exemplo" (servidor HTTP simples) e o aviso de erro comum | painel | 2 h |
-| B7 | **Testes** (lançador, migração, comandos, logs, configurações) e **validação no celular**: migrar os 4 Workers, editar o `run.sh` pelo painel, parar/reiniciar, desligar "iniciar com o celular" e reiniciar o aparelho para conferir | todos | 1,5 h |
-| B8 | **Documentação:** README (seção "Rodando seu serviço"), vault 8.4 (ciclo de vida do serviço) e overview | docs | 45 min |
+| # | Tarefa | Onde |
+|---|---|---|
+| B1 | **Lançador** no lugar do `run_server.sh`: um script interno (`/app/.droidserver/lancador.sh`) que espera o `/app/run.sh` existir, avisa no log enquanto espera e executa o `run.sh` em primeiro plano (`exec`). O Supervisor passa a rodar o lançador; saída e erro num único log com rotação (1 MB × 3) | agente |
+| B2 | **Migração dos Workers existentes** ao iniciar o agente: reescreve o `.conf` para o lançador e, se houver um `run_server.sh` personalizado (ex.: `demo_api`), o renomeia para `run.sh`; o script ocioso padrão é descartado | agente |
+| B3 | **Comandos do serviço** pelo WebSocket: `iniciar`, `parar`, `reiniciar` (via `supervisorctl`), `ler_script`, `salvar_script` (até 64 KB, gravação atômica, `chmod +x`), `configurar` (liga/desliga `autostart` e `autorestart` no `.conf` + `reread/update`), com resposta de sucesso ou erro | agente + Host |
+| B4 | **Logs ao vivo:** ao abrir a aba, o agente manda as últimas 200 linhas e passa a enviar as novas a cada ~1 s enquanto alguém estiver assistindo; para quando ninguém está vendo | agente + Host |
+| B5 | **Estado detalhado no sync:** estado do Supervisor, pid, tempo no ar, se o `run.sh` existe, `autostart`/`autorestart` e o motivo da última falha | agente + Host |
+| B6 | **Aba Serviço no painel** (layout acima), com o botão "Inserir exemplo" (servidor HTTP simples) e o aviso de erro comum | painel |
+| B7 | **Testes** (lançador, migração, comandos, logs, configurações) e **validação no celular**: migrar os 4 Workers, editar o `run.sh` pelo painel, parar/reiniciar, desligar "iniciar com o celular" e reiniciar o aparelho para conferir | todos |
+| B8 | **Documentação:** README (seção "Rodando seu serviço"), vault 8.4 (ciclo de vida do serviço) e overview | docs |
 
-**Total: ≈ 10 h.** Ordem: B1 → B2 → B5 → B3 → B4 → B6 → B7 → B8, com um commit por etapa estável.
+Ordem: B1 → B2 → B5 → B3 → B4 → B6 → B7 → B8, com um commit por etapa estável.
 
 ### Fora desta fase
 
@@ -117,13 +117,13 @@ Feito: 2.5 (painel sem internet), 2.2 (remoção via `POST` + bloqueio de `POST`
 
 Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitações.
 
-| # | Tarefa | Item | Esforço |
-|---|---|---|---|
-| 2.1 | Terminal enviado só para quem o abriu (*rooms* do Socket.IO por sessão e por Node) | 2.7 | 2 h |
-| 2.2 | Remoção via `POST` em vez de `GET` | 2.8 | 30 min |
-| 2.3 | Senha única no painel (`DROID_PANEL_PASSWORD`, login simples com sessão) | 1.2 | 2 h |
-| 2.4 | Restringir o CORS à origem do próprio painel | 2.10 | 15 min |
-| 2.5 | **Painel funcionando sem internet:** servir Tailwind, xterm.js, Socket.IO e a fonte a partir de `static/` (hoje vêm de CDNs) | 2.26 | 1 h |
+| # | Tarefa | Item |
+|---|---|---|
+| 2.1 | Terminal enviado só para quem o abriu (*rooms* do Socket.IO por sessão e por Node) | 2.7 |
+| 2.2 | Remoção via `POST` em vez de `GET` | 2.8 |
+| 2.3 | Senha única no painel (`DROID_PANEL_PASSWORD`, login simples com sessão) | 1.2 |
+| 2.4 | Restringir o CORS à origem do próprio painel | 2.10 |
+| 2.5 | **Painel funcionando sem internet:** servir Tailwind, xterm.js, Socket.IO e a fonte a partir de `static/` (hoje vêm de CDNs) | 2.26 |
 
 A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o painel não abre. É barata e protege a demonstração.
 
@@ -135,13 +135,13 @@ A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o pai
 
 Do protocolo da nota 09, executar **só o essencial**, com scripts no repositório (`bench/`) e dados brutos em CSV:
 
-| # | Experimento | Questão | Como | Esforço |
-|---|---|---|---|---|
-| 3.1 | **E1** — Tempo de provisionamento (Alpine e Debian; 5 repetições cada, com e sem cache) | QP1 | Script no PC que usa a API (`/deploy_worker` → espera `RUNNING` → remove) | 3 h + execução |
-| 3.2 | **E3** — Sobrecarga do PRoot: o mesmo benchmark no Termux nativo e dentro do Worker (CPU, E/S de arquivos, instalação de pacote) | QP1 | Script no celular, via SSH | 3 h |
-| 3.3 | **E4** — Latência do terminal (eco de 1 tecla, 500 amostras; mediana e p95) | QP2 | Cliente Socket.IO em Python no PC, sem navegador | 3 h |
-| 3.4 | **E7** — Disponibilidade em 24 h: o Host faz `GET` na aplicação do Worker a cada 10 s e registra falhas, reinícios, CPU e RAM | QP3 / H1 | Script em segundo plano no PC; deixar rodando de noite | 2 h + 24 h |
-| 3.5 | **E8** — Vazão da aplicação (`hey` ou `wrk`) com a CPU do Worker | QP3 | No PC | 1 h |
+| # | Experimento | Questão | Como |
+|---|---|---|---|
+| 3.1 | **E1** — Tempo de provisionamento (Alpine e Debian; 5 repetições cada, com e sem cache) | QP1 | Script no PC que usa a API (`/deploy_worker` → espera `RUNNING` → remove) |
+| 3.2 | **E3** — Sobrecarga do PRoot: o mesmo benchmark no Termux nativo e dentro do Worker (CPU, E/S de arquivos, instalação de pacote) | QP1 | Script no celular, via SSH |
+| 3.3 | **E4** — Latência do terminal (eco de 1 tecla, 500 amostras; mediana e p95) | QP2 | Cliente Socket.IO em Python no PC, sem navegador |
+| 3.4 | **E7** — Disponibilidade em 24 h: o Host faz `GET` na aplicação do Worker a cada 10 s e registra falhas, reinícios, CPU e RAM | QP3 / H1 | Script em segundo plano no PC; deixar rodando de noite |
+| 3.5 | **E8** — Vazão da aplicação (`hey` ou `wrk`) com a CPU do Worker | QP3 | No PC |
 
 Ficam de fora, citados como limitação: E6 (detecção de falha), E9 (temperatura e energia, que exigem Termux:API ou medidor USB) e o consumo de energia.
 
@@ -159,16 +159,16 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 
 **Etapas** (versão A; S4 removida)
 
-| # | Tarefa | Onde | Esforço |
-|---|---|---|---|
-| S1 | **"?" com guia** em painel lateral: passo a passo (arquivos em `/app` → pacotes → `run.sh` → porta → salvar e reiniciar), regras do script, exemplos por tipo, erros comuns, significado de cada estado; "?" também nas opções | painel | 2 h |
-| S2 | **Visão geral**: endereço `http://<ip>:<porta>` com "Abrir" e "Testar" (GET a partir do Host), reinícios do dia e última falha, CPU/RAM do serviço, disco do Worker, distribuição, último salvamento; botões habilitados conforme o estado | painel + Host + agente | 3 h |
-| S3 | **Dados no agente**: porta/tipo lidos do cabeçalho do `run.sh` (`# droidserver: porta=8080`), RAM somando a árvore de processos, contagem de reinícios pelo log, `du` em segundo plano com cache de 10 min | agente | 2 h |
-| ~~S4~~ | ~~Assistente~~ — fora desta fase (vai para trabalhos futuros, com o CI/CD) | — | — |
-| S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel | 1 h |
-| S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos | 2 h |
+| # | Tarefa | Onde |
+|---|---|---|
+| S1 | **"?" com guia** em painel lateral: passo a passo (arquivos em `/app` → pacotes → `run.sh` → porta → salvar e reiniciar), regras do script, exemplos por tipo, erros comuns, significado de cada estado; "?" também nas opções | painel |
+| S2 | **Visão geral**: endereço `http://<ip>:<porta>` com "Abrir" e "Testar" (GET a partir do Host), reinícios do dia e última falha, CPU/RAM do serviço, disco do Worker, distribuição, último salvamento; botões habilitados conforme o estado | painel + Host + agente |
+| S3 | **Dados no agente**: porta/tipo lidos do cabeçalho do `run.sh` (`# droidserver: porta=8080`), RAM somando a árvore de processos, contagem de reinícios pelo log, `du` em segundo plano com cache de 10 min | agente |
+| ~~S4~~ | ~~Assistente~~ — fora desta fase (vai para trabalhos futuros, com o CI/CD) | — |
+| S5 | Editor com números de linha e layout em blocos (Visão geral · run.sh · Logs) | painel |
+| S6 | Testes + validação no aparelho + README/vault (8.4.1) | todos |
 
-**Total: ≈ 10 h** (S1+S2+S3+S5+S6). Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
+Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a porta não pode ser descoberta automaticamente** e precisa ser informada (assistente ou cabeçalho do script). Mudanças no agente só no POCO até a E7 terminar (17/11, 20:22).
 
 **Decisões** (16/11, usuário): abordagem **A**; repositório Git fica para uma futura **integração de CI/CD** (seção 10.3 do TCC), e as variáveis de ambiente vão junto. A porta é declarada num cabeçalho do `run.sh` (`# droidserver: porta=8080`). Perguntas originais, já respondidas:
 1. Abordagem: B (recomendada), só A ou C?
@@ -177,18 +177,18 @@ Objetivo: quem abre a aba Serviço entende, sem README nem terminal, **o que rod
 4. Tipos no assistente: site estático, API Python, Node.js, bot/script Python e comando livre — falta algum?
 5. Para a defesa, a prioridade é a ajuda + informações (rápido) ou o assistente completo?
 
-## Fase 4 — Fechar o texto (≈ 3 dias)
+## Fase 4 — Fechar o texto
 
-| # | Tarefa | Esforço |
-|---|---|---|
-| 4.1 | ✅ *Feito em 16/11:* "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados" (capa, folha de rosto, vault, README; termo definido na seção 1.1) | — |
-| 4.2 | Escrever o capítulo 9.5 (Resultados) com tabelas e gráficos da Fase 3 | 1 dia |
-| 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (226/216 palavras); falta o valor da E7 | 1 h |
-| 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; falta fechar com a E7 | 3 h |
-| 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) | 4 h |
-| 4.6 | Capturas de tela para a seção 8.8 (Dashboard, Node, terminal, CPU por Worker) | 30 min |
-| 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final | 4 h |
-| 4.8 | Revisão do orientador | — |
+| # | Tarefa |
+|---|---|
+| 4.1 | ✅ *Feito em 16/11:* "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados" (capa, folha de rosto, vault, README; termo definido na seção 1.1) |
+| 4.2 | Escrever o capítulo 9.5 (Resultados) com tabelas e gráficos da Fase 3 |
+| 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (226/216 palavras); falta o valor da E7 |
+| 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; falta fechar com a E7 |
+| 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) |
+| 4.6 | Capturas de tela para a seção 8.8 (Dashboard, Node, terminal, CPU por Worker) |
+| 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final |
+| 4.8 | Revisão do orientador |
 
 ## Fora do escopo (vai para "trabalhos futuros")
 
