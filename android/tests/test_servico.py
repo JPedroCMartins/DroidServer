@@ -308,3 +308,31 @@ def test_migrar_todos_atualiza_lancador_antigo(termux, comandos):
     lancador.write_text("#!/bin/sh\nexec sh /app/run.sh\n")  # versão anterior
     assert servico.migrar_todos(["w1"]) == []                  # .conf já atual: nada a migrar
     assert lancador.read_text() == servico.LANCADOR
+
+
+# ---------- Fase 2B: visão geral do serviço ----------
+
+@pytest.mark.parametrize("cab,porta", [
+    ("#!/bin/sh\n# droidserver: porta=8080\nexec x", 8080),
+    ("# droidserver: tipo=api porta=3000", 3000),
+    ("#   DroidServer:  porta = 5000", 5000),
+    ("exec x", None), ("# droidserver: porta=abc", None),
+    ("# droidserver: porta=0", None), ("# droidserver: porta=70000", None), (None, None),
+])
+def test_ler_metadados_porta(cab, porta):
+    assert servico.ler_metadados(cab)["porta"] == porta
+
+
+def test_estado_traz_porta_distro_e_salvamento(termux, comandos):
+    raiz = termux / "var/lib/proot-distro/containers/w1/rootfs"
+    (raiz / "etc").mkdir()
+    (raiz / "etc/os-release").write_text('NAME="Alpine"\nPRETTY_NAME="Alpine Linux v3.24"\n')
+    servico.gravar_conf("w1")
+    servico.salvar_script("w1", "# droidserver: porta=8080\nexec sleep 9")
+    est = servico.estado_servicos(["w1"], {})["w1"]
+    assert est["porta"] == 8080 and est["distro"] == "Alpine Linux v3.24"
+    assert abs(est["script_salvo_em"] - time.time()) < 5
+
+
+def test_exemplo_declara_a_porta():
+    assert servico.ler_metadados(servico.EXEMPLO)["porta"] == 8080

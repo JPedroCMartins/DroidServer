@@ -65,6 +65,8 @@ exec sh /app/run.sh
 SCRIPT_OCIOSO_ANTIGO = "while true; do sleep 30; done"
 
 EXEMPLO = """#!/bin/sh
+# droidserver: porta=8080
+# (a linha acima informa ao painel em que porta o serviço escuta)
 # Serviço deste worker. O DroidServer executa este arquivo e o reinicia se ele
 # terminar. Regras:
 #   - o serviço precisa ficar em PRIMEIRO PLANO (sem "&" nem "nohup");
@@ -398,6 +400,55 @@ def status_supervisor():
     return status
 
 
+# Metadados no próprio run.sh, em comentário: "# droidserver: porta=8080 tipo=api"
+METADADOS_RE = re.compile(r"^\s*#\s*droidserver:\s*(.*)$", re.I)
+PAR_RE = re.compile(r"(\w+)\s*=\s*(\S+)")
+
+
+def ler_metadados(conteudo):
+    """Lê os metadados do cabeçalho do run.sh. A porta só vale se for 1-65535."""
+    pares = {}
+    for linha in (conteudo or "").splitlines():
+        m = METADADOS_RE.match(linha)
+        if m:
+            pares.update({k.lower(): v for k, v in PAR_RE.findall(m.group(1))})
+    porta = pares.get("porta", "")
+    return {"porta": int(porta) if porta.isdigit() and 1 <= int(porta) <= 65535 else None}
+
+
+_cache_distro = {}
+
+
+def distro(alias):
+    """PRETTY_NAME do os-release do container (em cache por rootfs)."""
+    raiz = rootfs(alias)
+    if not raiz:
+        return None
+    if raiz not in _cache_distro:
+        nome = None
+        for rel in ("etc/os-release", "usr/lib/os-release"):
+            try:
+                with open(os.path.join(raiz, rel), encoding="utf-8", errors="replace") as f:
+                    m = re.search(r'^PRETTY_NAME=["\']?(.*?)["\']?\s*$', f.read(), re.M)
+            except OSError:
+                continue
+            if m:
+                nome = m.group(1)
+                break
+        _cache_distro[raiz] = nome
+    return _cache_distro[raiz]
+
+
+def _salvo_em(alias):
+    caminho = caminho_app(alias, SCRIPT_NOME)
+    if not caminho or not _dentro_do_container(alias, caminho):
+        return None
+    try:
+        return os.path.getmtime(caminho)
+    except OSError:
+        return None
+
+
 def estado_servicos(aliases, status=None):
     """Estado de cada serviço para o painel."""
     status = status if status is not None else status_supervisor()
@@ -415,6 +466,9 @@ def estado_servicos(aliases, status=None):
             "gerenciado": bool(opcoes and opcoes["atual"]),
             "autostart": opcoes["autostart"] if opcoes else None,
             "autorestart": opcoes["autorestart"] if opcoes else None,
+            "porta": ler_metadados(ler_script(alias))["porta"],
+            "distro": distro(alias),
+            "script_salvo_em": _salvo_em(alias),
         }
     return resultado
 
