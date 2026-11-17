@@ -28,8 +28,11 @@ rede e lê o estado pelo painel; desligar o PC interrompe a medição.
 
 import argparse
 import csv
+import glob
 import json
 import os
+import shlex
+import subprocess
 import time
 from datetime import datetime
 
@@ -201,12 +204,19 @@ def montar_linhas(amostras, worker, inicio, fim, intervalo=10.0):
     """Linhas do CSV da E7 na janela [inicio, fim], com as lacunas preenchidas."""
     janela = [a for a in amostras if inicio <= a["t"] <= fim]
     linhas = []
-    anterior = inicio - intervalo  # lacuna no começo também conta
+    anterior = None
     for a in janela + [None]:
-        t = a["t"] if a else fim + intervalo
-        faltam = int((t - anterior) / intervalo + 0.5) - 1  # amostras que deviam existir entre as duas
-        for k in range(1, faltam + 1):
-            linhas.append(_linha_vazia(anterior + k * intervalo, "sem_registro"))
+        t = a["t"] if a else fim
+        if anterior is None and a is None:  # nenhuma amostra na janela
+            base, faltam = inicio - intervalo, int((fim - inicio) / intervalo) + 1
+        elif anterior is None:  # começo: só falta o que já devia ter sido gravado até a 1ª amostra
+            base, faltam = t - intervalo * (int((t - inicio) / intervalo - 0.5) + 1), int((t - inicio) / intervalo - 0.5)
+        elif a is None:  # fim: idem, da última amostra até o fim da janela
+            base, faltam = anterior, max(0, int((fim - anterior) / intervalo - 0.5))
+        else:  # entre duas amostras: as que deviam existir entre elas
+            base, faltam = anterior, int((t - anterior) / intervalo + 0.5) - 1
+        for k in range(1, max(0, faltam) + 1):
+            linhas.append(_linha_vazia(base + k * intervalo, "sem_registro"))
         if a is None:
             break
         sv = (a.get("servicos") or {}).get(worker) or {}
@@ -223,21 +233,18 @@ def montar_linhas(amostras, worker, inicio, fim, intervalo=10.0):
     return linhas
 
 
-def do_celular(args):
-    amostras = ler_amostras(open(args.registro, encoding="utf-8").read() if args.registro else baixar_registro())
-    if not amostras:
-        raise SystemExit("Registro vazio.")
-    if args.inicio:
-        inicio = datetime.fromisoformat(args.inicio).timestamp()
-        fim = min(inicio + args.horas * 3600, amostras[-1]["t"])
-    else:  # as últimas --horas registradas
-        fim = amostras[-1]["t"]
-        inicio = max(fim - args.horas * 3600, amostras[0]["t"])
-    linhas = montar_linhas(amostras, args.worker, inicio, fim, args.intervalo)
+def calcular(amostras, worker, inicio, fim, horas, intervalo, pasta=None):
+    """Monta o CSV da janela, imprime o resumo e diz se a janela está completa."""
+    linhas = montar_linhas(amostras, worker, inicio, fim, intervalo)
     # Menos registro que o pedido: avisa e não deixa o CSV parecer a E7 completa
     # (o gráfico usa o e7_disponibilidade_*.csv mais recente)
-    completo = fim - inicio >= args.horas * 3600 * 0.99
-    caminho = comum.arquivo_csv("e7_disponibilidade" if completo else "parcial_e7_disponibilidade")
+    completo = fim - inicio >= horas * 3600 * 0.99
+    nome = "e7_disponibilidade" if completo else "parcial_e7_disponibilidade"
+    if pasta:
+        os.makedirs(pasta, exist_ok=True)
+        caminho = os.path.join(pasta, f"{nome}_{datetime.now():%Y%m%d_%H%M%S}.csv")
+    else:
+        caminho = comum.arquivo_csv(nome)
     g = comum.GravadorCSV(caminho, CAMPOS)
     for l in linhas:
         g.linha(**{c: ("" if l.get(c) is None else l.get(c, "")) for c in CAMPOS})
@@ -247,10 +254,150 @@ def do_celular(args):
           f"amostras com o painel desligado/inacessível: {sem_painel}")
     resumir(caminho)
     if not completo:
-        pronto = datetime.fromtimestamp(inicio + args.horas * 3600)
-        print(f"\n[!] PARCIAL: só há {(fim - inicio) / 3600:.2f} h de registro na janela, de {args.horas:g} h pedidas. "
-              f"Deixe o celular parado e rode de novo a partir de {pronto:%d/%m %H:%M}.\n"
+        pronto = datetime.fromtimestamp(inicio + horas * 3600)
+        print(f"\n[!] PARCIAL: só há {(fim - inicio) / 3600:.2f} h de registro na janela, de {horas:g} h pedidas. "
+              f"Resultado final a partir de {pronto:%d/%m %H:%M}.\n"
               f"    Este resultado foi salvo como parcial_* e não entra no gráfico da E7.")
+    return caminho, completo
+
+
+# ---------------------------------------------------------------------------
+# Acompanhamento automático no próprio celular
+#   PC:      --iniciar   copia este script, grava o início e liga o acompanhamento
+#   celular: --acompanhar  atualiza progresso.txt a cada 15 min e grava o
+#            resultado final ao completar as horas (depois termina)
+#   PC:      --status    mostra o progresso; sem opções, usa o início gravado
+# ---------------------------------------------------------------------------
+
+PASTA_E7_CELULAR = "~/.config/droidserver/e7"
+MARCADOR = "inicio.json"
+
+
+def _pasta_e7_local():
+    return os.path.expanduser(PASTA_E7_CELULAR)
+
+
+def ler_registro_local():
+    pasta = os.path.expanduser(PASTA_REGISTRO)
+    partes = []
+    for nome in [f"metricas.jsonl.{n}" for n in range(10, 0, -1)] + ["metricas.jsonl"]:
+        try:
+            with open(os.path.join(pasta, nome), encoding="utf-8", errors="replace") as f:
+                partes.append(f.read())
+        except OSError:
+            pass
+    return "".join(partes)
+
+
+def acompanhar(args):
+    """Roda no celular (Termux), em segundo plano, até completar a E7."""
+    pasta = _pasta_e7_local()
+    with open(os.path.join(pasta, MARCADOR), encoding="utf-8") as f:
+        m = json.load(f)
+    inicio, horas, worker = m["inicio"], m["horas"], m["worker"]
+    fim_previsto = inicio + horas * 3600
+    import contextlib
+    import io
+    while True:
+        agora = time.time()
+        final = agora >= fim_previsto
+        amostras = ler_amostras(ler_registro_local())
+        saida = io.StringIO()
+        with contextlib.redirect_stdout(saida):
+            if amostras:
+                calcular(amostras, worker, inicio, min(agora, fim_previsto), horas, args.intervalo,
+                         pasta=os.path.join(pasta, "final" if final else "parcial"))
+            else:
+                print("Registro vazio.")
+        texto = (f"E7 no celular — {worker}, {horas:g} h, de {datetime.fromtimestamp(inicio):%d/%m %H:%M} "
+                 f"a {datetime.fromtimestamp(fim_previsto):%d/%m %H:%M}\n"
+                 f"Atualizado em {datetime.now():%d/%m %H:%M}: {'CONCLUÍDA' if final else 'em andamento'}\n\n"
+                 + saida.getvalue())
+        with open(os.path.join(pasta, "resultado.txt" if final else "progresso.txt"), "w", encoding="utf-8") as f:
+            f.write(texto)
+        if final:
+            print("E7 concluída: resultado.txt gravado.", flush=True)
+            return
+        # mantém só o parcial mais recente
+        for velho in sorted(glob.glob(os.path.join(pasta, "parcial", "*.csv")))[:-1]:
+            os.remove(velho)
+        time.sleep(min(args.acompanhar_cada * 60, max(1.0, fim_previsto - time.time())))
+
+
+SCRIPTS = ("e7_disponibilidade.py", "comum.py")
+
+
+def _ligar_acompanhamento():
+    aqui = os.path.dirname(os.path.abspath(__file__))
+    destino = os.getenv("DROID_SSH")
+    if not destino:
+        raise SystemExit('Defina DROID_SSH, ex.: DROID_SSH="-p 8022 192.168.1.100"')
+    opcoes = shlex.split(destino)
+    porta = opcoes[opcoes.index("-p") + 1] if "-p" in opcoes else "22"
+    host = [o for o in opcoes if not o.startswith("-") and o != porta][-1]
+    comum.ssh("mkdir -p ~/DroidServer/bench " + PASTA_E7_CELULAR, timeout=30)
+    subprocess.run(["scp", "-q", "-o", "BatchMode=yes", "-P", porta,
+                    *[os.path.join(aqui, n) for n in SCRIPTS], f"{host}:DroidServer/bench/"], check=True)
+    # setsid + nohup: segue rodando depois que o SSH fecha
+    comum.ssh(f"pkill -f 'e7_disponibilidade.py --acompanhar' ; cd ~/DroidServer/bench && "
+              f"setsid nohup python3 e7_disponibilidade.py --acompanhar > {PASTA_E7_CELULAR}/acompanhar.log 2>&1 "
+              "< /dev/null & sleep 2; pgrep -f 'e7_disponibilidade.py --acompanhar' >/dev/null && echo ok",
+              timeout=60)
+
+
+def iniciar(args):
+    codigo, atual = comum.ssh(f"cat {PASTA_E7_CELULAR}/{MARCADOR} 2>/dev/null", timeout=30)
+    if atual.strip() and not args.novo:
+        m = json.loads(atual)
+        raise SystemExit(f"Já há uma E7 iniciada em {datetime.fromtimestamp(m['inicio']):%d/%m %H:%M}. "
+                         "Use --retomar para religar o acompanhamento ou --novo para começar outra.")
+    inicio = time.time()
+    m = {"inicio": round(inicio, 1), "horas": args.horas, "worker": args.worker}
+    comum.ssh(f"mkdir -p {PASTA_E7_CELULAR} && rm -f {PASTA_E7_CELULAR}/resultado.txt "
+              f"{PASTA_E7_CELULAR}/progresso.txt && echo '{json.dumps(m)}' > {PASTA_E7_CELULAR}/{MARCADOR}",
+              timeout=30)
+    _ligar_acompanhamento()
+    print(f"E7 iniciada em {datetime.fromtimestamp(inicio):%d/%m %H:%M} ({args.worker}, {args.horas:g} h); "
+          f"termina em {datetime.fromtimestamp(inicio + args.horas * 3600):%d/%m %H:%M}.")
+    print("O PC e o painel podem ser desligados. Progresso: uv run bench/e7_disponibilidade.py --status")
+
+
+def retomar(args):
+    _ligar_acompanhamento()
+    print("Acompanhamento religado no celular (o registro não parou; nada se perdeu).")
+
+
+def status(args):
+    _, saida = comum.ssh(f"cd {PASTA_E7_CELULAR} 2>/dev/null && (cat resultado.txt 2>/dev/null || "
+                         "cat progresso.txt 2>/dev/null || echo 'Ainda sem progresso (o 1º sai em instantes).'); "
+                         "pgrep -f 'e7_disponibilidade.py --acompanhar' >/dev/null && echo '[acompanhamento rodando]' "
+                         "|| echo '[acompanhamento parado: se a E7 não terminou, use --retomar]'", timeout=60)
+    print(saida or "Nenhuma E7 iniciada no celular.")
+
+
+def marcador_remoto():
+    try:
+        _, texto = comum.ssh(f"cat {PASTA_E7_CELULAR}/{MARCADOR} 2>/dev/null", timeout=30)
+        return json.loads(texto) if texto.strip() else None
+    except (ValueError, SystemExit):
+        return None
+
+
+def do_celular(args):
+    amostras = ler_amostras(open(args.registro, encoding="utf-8").read() if args.registro else baixar_registro())
+    if not amostras:
+        raise SystemExit("Registro vazio.")
+    horas, worker = args.horas, args.worker
+    if args.inicio:
+        inicio = datetime.fromisoformat(args.inicio).timestamp()
+    elif not args.registro and (m := marcador_remoto()):
+        # início gravado no celular pelo --iniciar
+        inicio, horas, worker = m["inicio"], m["horas"], m["worker"]
+        print(f"Usando a E7 iniciada em {datetime.fromtimestamp(inicio):%d/%m %H:%M} ({worker}, {horas:g} h).")
+    else:  # as últimas --horas registradas
+        inicio = max(amostras[-1]["t"] - horas * 3600, amostras[0]["t"])
+    fim = min(inicio + horas * 3600, amostras[-1]["t"])
+    calcular(amostras, worker, inicio, fim, horas, args.intervalo)
 
 
 def main():
@@ -264,8 +411,22 @@ def main():
     ap.add_argument("--inicio", help='início da janela, ex.: "2026-11-17 01:00" (padrão: últimas --horas)')
     ap.add_argument("--registro", metavar="JSONL", help="usa um registro já baixado em vez de buscar por SSH")
     ap.add_argument("--pelo-pc", action="store_true", help="modo antigo: mede a partir do PC, pelo painel")
+    ap.add_argument("--iniciar", action="store_true", help="marca o início no celular e liga o acompanhamento lá")
+    ap.add_argument("--novo", action="store_true", help="com --iniciar: descarta a E7 anterior e começa outra")
+    ap.add_argument("--retomar", action="store_true", help="religa o acompanhamento (ex.: depois de um reboot)")
+    ap.add_argument("--status", action="store_true", help="mostra o progresso calculado no celular")
+    ap.add_argument("--acompanhar", action="store_true", help=argparse.SUPPRESS)  # roda no celular
+    ap.add_argument("--acompanhar-cada", type=float, default=15, help=argparse.SUPPRESS)  # minutos
     args = ap.parse_args()
-    if args.resumo:
+    if args.acompanhar:
+        acompanhar(args)
+    elif args.iniciar:
+        iniciar(args)
+    elif args.retomar:
+        retomar(args)
+    elif args.status:
+        status(args)
+    elif args.resumo:
         resumir(args.resumo)
     elif args.pelo_pc:
         coletar(args)
