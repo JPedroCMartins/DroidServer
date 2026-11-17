@@ -106,8 +106,11 @@ def _num(x):
 
 
 def resumir(caminho):
-    with open(caminho, encoding="utf-8") as f:
-        linhas = list(csv.DictReader(f))
+    # Tolera o fim de arquivo corrompido por uma queda de energia (bytes nulos,
+    # última linha pela metade): só entram linhas com carimbo de tempo válido.
+    with open(caminho, encoding="utf-8", errors="replace") as f:
+        linhas = [l for l in csv.DictReader(line.replace("\0", "") for line in f)
+                  if _num(l.get("t")) is not None]
     if not linhas:
         print("Sem amostras.")
         return
