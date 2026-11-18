@@ -19,6 +19,7 @@ import socketio
 
 import registro
 import servico
+import tunnel
 from sysinfo import ProcessCPUMonitor, SystemMonitor, _rss_kb, memoria_grupos
 
 log = logging.getLogger("node")
@@ -347,6 +348,9 @@ class WorkerManager:
 
         if not WorkerManager._alias_valido(alias):
             return False, f"Alias inválido: '{alias}'"
+
+        if alias == tunnel.NOME:
+            return False, f"O nome '{alias}' é reservado para o tunnel da Cloudflare"
 
         if imagem not in IMAGENS_PERMITIDAS:
             return False, f"Distribuição não suportada: '{imagem}'"
@@ -755,7 +759,8 @@ class NodeAgent:
             self.sio.emit('servico_resposta', {
                 'ip': self.meu_ip, 'alias': alias, 'acao': acao, 'sid': dados.get("sid"),
                 'req': dados.get("req"), 'ok': ok, 'msg': msg, 'dados': extra,
-                'servico': servico.estado_servicos([alias]).get(alias),
+                'servico': (self._estado_tunnel(None) if alias == tunnel.NOME
+                            else servico.estado_servicos([alias]).get(alias)),
             })
         except Exception as e:
             log.warning("Falha ao responder comando de serviço: %s", e)
@@ -827,7 +832,16 @@ class NodeAgent:
             "mem": uso["mem"],
             "cpu_termux": cpu_proc["total"],
             "cpu_workers": cpu_proc["grupos"],
+            "tunnel": self._estado_tunnel(status_sup),
         }
+
+    @staticmethod
+    def _estado_tunnel(status_sup):
+        try:
+            return tunnel.estado(status_sup)
+        except Exception:
+            log.exception("[-] Falha ao ler o estado do tunnel")
+            return None
 
     def _registrar_local(self, medida):
         """Grava a amostra no celular, com a verificação HTTP de cada serviço."""
@@ -870,7 +884,7 @@ class NodeAgent:
             "workers": medida["workers"],
             "servicos": medida["servicos"],
             "worker_status": medida["worker_status"],
-            "tarefa_atual": self._tarefa_atual,
+            "tarefa_atual": tunnel.sem_segredo(self._tarefa_atual),
             "resultados": enviados,
             # logs que este agente está acompanhando: o host reconcilia com
             # quem está assistindo (ex.: depois de o agente reiniciar)
@@ -879,6 +893,7 @@ class NodeAgent:
             "mem": medida["mem"],
             "cpu_termux": medida["cpu_termux"],
             "cpu_workers": medida["cpu_workers"],
+            "tunnel": medida.get("tunnel"),
         }
         if self._enviar_historico:
             payload["historico"] = self.registro.historico(
@@ -932,7 +947,7 @@ class NodeAgent:
             try:
                 self._executar_tarefa(tarefa)
             except Exception as e:
-                log.error("[-] Erro ao executar tarefa %s: %s", tarefa, e)
+                log.error("[-] Erro ao executar tarefa %s: %s", tunnel.sem_segredo(tarefa), e)
             finally:
                 self._tarefa_atual = None
 
@@ -977,8 +992,23 @@ class NodeAgent:
                 ok, msg = False, f"Erro inesperado ao deletar '{alias}': {e}"
             self._registrar_resultado(acao, alias, ok, msg)
 
+        elif acao == "configurar_tunnel":
+            try:
+                ok, msg = tunnel.configurar(tarefa.get("token"))
+            except Exception as e:
+                ok, msg = False, f"Erro inesperado ao configurar o tunnel: {e}"
+            self._registrar_resultado(acao, tunnel.NOME, ok, msg)
+
+        elif acao == "remover_tunnel":
+            self.logs.cancelar(tunnel.NOME)
+            try:
+                ok, msg = tunnel.remover()
+            except Exception as e:
+                ok, msg = False, f"Erro inesperado ao remover o tunnel: {e}"
+            self._registrar_resultado(acao, tunnel.NOME, ok, msg)
+
         else:
-            log.warning("Tarefa desconhecida ignorada: %s", tarefa)
+            log.warning("Tarefa desconhecida ignorada: %s", tunnel.sem_segredo(tarefa))
 
     def _loop(self):
         """Loop principal de Polling e manutenção da conexão WebSockets."""
@@ -1009,7 +1039,7 @@ class NodeAgent:
                 self._atualizar_ip()
                 self._conectar_ws()
                 for tarefa in self._poll_once(medida):
-                    log.info("Tarefa recebida: %s", tarefa)
+                    log.info("Tarefa recebida: %s", tunnel.sem_segredo(tarefa))
                     self._fila_tarefas.put(tarefa)
             elif not avisou:
                 log.info("[*] Node não pareado. Adicione o IP %s pelo painel do DroidServer.", self.meu_ip)

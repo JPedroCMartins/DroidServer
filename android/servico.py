@@ -24,6 +24,8 @@ import time
 log = logging.getLogger("node.servico")
 
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Nome reservado do programa do Cloudflare Tunnel (tunnel.py): não é um container
+TUNNEL = "tunnel"
 
 # Caminhos dentro do container
 APP_DIR = "app"
@@ -628,7 +630,11 @@ def executar(alias, acao, dados=None):
         return False, "Alias inválido.", {}
     if acao not in ACOES:
         return False, f"Ação desconhecida: {acao}", {}
-    if not rootfs(alias):
+    if alias == TUNNEL:
+        # O tunnel roda no Termux, sem container nem run.sh (ver tunnel.py)
+        if acao not in ("iniciar", "parar", "reiniciar", "configurar"):
+            return False, "O tunnel não tem run.sh.", {}
+    elif not rootfs(alias):
         return False, f"Container '{alias}' não encontrado.", {}
 
     if acao == "exemplo":
@@ -658,8 +664,12 @@ def executar(alias, acao, dados=None):
         for chave in ("autostart", "autorestart"):
             if chave in dados:
                 opcoes[chave] = bool(dados[chave])
-        gravar_conf(alias, isolado=opcoes["isolado"], autostart=opcoes["autostart"],
-                    autorestart=opcoes["autorestart"])
+        if alias == TUNNEL:
+            import tunnel  # importado aqui: o tunnel.py importa este módulo
+            tunnel.gravar_conf(opcoes["autostart"], opcoes["autorestart"])
+        else:
+            gravar_conf(alias, isolado=opcoes["isolado"], autostart=opcoes["autostart"],
+                        autorestart=opcoes["autorestart"])
         # Só relê: aplicar na hora reiniciaria o serviço. "Iniciar com o celular"
         # vale no próximo boot; "reiniciar se cair" vale na próxima reinicialização.
         supervisorctl("reread", text=True, timeout=15)

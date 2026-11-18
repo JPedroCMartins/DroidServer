@@ -122,6 +122,16 @@ O *shebang* é respeitado: um `run.sh` com `#!/bin/bash` ou `#!/usr/bin/env pyth
 
 Os comandos e os logs passam pelo WebSocket já aberto entre o Host e o Node (resposta imediata, sem esperar o sync), e os logs vão só para o navegador que está com a aba aberta. Workers criados por versões anteriores são migrados ao iniciar o agente: um `/app/run_server.sh` próprio vira `/app/run.sh`.
 
+### Cloudflare Tunnel (fora do escopo do TCC)
+
+Cada Node pode ter um tunnel da Cloudflare para publicar os Workers na Internet sem abrir portas no roteador. O `cloudflared` roda **no Termux, fora do proot**, como um programa do Supervisor com o nome reservado `tunnel` (nenhum Worker pode se chamar assim).
+
+1. Na Cloudflare, em **Zero Trust → Networks → Tunnels**, crie um tunnel do tipo `cloudflared` e copie o token. Pode copiar o comando inteiro (`cloudflared tunnel run --token …`); o painel extrai o token.
+2. Na página do Node, cole o token no card **Tunnel Cloudflare**. O agente instala o `cloudflared` com `pkg install` se faltar, grava o token em `~/.config/droidserver/tunnel.env` (0600) e sobe `cloudflared tunnel --no-autoupdate run`.
+3. Em **Public Hostnames**, aponte cada hostname para `http://localhost:<porta do Worker>`.
+
+A tela **Abrir tunnel** (`/node/<ip>/tunnel`) tem Iniciar/Parar/Reiniciar, as opções de inicialização, a troca de token, a remoção e o log do `cloudflared` ao vivo, pelos mesmos eventos da aba Serviço com `alias: "tunnel"`. O token não aparece no `ps` nem no `.conf`, porque o `cloudflared` o lê da variável `TUNNEL_TOKEN`. Ele também não é gravado no Host: fica só na fila em memória até o Node buscá-lo, e o painel mostra apenas os últimos 4 caracteres. Se a tarefa se perder no caminho, o painel avisa para enviar de novo.
+
 ### Terminal (WebSocket)
 
 ```
@@ -314,6 +324,9 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 
 | `POST` | `/deploy_worker` | Form `ip`, `alias`, `imagem`, `isolado` → enfileira `criar_worker` |
 | `POST` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` (GET responde 405) |
+| `GET` | `/node/<ip>/tunnel` | SPA: tela do Cloudflare Tunnel |
+| `POST` | `/node/<ip>/tunnel` | `{"token": "..."}` (ou o comando com `--token`) → enfileira `configurar_tunnel`; responde `{ok, token_fim}` |
+| `POST` | `/node/<ip>/tunnel/delete` | Enfileira `remover_tunnel` |
 | `GET`/`POST` | `/login` | Login do painel (só com `DROID_PANEL_PASSWORD`) |
 | `POST` | `/logout` | Encerra a sessão |
 
@@ -376,7 +389,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 236 testes (90 no Host e 146 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 255 testes (96 no Host e 159 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
