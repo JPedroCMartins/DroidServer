@@ -505,8 +505,8 @@ class DiscoCache:
         self._calculando = set()
         self._lock = threading.Lock()
 
-    def mb(self, alias):
-        raiz = rootfs(alias)
+    def mb(self, alias, raiz=None):
+        raiz = raiz or rootfs(alias)
         if not raiz:
             return None
         with self._lock:
@@ -544,6 +544,7 @@ def _salvo_em(alias):
 
 def estado_servicos(aliases, status=None):
     """Estado de cada serviço para o painel."""
+    import banco  # importado aqui: o banco.py importa este módulo
     status = status if status is not None else status_supervisor()
     try:
         falhas = falhas_do_dia(aliases)
@@ -567,7 +568,10 @@ def estado_servicos(aliases, status=None):
             "autorestart": opcoes["autorestart"] if opcoes else None,
             **falhas[alias],
         }
-        resultado[alias].update(_extras_visao_geral(alias))
+        if banco.existe(alias):
+            resultado[alias].update(banco.extras(alias))
+        else:
+            resultado[alias].update(_extras_visao_geral(alias))
     return resultado
 
 
@@ -590,7 +594,10 @@ def _extras_visao_geral(alias):
 # Comandos vindos do painel
 # ---------------------------------------------------------------------------
 
-ACOES = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo"}
+ACOES = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo",
+         "credenciais"}
+# Ações de um worker de banco (banco.py): não há container nem run.sh
+ACOES_BANCO = {"iniciar", "parar", "reiniciar", "configurar", "credenciais"}
 
 
 def _saida(proc):
@@ -630,12 +637,23 @@ def executar(alias, acao, dados=None):
         return False, "Alias inválido.", {}
     if acao not in ACOES:
         return False, f"Ação desconhecida: {acao}", {}
+    import banco  # importado aqui: o banco.py importa este módulo
+    e_banco = alias != TUNNEL and banco.existe(alias)
     if alias == TUNNEL:
         # O tunnel roda no Termux, sem container nem run.sh (ver tunnel.py)
         if acao not in ("iniciar", "parar", "reiniciar", "configurar"):
             return False, "O tunnel não tem run.sh.", {}
+    elif e_banco:
+        if acao not in ACOES_BANCO:
+            return False, "Este worker é um banco PostgreSQL: não tem run.sh.", {}
     elif not rootfs(alias):
         return False, f"Container '{alias}' não encontrado.", {}
+
+    if acao == "credenciais":
+        cred = banco.credenciais(alias) if e_banco else None
+        if not cred:
+            return False, "Só workers de banco têm credenciais.", {}
+        return True, "", cred
 
     if acao == "exemplo":
         return True, "Exemplo", {"conteudo": EXEMPLO}
@@ -667,6 +685,8 @@ def executar(alias, acao, dados=None):
         if alias == TUNNEL:
             import tunnel  # importado aqui: o tunnel.py importa este módulo
             tunnel.gravar_conf(opcoes["autostart"], opcoes["autorestart"])
+        elif e_banco:
+            banco.gravar_conf(alias, opcoes["autostart"], opcoes["autorestart"])
         else:
             gravar_conf(alias, isolado=opcoes["isolado"], autostart=opcoes["autostart"],
                         autorestart=opcoes["autorestart"])

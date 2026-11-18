@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import socket
 import urllib.error
 import sys
@@ -1010,3 +1011,92 @@ def test_servico_do_tunnel_vai_ao_node_e_atualiza_estado(ambiente_servico):
                                    "servico": {"estado": "STOPPED", "configurado": True}})
     assert _routes().nodes_conectados["10.0.0.5"]["tunnel"]["estado"] == "STOPPED"
     assert "tunnel" not in _routes().nodes_conectados["10.0.0.5"].get("servicos", {})
+
+
+# ---------- Worker de banco (PostgreSQL nativo do Termux) ----------
+
+def test_deploy_worker_postgres_gera_senha_na_tarefa(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    resp = client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": "pg1", "tipo": "postgres",
+                                               "imagem": "windows"})  # imagem é ignorada no banco
+    assert resp.status_code == 200
+
+    # o painel vê a tarefa pendente sem a senha
+    pendentes = client.get("/api/node/10.0.0.5").get_json()["tarefas_pendentes"]
+    assert pendentes[0]["senha"].startswith("…") and len(pendentes[0]["senha"]) == 5
+
+    tarefas = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).get_json()["tarefas"]
+    assert len(tarefas) == 1
+    t = tarefas[0]
+    assert {k: t[k] for k in ("acao", "tipo", "alias")} == {"acao": "criar_worker", "tipo": "postgres", "alias": "pg1"}
+    assert re.fullmatch(r"[A-Za-z0-9_-]{24}", t["senha"])
+    assert "imagem" not in t
+
+
+def test_deploy_worker_senhas_diferentes(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    for alias in ("pg1", "pg2"):
+        client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": alias, "tipo": "postgres"})
+    tarefas = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).get_json()["tarefas"]
+    assert tarefas[0]["senha"] != tarefas[1]["senha"]
+
+
+def test_deploy_worker_rejeita_tipo_invalido(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    resp = client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": "x", "tipo": "mysql"})
+    assert resp.status_code == 400
+    assert client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).get_json()["tarefas"] == []
+
+
+def test_sem_segredo_oculta_token_e_senha():
+    r = _routes()
+    assert r._sem_segredo({"acao": "criar_worker", "senha": "abcdefgh1234"})["senha"] == "…1234"
+    assert r._sem_segredo({"acao": "configurar_tunnel", "token": "x" * 40 + "WXYZ"})["token"] == "…WXYZ"
+    assert r._sem_segredo({"acao": "deletar_worker", "alias": "w"}) == {"acao": "deletar_worker", "alias": "w"}
+
+
+def _sync_banco(client, porta=5432):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["pg1"],
+                                        "servicos": {"pg1": {"estado": "RUNNING", "porta": porta,
+                                                             "tipo": "postgres"}}})
+
+
+def test_testar_banco_usa_tcp(client, monkeypatch):
+    _sync_banco(client)
+    chamadas = []
+
+    class _Conexao:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(_routes().socket, "create_connection",
+                        lambda destino, timeout=None: (chamadas.append((destino, timeout)), _Conexao())[1])
+    monkeypatch.setattr(_routes(), "_abrir_servico", lambda *a, **k: pytest.fail("banco não usa HTTP"))
+    r = client.post("/api/node/10.0.0.5/worker/pg1/testar").get_json()
+    assert r["ok"] is True and r["status"] == "porta aberta" and r["url"] == "10.0.0.5:5432"
+    assert chamadas == [(("10.0.0.5", 5432), 3)]
+
+
+def test_testar_banco_recusado(client, monkeypatch):
+    _sync_banco(client)
+
+    def recusa(*a, **k):
+        raise ConnectionRefusedError(111, "Connection refused")
+    monkeypatch.setattr(_routes().socket, "create_connection", recusa)
+    r = client.post("/api/node/10.0.0.5/worker/pg1/testar").get_json()
+    assert r["ok"] is False and "Connection refused" in r["erro"]
+
+
+def test_credenciais_vao_so_para_o_navegador_que_pediu(terminal):
+    node, dono, outro = terminal
+    dono.emit("servico", {"ip": "10.0.0.5", "alias": "w1", "acao": "credenciais", "req": 7})
+    pedido = [e["args"][0] for e in node.get_received() if e["name"] == "servico_to_10.0.0.5"]
+    assert len(pedido) == 1 and pedido[0]["acao"] == "credenciais"
+
+    node.emit("servico_resposta", {**pedido[0], "ok": True, "msg": "", "dados": {"senha": "segredo123"}})
+    resposta = [e["args"][0] for e in dono.get_received() if e["name"] == "servico_resposta"]
+    assert resposta and resposta[0]["dados"] == {"senha": "segredo123"} and "sid" not in resposta[0]
+    assert outro.get_received() == []

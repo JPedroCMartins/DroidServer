@@ -45,6 +45,9 @@ MAX_RESULTADOS = 20
 # Distribuições (proot-distro) que podem ser criadas pelo painel.
 # Alpine é a recomendada; Debian, a alternativa. Arch foi retirado (sem build arm64).
 IMAGENS_PERMITIDAS = {"alpine", "debian"}
+# Tipos de worker: "linux" (container do proot-distro com /app/run.sh) ou
+# "postgres" (PostgreSQL nativo do Termux, sem container; ver android/banco.py)
+TIPOS_WORKER = {"linux", "postgres"}
 
 # Alias de worker: caracteres seguros (usado em caminhos, serviços e eventos WS).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -57,10 +60,14 @@ TUNNEL_TOKEN_RE = re.compile(r"^[A-Za-z0-9+/=_-]{40,4096}$")
 
 
 def _sem_segredo(tarefa):
-    """Cópia da tarefa sem o token do tunnel (para o navegador e os logs)."""
-    if isinstance(tarefa, dict) and "token" in tarefa:
-        return {**tarefa, "token": "…" + str(tarefa["token"])[-4:]}
-    return tarefa
+    """Cópia da tarefa sem segredos (token do tunnel, senha do banco), para o navegador e os logs."""
+    if not isinstance(tarefa, dict):
+        return tarefa
+    copia = dict(tarefa)
+    for chave in ("token", "senha"):
+        if chave in copia:
+            copia[chave] = "…" + str(copia[chave])[-4:]
+    return copia
 
 
 
@@ -389,11 +396,16 @@ def deploy_worker():
     alias = request.form.get('alias', '').strip()
     imagem = request.form.get('imagem', 'alpine').strip().lower()
     isolado = request.form.get('isolado', '1') == '1'
+    tipo = request.form.get('tipo', 'linux').strip().lower()
 
     if ip_alvo not in nodes_conectados:
         return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
 
-    if imagem not in IMAGENS_PERMITIDAS:
+    if tipo not in TIPOS_WORKER:
+        logger.warning("Tipo de worker inválido rejeitado no deploy: %r", tipo)
+        return jsonify({"ok": False, "erro": "Tipo de worker inválido."}), 400
+
+    if tipo == "linux" and imagem not in IMAGENS_PERMITIDAS:
         logger.warning("Imagem inválida rejeitada no deploy: %r", imagem)
         return jsonify({"ok": False, "erro": "Distribuição inválida."}), 400
 
@@ -408,14 +420,21 @@ def deploy_worker():
         logger.info("Worker '%s' já existe no node %s; nada a fazer.", alias, ip_alvo)
         return jsonify({"ok": False, "erro": "Worker já existe."}), 409
 
-    nova_tarefa = {
-        "acao": "criar_worker",
-        "imagem": imagem,
-        "alias": alias,
-        "isolado": isolado
-    }
+    if tipo == "postgres":
+        # A senha nasce aqui e só existe no Node depois; o painel a pede pela
+        # ação "credenciais" da aba Serviço (nunca vem no sync)
+        nova_tarefa = {"acao": "criar_worker", "tipo": "postgres", "alias": alias,
+                       "senha": secrets.token_urlsafe(18)}
+        logger.info("Tarefa enfileirada: criar worker de banco '%s' (PostgreSQL) no node %s", alias, ip_alvo)
+    else:
+        nova_tarefa = {
+            "acao": "criar_worker",
+            "imagem": imagem,
+            "alias": alias,
+            "isolado": isolado
+        }
+        logger.info("Tarefa enfileirada: criar worker '%s' (%s, isolado=%s) no node %s", alias, imagem, isolado, ip_alvo)
     nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
-    logger.info("Tarefa enfileirada: criar worker '%s' (%s, isolado=%s) no node %s", alias, imagem, isolado, ip_alvo)
     socketio.emit('node_updated', {'ip': ip_alvo})
     return jsonify({"ok": True})
 
@@ -602,17 +621,36 @@ def _abrir_servico(url, timeout=3):
     return _abridor_servico.open(url, timeout=timeout)
 
 
+def _testar_tcp(ip, porta, timeout=3):
+    """Banco não fala HTTP: o teste é abrir uma conexão TCP na porta."""
+    destino = f"{ip}:{porta}"
+    inicio = time.monotonic()
+    try:
+        with socket.create_connection((ip, porta), timeout=timeout):
+            pass
+    except (socket.timeout, TimeoutError):
+        return {"ok": False, "url": destino, "status": None, "ms": None, "erro": "sem resposta em 3 s."}
+    except OSError as e:
+        return {"ok": False, "url": destino, "status": None, "ms": None,
+                "erro": f"o banco não aceitou conexão em {destino} ({e.strerror or e})."}
+    ms = round((time.monotonic() - inicio) * 1000, 1)
+    return {"ok": True, "url": destino, "status": "porta aberta", "ms": ms, "erro": None}
+
+
 @app.route('/api/node/<ip>/worker/<alias>/testar', methods=['POST'])
 def api_testar_servico(ip, alias):
     """Testa, a partir do Host, o endereço do serviço (porta declarada no run.sh)."""
     node = nodes_conectados.get(ip)
     if not node or not _alias_valido(alias) or alias not in node.get("workers", []):
         return jsonify({"ok": False, "erro": "Node ou worker não encontrado."}), 404
-    porta = ((node.get("servicos") or {}).get(alias) or {}).get("porta")
+    sv = (node.get("servicos") or {}).get(alias) or {}
+    porta = sv.get("porta")
     # o valor vem do agente: só aceita um inteiro de porta válido
     if isinstance(porta, bool) or not isinstance(porta, int) or not 1 <= porta <= 65535:
         return jsonify({"ok": False, "url": None, "status": None, "ms": None,
                         "erro": "porta não informada: declare '# droidserver: porta=N' no run.sh."})
+    if sv.get("tipo") == "postgres":
+        return jsonify(_testar_tcp(ip, porta))
     url = f"http://{ip}:{int(porta)}/"
     inicio = time.monotonic()
     status, erro = None, None
@@ -714,7 +752,8 @@ def node_sync():
 #   navegador --logs_assinar--> host (entra na sala) --logs_to_<ip>--> node
 #   node --logs_saida--> host --logs_saida--> só a sala logs:<ip>:<alias>
 # ---------------------------------------------------------------------------
-ACOES_SERVICO = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo"}
+ACOES_SERVICO = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo",
+                 "credenciais"}
 # (ip, alias) -> sids dos navegadores com a aba de logs aberta
 assinantes_logs = {}
 

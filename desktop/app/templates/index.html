@@ -220,6 +220,7 @@
             pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
             download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
             gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+            db: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
             cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>',
             full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
         };
@@ -796,9 +797,16 @@
 
                 <div class="card card-static p-5 mb-7">
                     <h3 class="text-[15px] font-bold mb-1">Criar novo worker</h3>
-                    <p class="text-[12.5px] text-muted mb-4">Cria um container via proot-distro e registra como serviço no Supervisor do node. Prefira <strong class="text-slate-300">Alpine</strong>: imagem de ~50 MB, criada em segundos. O <strong class="text-slate-300">Debian</strong> (~150 MB) é a alternativa quando o software exige glibc ou pacotes <code>apt</code>.</p>
+                    <p class="text-[12.5px] text-muted mb-4" id="deployAjuda"></p>
                     <form id="deployForm" class="flex gap-3 items-end flex-wrap">
-                        <div class="w-full sm:w-48">
+                        <div class="w-full sm:w-52">
+                            <label for="tipo" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Tipo</label>
+                            <select class="input cursor-pointer [&>option]:bg-[#16213e]" id="tipo" name="tipo">
+                                <option value="linux" selected>Ambiente Linux</option>
+                                <option value="postgres">Banco PostgreSQL</option>
+                            </select>
+                        </div>
+                        <div class="w-full sm:w-48" id="campoImagem">
                             <label for="imagem" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Distribuição</label>
                             <select class="input cursor-pointer [&>option]:bg-[#16213e]" id="imagem" name="imagem">
                                 <option value="alpine" selected>Alpine (recomendado)</option>
@@ -806,14 +814,14 @@
                             </select>
                         </div>
                         <div class="flex-1 min-w-[220px]">
-                            <label for="alias" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Alias do container</label>
+                            <label for="alias" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Alias do worker</label>
                             <input class="input" type="text" id="alias" name="alias" placeholder="ex: alpine_bd" required pattern="[A-Za-z0-9_\\-]{1,64}" autocomplete="off">
                         </div>
-                        <label class="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-950/45 border border-slate-400/15 rounded-xl cursor-pointer select-none" title="Não monta o home do Termux nem o armazenamento do aparelho dentro do container. apt/apk/pacman continuam funcionando.">
+                        <label id="campoIsolado" class="flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-950/45 border border-slate-400/15 rounded-xl cursor-pointer select-none" title="Não monta o home do Termux nem o armazenamento do aparelho dentro do container. apt/apk/pacman continuam funcionando.">
                             <input type="checkbox" id="isolado" name="isolado" checked class="w-4 h-4 accent-accent cursor-pointer">
                             <span class="text-[13px] font-medium">Isolar do host</span>
                         </label>
-                        <button type="submit" class="btn btn-success">${svg(ICON.plus)}Criar Container</button>
+                        <button type="submit" class="btn btn-success">${svg(ICON.plus)}Criar worker</button>
                     </form>
                 </div>
 
@@ -919,6 +927,7 @@
                 const servicos = n.servicos || {};
                 const cards = workers.map(w => {
                     const sv = servicos[w] || null;
+                    const ehBanco = !!(sv && sv.tipo === 'postgres');
                     const apagando = removendo.has(w);
                     const e = estadoServico(sv, ws[w]);
                     const st = e.st;
@@ -933,12 +942,12 @@
                         <div class="flex items-start justify-between gap-3">
                             <div class="flex items-center gap-3 min-w-0">
                                 <div class="relative w-11 h-11 rounded-xl grid place-items-center shrink-0 bg-surface2 text-accent">
-                                    ${svg(ICON.box, 'w-5 h-5')}
+                                    ${svg(ehBanco ? ICON.db : ICON.box, 'w-5 h-5')}
                                     <span class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full ring-2 ring-surface2 ${t.dot}"></span>
                                 </div>
                                 <div class="min-w-0">
                                     <div class="text-[15px] font-bold truncate" title="${esc(w)}">${esc(w)}</div>
-                                    <div class="text-[11.5px] text-muted mt-0.5">Container Linux</div>
+                                    <div class="text-[11.5px] text-muted mt-0.5">${ehBanco ? `PostgreSQL${sv.porta ? ' · porta ' + esc(String(sv.porta)) : ''}` : 'Container Linux'}</div>
                                 </div>
                             </div>
                             <span class="pill ${t.pill} shrink-0 flex items-center gap-1.5">
@@ -949,7 +958,7 @@
                         <div class="grid grid-cols-3 gap-3 p-3 bg-slate-950/35 border border-slate-400/15 rounded-xl">
                             <div class="flex flex-col gap-1 min-w-0">
                                 <span class="label-xs tracking-wider">Serviço</span>
-                                <span class="text-[13px] font-semibold truncate font-mono">${sv && sv.tem_script ? '/app/run.sh' : '—'}</span>
+                                <span class="text-[13px] font-semibold truncate font-mono">${ehBanco ? 'postgres' : (sv && sv.tem_script ? '/app/run.sh' : '—')}</span>
                             </div>
                             <div class="flex flex-col gap-1 min-w-0">
                                 <span class="label-xs tracking-wider">No ar há</span>
@@ -1044,6 +1053,21 @@
                 } catch (e) { /* ignora falhas momentâneas de rede */ }
             }
 
+            // Tipo de worker: ambiente Linux (proot-distro) ou banco PostgreSQL (nativo do Termux)
+            const AJUDA_TIPO = {
+                linux: 'Cria um container via proot-distro e registra como serviço no Supervisor do node. Prefira <strong class="text-slate-300">Alpine</strong>: imagem de ~50 MB, criada em segundos. O <strong class="text-slate-300">Debian</strong> (~150 MB) é a alternativa quando o software exige glibc ou pacotes <code>apt</code>.',
+                postgres: 'Cria uma instância do <strong class="text-slate-300">PostgreSQL</strong> do Termux (sem container), pronta para conexões pela rede na porta 5432 (ou a próxima livre). O usuário é <code>droidserver</code> e a senha é gerada na hora — veja na aba Serviço. Na primeira vez o node instala o pacote (~30 MB). Usa ~70 MB de RAM parado.',
+            };
+            function aplicarTipo() {
+                const banco = $('tipo').value === 'postgres';
+                $('campoImagem').classList.toggle('hidden', banco);
+                $('campoIsolado').classList.toggle('hidden', banco);
+                $('alias').placeholder = banco ? 'ex: banco_app' : 'ex: alpine_web';
+                $('deployAjuda').innerHTML = AJUDA_TIPO[$('tipo').value];
+            }
+            $('tipo').addEventListener('change', aplicarTipo);
+            aplicarTipo();
+
             // POST /deploy_worker
             $('deployForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -1052,6 +1076,7 @@
                 const fd = new FormData();
                 fd.append('ip', ip);
                 fd.append('alias', alias);
+                fd.append('tipo', $('tipo').value);
                 fd.append('imagem', $('imagem').value);
                 fd.append('isolado', $('isolado').checked ? '1' : '0');
                 try {
@@ -1198,7 +1223,7 @@ exec python3 bot.py`)}
                 <header class="flex items-end justify-between gap-4 flex-wrap">
                     <div>
                         <h1 class="section-title text-[26px] tracking-tight flex items-center gap-2.5">Worker <span class="chip">${esc(alias)}</span></h1>
-                        <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — o serviço é o arquivo <code class="text-slate-300">/app/run.sh</code>, executado e vigiado pelo DroidServer.</p>
+                        <p class="mt-1 text-[13.5px] text-muted" id="svSub">Node ${esc(ip)} — o serviço é o arquivo <code class="text-slate-300">/app/run.sh</code>, executado e vigiado pelo DroidServer.</p>
                         <div class="mt-3">${abasWorker(ip, alias, 'servico')}</div>
                     </div>
                     <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao node</a>
@@ -1244,7 +1269,26 @@ exec python3 bot.py`)}
                     </div>
                 </section>
 
-                <section class="card card-static p-5 flex flex-col gap-3">
+                <section class="card card-static p-5 flex flex-col gap-3 hidden" id="secConexao">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <h2 class="text-[15px] font-bold flex items-center gap-2">${svg(ICON.db, 'w-4 h-4')}Conexão</h2>
+                        <div class="flex gap-2 flex-wrap">
+                            <button class="btn btn-ghost" id="btnSenha">Mostrar senha</button>
+                            <button class="btn btn-dark" id="btnCopiarUrl">${svg(ICON.copy)}Copiar URL</button>
+                        </div>
+                    </div>
+                    <div class="grid gap-3 grid-cols-2 md:grid-cols-5 p-3 bg-slate-950/35 border border-slate-400/15 rounded-xl text-[13px]">
+                        <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Host</span><span class="font-mono truncate">${esc(ip)}</span></div>
+                        <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Porta</span><span class="font-mono" id="cxPorta">—</span></div>
+                        <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Usuário</span><span class="font-mono truncate" id="cxUsuario">—</span></div>
+                        <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Banco</span><span class="font-mono truncate" id="cxBanco">—</span></div>
+                        <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Senha</span><span class="font-mono truncate" id="cxSenha">••••••••</span></div>
+                    </div>
+                    <input id="cxUrl" readonly aria-label="URL de conexão" class="input font-mono text-[12.5px] hidden">
+                    <p class="text-[11.5px] text-muted">Conecte de qualquer máquina da rede (ex.: <code>psql "postgresql://…"</code>, DBeaver, ou a variável <code>DATABASE_URL</code> de uma aplicação). A aba <strong>Terminal</strong> abre o <code>psql</code> já conectado. O acesso é pela rede local: não exponha a porta na internet.</p>
+                </section>
+
+                <section class="card card-static p-5 flex flex-col gap-3" id="secScript">
                     <div class="flex items-center justify-between gap-3 flex-wrap">
                         <div class="flex items-center gap-2.5">
                             <h2 class="text-[15px] font-bold font-mono">/app/run.sh</h2>
@@ -1346,8 +1390,11 @@ exec python3 bot.py`)}
             let cpuWorker;
             function mostrarVisaoGeral(sv) {
                 const porta = sv.porta;
-                const url = porta ? `http://${ip}:${porta}/` : null;
-                $('svEndereco').innerHTML = url
+                const banco = sv.tipo === 'postgres';
+                const url = porta && !banco ? `http://${ip}:${porta}/` : null;
+                $('svEndereco').innerHTML = banco
+                    ? (porta ? `<span class="font-mono text-slate-200">${esc(ip)}:${esc(String(porta))}</span>` : '—')
+                    : url
                     ? `<a class="underline text-slate-200" href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`
                     : (sv.porta === undefined ? '—' : '<span class="text-warn">Porta não informada</span> — declare <code># droidserver: porta=N</code> no run.sh');
                 $('btnAbrir').classList.toggle('hidden', !url);
@@ -1364,11 +1411,29 @@ exec python3 bot.py`)}
                 const disco = sv.disco_mb === undefined ? '—' : (sv.disco_mb === null ? 'calculando…' : fmt(sv.disco_mb, ' MB'));
                 $('svRecursos').textContent = [
                     `CPU ${fmt(cpuWorker, '%')}`, `RAM ${fmt(sv.ram_mb, ' MB')}`, `Disco ${disco}`,
-                    sv.distro || '—', `run.sh salvo ${sv.script_salvo_em ? haQuanto(sv.script_salvo_em) : '—'}`,
+                    sv.distro || '—',
+                    ...(banco ? [] : [`run.sh salvo ${sv.script_salvo_em ? haQuanto(sv.script_salvo_em) : '—'}`]),
                 ].join(' · ');
             }
 
+            // Worker de banco: sem run.sh; mostra a conexão no lugar do editor
+            let ehBanco = false;
+            function aplicarBanco(sv) {
+                if (sv.tipo !== 'postgres') return;
+                if (!ehBanco) {
+                    ehBanco = true;
+                    $('secScript').classList.add('hidden');
+                    $('secConexao').classList.remove('hidden');
+                    $('svSub').innerHTML = `Node ${esc(ip)} — banco PostgreSQL rodando no Termux, vigiado pelo DroidServer.`;
+                }
+                const b = sv.banco || {};
+                $('cxPorta').textContent = b.porta || sv.porta || '—';
+                $('cxUsuario').textContent = b.usuario || '—';
+                $('cxBanco').textContent = b.banco || '—';
+            }
+
             function mostrarEstado(sv) {
+                aplicarBanco(sv);
                 // A RAM só vem no sync; uma resposta de comando chega sem ela
                 if (sv.ram_mb === undefined && ultimoEstado && ultimoEstado.ram_mb !== undefined) sv = { ...sv, ram_mb: ultimoEstado.ram_mb };
                 ultimoEstado = sv;
@@ -1392,6 +1457,10 @@ exec python3 bot.py`)}
                     alerta = `<div class="px-3.5 py-3 rounded-xl border border-warn/30 bg-warn/10 text-[13px]">Este worker ainda não usa o lançador do DroidServer. Reinicie o agente no celular para migrá-lo.</div>`;
                 } else if (!sv.tem_script) {
                     alerta = `<div class="px-3.5 py-3 rounded-xl border border-accent2/30 bg-accent2/10 text-[13px]"><strong>Nenhum /app/run.sh ainda.</strong> Escreva o serviço abaixo (ou use “Inserir exemplo”) e clique em <strong>Salvar e reiniciar</strong> — ele sobe sozinho.</div>`;
+                } else if (ehBanco && ['FATAL', 'BACKOFF'].includes(sv.estado)) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-bad/30 bg-bad/10 text-[13px]">
+                        <strong>O PostgreSQL termina logo depois de iniciar.</strong> Veja os logs abaixo: causas comuns são a porta já usada por outro serviço ou falta de memória no celular.
+                        ${sv.detalhe ? `<div class="mt-1 text-muted">Supervisor: ${esc(sv.detalhe)}</div>` : ''}</div>`;
                 } else if (['FATAL', 'BACKOFF'].includes(sv.estado)) {
                     alerta = `<div class="px-3.5 py-3 rounded-xl border border-bad/30 bg-bad/10 text-[13px]">
                         <strong>O serviço termina logo depois de iniciar.</strong> Causas comuns: um comando que não existe no worker (instale pelo Terminal), um erro no programa (veja os logs abaixo) ou o serviço indo para segundo plano com <code>&amp;</code>/<code>nohup</code>.
@@ -1451,6 +1520,50 @@ exec python3 bot.py`)}
             }
             $('optAutostart').addEventListener('change', (e) => configurar('autostart', e.target.checked));
             $('optAutorestart').addEventListener('change', (e) => configurar('autorestart', e.target.checked));
+
+            // ---- Conexão do banco (senha só sob pedido, direto do node) ----
+            let cred = null;
+            async function obterCredenciais() {
+                if (cred) return cred;
+                const r = await comando('credenciais');
+                if (!r.ok) { toast(r.msg || 'Não foi possível obter a senha'); return null; }
+                cred = r.dados;
+                return cred;
+            }
+            const urlConexao = (c) => `postgresql://${encodeURIComponent(c.usuario)}:${encodeURIComponent(c.senha)}@${ip}:${c.porta}/${encodeURIComponent(c.banco)}`;
+            $('btnSenha').addEventListener('click', async () => {
+                const visivel = $('btnSenha').dataset.visivel === '1';
+                if (visivel) {
+                    $('cxSenha').textContent = '••••••••';
+                    $('cxUrl').classList.add('hidden');
+                    $('btnSenha').dataset.visivel = '0';
+                    $('btnSenha').textContent = 'Mostrar senha';
+                    return;
+                }
+                const c = await obterCredenciais();
+                if (!c) return;
+                $('cxSenha').textContent = c.senha;
+                $('cxUrl').value = urlConexao(c);
+                $('cxUrl').classList.remove('hidden');
+                $('btnSenha').dataset.visivel = '1';
+                $('btnSenha').textContent = 'Ocultar senha';
+            });
+            $('btnCopiarUrl').addEventListener('click', async () => {
+                const c = await obterCredenciais();
+                if (!c) return;
+                const url = urlConexao(c);
+                try {
+                    await navigator.clipboard.writeText(url);
+                    toast('URL de conexão copiada');
+                } catch (e) {
+                    // Fora de HTTPS o navegador bloqueia a área de transferência: seleciona para Ctrl+C
+                    $('cxUrl').value = url;
+                    $('cxUrl').classList.remove('hidden');
+                    $('cxUrl').focus();
+                    $('cxUrl').select();
+                    toast('URL selecionada: use Ctrl+C');
+                }
+            });
 
             // ---- Editor do /app/run.sh ----
             const ed = $('editor');
@@ -1547,8 +1660,8 @@ exec python3 bot.py`)}
             });
 
             // ---- Ciclo de vida da view ----
-            carregarEstado();
-            carregarScript();
+            // o run.sh só existe nos ambientes Linux (um worker de banco não tem)
+            carregarEstado().then(() => { if (!ehBanco) carregarScript(); });
             const onUpd = (data) => { if (data && data.ip === ip) carregarEstado(); };
             socket.on('node_updated', onUpd);
             const timer = setInterval(carregarEstado, 10000);

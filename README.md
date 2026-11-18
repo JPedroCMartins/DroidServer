@@ -26,7 +26,7 @@ Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em 
 |---|---|
 | **Host** | Computador que roda `desktop/` — o plano de controle, com o painel web na porta 5050 |
 | **Node** | Um celular Android rodando o agente `android/node.py` dentro do Termux |
-| **Worker** | Um ambiente Linux (`proot-distro`) dentro de um Node, registrado como serviço no Supervisor |
+| **Worker** | Um serviço dentro de um Node, registrado no Supervisor. Há dois tipos: **ambiente Linux** (container `proot-distro` com o `/app/run.sh`) e **banco PostgreSQL** (instância nativa do Termux, sem container) |
 | **Tarefa** | Ordem do Host para um Node (`criar_worker` ou `deletar_worker`), entregue no próximo sync |
 
 ## Arquitetura
@@ -132,6 +132,19 @@ Cada Node pode ter um tunnel da Cloudflare para publicar os Workers na Internet 
 
 A tela **Abrir tunnel** (`/node/<ip>/tunnel`) tem Iniciar/Parar/Reiniciar, as opções de inicialização, a troca de token, a remoção e o log do `cloudflared` ao vivo, pelos mesmos eventos da aba Serviço com `alias: "tunnel"`. O token não aparece no `ps` nem no `.conf`, porque o `cloudflared` o lê da variável `TUNNEL_TOKEN`. Ele também não é gravado no Host: fica só na fila em memória até o Node buscá-lo, e o painel mostra apenas os últimos 4 caracteres. Se a tarefa se perder no caminho, o painel avisa para enviar de novo.
 
+### Workers de banco: PostgreSQL (fora do escopo do TCC)
+
+No formulário **Criar novo worker**, o tipo **Banco PostgreSQL** cria uma instância do PostgreSQL pronta para receber conexões pela rede, sem escrever `run.sh`:
+
+1. O Host gera uma senha aleatória e enfileira `criar_worker` com `tipo: "postgres"`. A senha só aparece no painel como `…xxxx` e nos logs também.
+2. O agente instala o pacote `postgresql` do Termux se faltar (~30 MB), roda o `initdb` com o usuário `droidserver` (senha lida de um arquivo 0600 apagado em seguida), libera a rede com `scram-sha-256` e limita a memória (`shared_buffers=16MB`, `max_connections=20`).
+3. A porta é 5432, ou a próxima livre se já houver outra instância ou outro serviço nela.
+4. O Supervisor roda `postgres -D <dados>` com o alias do Worker e para com `SIGINT` (parada rápida). Dados e configuração ficam em `~/.local/share/droidserver/bancos/<alias>/`.
+
+Na aba **Serviço**, o editor do `run.sh` dá lugar ao card **Conexão** (host, porta, usuário, banco e senha). **Mostrar senha** e **Copiar URL** (`postgresql://droidserver:<senha>@<ip>:5432/postgres`) pedem a senha ao Node na hora, pela ação `credenciais`, que responde só ao navegador que pediu. Ela nunca vem no sync. **Testar** abre uma conexão TCP na porta. A aba **Terminal** abre o `psql` já conectado. Iniciar/Parar/Reiniciar, opções, logs, falhas do dia, CPU, RAM e disco funcionam como nos outros Workers.
+
+**Por que fora do proot:** o PostgreSQL precisa de memória compartilhada System V, e a emulação do proot (`--sysvipc`) trava quando o `postgres` roda pela segunda vez na mesma sessão. O `initdb` faz isso várias vezes, então nunca termina (testado no moto e40 com Debian 13 e PostgreSQL 17; o defeito é do proot, não da distribuição). O pacote do Termux usa a `libandroid-shmem` e roda direto: `initdb` em ~3 s e cerca de 70 MB de RAM parado por instância (soma dos processos do PostgreSQL, como o painel mostra).
+
 ### Terminal (WebSocket)
 
 ```
@@ -150,6 +163,8 @@ DroidServer/
 ├── android/                  # Agente do Node (roda no Termux)
 │   ├── node.py               # NodeAgent, WorkerManager, TerminalManager
 │   ├── servico.py            # Serviço do Worker (/app/run.sh, lançador, .conf do Supervisor)
+│   ├── banco.py              # Workers de banco: PostgreSQL nativo do Termux
+│   ├── tunnel.py             # Cloudflare Tunnel (cloudflared no Termux)
 │   ├── registro.py           # Registro local de métricas e disponibilidade
 │   ├── sysinfo.py            # CPU/memória via /proc (fallback: top)
 │   ├── setup.sh              # Primeiro uso: pacotes, Supervisor, conexão, boot
@@ -284,6 +299,8 @@ O Android encerra processos em segundo plano agressivamente. Para um Node estáv
 | `DROID_LOG_FILE` | Node | `~/.config/droidserver/logs/node.log` | Arquivo de log do agente |
 | `DROID_ULIMIT_NOFILE` | Node | `4096` | Limite de arquivos abertos por Worker (`0` desativa) |
 | `DROID_ULIMIT_NPROC` | Node | `1024` | Limite de processos por Worker (`0` desativa) |
+| `DROID_BANCOS_DIR` | Node | `~/.local/share/droidserver/bancos` | Dados e configuração dos Workers de banco |
+| `DROID_PG_SHARED_BUFFERS` / `DROID_PG_MAX_CONNECTIONS` | Node | `16MB` / `20` | Memória e conexões de cada PostgreSQL criado (valem para as próximas instâncias) |
 | `DROID_DATA_DIR` | Host | `desktop/data/` | Onde fica o cadastro de Nodes (`nodes.json`, com os tokens) |
 | `DROID_NODE_PORT` | Host | `5051` | Porta usada para sondar e parear os Nodes |
 | `DROID_BIND` | Host | `0.0.0.0` | Endereço em que o Host escuta |
@@ -322,7 +339,8 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 | `POST` | `/api/nodes/adicionar` | `{"ip": "..."}` → pareia o Node e o cadastra |
 | `POST` | `/api/nodes/<ip>/remover` | Remove do cadastro e desfaz o pareamento no celular |
 
-| `POST` | `/deploy_worker` | Form `ip`, `alias`, `imagem`, `isolado` → enfileira `criar_worker` |
+| `POST` | `/deploy_worker` | Form `ip`, `alias`, `tipo` (`linux` ou `postgres`), `imagem`, `isolado` → enfileira `criar_worker` (com `tipo: "postgres"` e a senha gerada, no caso do banco) |
+| `POST` | `/api/node/<ip>/worker/<alias>/testar` | Testa o serviço a partir do Host: HTTP na porta do `run.sh`, ou TCP no caso do banco |
 | `POST` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` (GET responde 405) |
 | `GET` | `/node/<ip>/tunnel` | SPA: tela do Cloudflare Tunnel |
 | `POST` | `/node/<ip>/tunnel` | `{"token": "..."}` (ou o comando com `--token`) → enfileira `configurar_tunnel`; responde `{ok, token_fim}` |
@@ -347,7 +365,7 @@ No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{ho
 | `cmd_to_<ip>_<alias>` | Host → Node | `{input}` |
 | `resize_to_<ip>_<alias>` | Host → Node | `{cols, rows}` |
 | `output_for_<ip>_<alias>` | Host → sala do terminal | `{output}` |
-| `servico` | Navegador → Host | `{ip, alias, acao, dados, req}` — `acao`: iniciar, parar, reiniciar, ler_script, salvar_script, configurar, exemplo |
+| `servico` | Navegador → Host | `{ip, alias, acao, dados, req}` — `acao`: iniciar, parar, reiniciar, ler_script, salvar_script, configurar, exemplo, credenciais (só banco) |
 | `servico_to_<ip>` | Host → Node | `{alias, acao, dados, sid, req}` |
 | `servico_resposta` | Node → Host → navegador que pediu | `{alias, acao, req, ok, msg, dados, servico}` |
 | `logs_assinar` / `logs_cancelar` | Navegador → Host | `{ip, alias}` (entra/sai da sala `logs:<ip>:<alias>`) |
@@ -389,7 +407,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 255 testes (96 no Host e 159 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 286 testes (103 no Host e 183 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
