@@ -4,7 +4,7 @@ Transforme smartphones Android antigos — **sem root** — em nós de um pequen
 
 Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em cada Node, um agente Python rodando no [Termux](https://termux.dev/) cria ambientes Linux com `proot-distro` (Alpine, recomendado, ou Debian), chamados **Workers**, e os mantém de pé com o **Supervisor**. Tudo é operado por um painel web com métricas em tempo real e terminal interativo no navegador.
 
-> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026): **"DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados"**. A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md).
+> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026): **"DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados"**. A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md); o que já foi feito está em [`docs/HISTORICO.md`](docs/HISTORICO.md) e o que falta, em [`docs/PROXIMOS-PASSOS.md`](docs/PROXIMOS-PASSOS.md).
 
 ## Sumário
 
@@ -139,24 +139,31 @@ O PTY é aberto na primeira tecla recebida, e o redimensionamento da janela é r
 DroidServer/
 ├── android/                  # Agente do Node (roda no Termux)
 │   ├── node.py               # NodeAgent, WorkerManager, TerminalManager
+│   ├── servico.py            # Serviço do Worker (/app/run.sh, lançador, .conf do Supervisor)
+│   ├── registro.py           # Registro local de métricas e disponibilidade
 │   ├── sysinfo.py            # CPU/memória via /proc (fallback: top)
 │   ├── setup.sh              # Primeiro uso: pacotes, Supervisor, conexão, boot
 │   ├── run.sh                # Inicia/para o agente (primeiro ou segundo plano)
 │   ├── diagnostico.sh        # Coleta informações para depuração
-│   ├── tests/test_node.py    # Testes com mocks (rodam fora do Android)
+│   ├── tests/                # Testes com mocks (rodam fora do Android)
 │   └── pyproject.toml
 ├── desktop/                  # Host (plano de controle)
 │   ├── main.py               # Ponto de entrada — porta 5050
 │   ├── app/
 │   │   ├── __init__.py       # create_app, Socket.IO e logs
 │   │   ├── routes.py         # Páginas, API REST e eventos Socket.IO
-│   │   └── templates/
-│   │       └── index.html    # SPA: Dashboard, Node e Terminal
+│   │   ├── static/vendor/    # Tailwind, xterm.js, Socket.IO e fonte (painel sem internet)
+│   │   └── templates/        # index.html (SPA), login.html, apresentacao.html
 │   ├── tests/test_routes.py
+│   ├── Dockerfile, docker-compose.yml
 │   └── pyproject.toml
+├── bench/                    # Experimentos do TCC (E1–E10), resultados em CSV e gráficos
 └── docs/
-    ├── obsidian-valt/        # Documentação do TCC (Obsidian)
-    └── artigo_nao_finalizado.odt
+    ├── obsidian-valt/        # Texto do TCC (Obsidian) — fonte única
+    ├── gerador-docx/         # Gera o .docx ABNT a partir do vault
+    ├── DroidServer_TCC_artigo.docx
+    ├── HISTORICO.md          # O que já foi feito
+    └── PROXIMOS-PASSOS.md    # O que falta fazer
 ```
 
 ## Pré-requisitos
