@@ -18,6 +18,16 @@ Cada instância é um programa do Supervisor com o alias do worker:
 A senha é gerada pelo Host e vem na tarefa de criação; ela não sai do agente
 no sync, só pela ação `credenciais` da aba Serviço (pedida pelo painel logado).
 
+Uma instância pode ter vários bancos (criar_banco/apagar_banco), cada um com
+um usuário dono de mesmo nome e senha gerada no Node, guardada no banco.json.
+Sai bem mais barato que uma instância por aplicação (~70 MB cada).
+
+Versão: o Termux empacota só uma versão do PostgreSQL. O pacote fica preso
+(`apt-mark hold`) para o `pkg upgrade` do setup.sh não trocar a versão major,
+o que deixaria os dados existentes sem subir. Se mesmo assim a major dos
+dados (PG_VERSION) diferir da do binário, o banco é marcado como
+incompatível e não é iniciado (ver README: atualizar a versão).
+
 Iniciar, parar, reiniciar, autostart/autorestart, logs ao vivo, falhas do dia,
 CPU e RAM usam o mesmo caminho dos outros Workers (servico.py).
 """
@@ -26,6 +36,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import shutil
 import socket
 import subprocess
@@ -50,6 +61,11 @@ SENHA_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 ARQUIVO_INFO = "banco.json"
 DIR_DADOS = "dados"
 MARCA_CONF = "# --- DroidServer ---"
+PACOTE = "postgresql"
+# Bancos dentro de uma instância: nome = dono (role) do banco
+NOME_BANCO_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
+NOMES_RESERVADOS = {"postgres", "template0", "template1", USUARIO, "public"}
+PSQL_TIMEOUT = 60
 
 _versao_cache = {}
 
@@ -99,7 +115,18 @@ def info_publica(alias):
     info = ler_info(alias)
     if not info:
         return None
-    return {k: info.get(k) for k in ("tipo", "porta", "usuario", "banco", "versao")}
+    publica = {k: info.get(k) for k in ("tipo", "porta", "usuario", "banco", "versao")}
+    publica["bancos"] = sorted(_bancos(info))
+    return publica
+
+
+def _bancos(info):
+    bancos = (info or {}).get("bancos")
+    return bancos if isinstance(bancos, dict) else {}
+
+
+def _gravar_info(alias, info):
+    servico._gravar_atomico(arquivo_info(alias), json.dumps(info, indent=2) + "\n", 0o600)
 
 
 def senha_valida(senha):
@@ -129,11 +156,50 @@ def versao():
     return _versao_cache[binario]
 
 
+def versao_major():
+    """Major do binário instalado ("18" de "18.7"), ou None."""
+    v = versao()
+    return v.split(".")[0] if v else None
+
+
+def versao_dados(alias):
+    """Major com que os dados foram criados (arquivo PG_VERSION do initdb), ou None."""
+    try:
+        with open(os.path.join(dir_dados(alias), "PG_VERSION")) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def incompativel(alias):
+    """True se a major dos dados difere da do binário: o postgres não sobe."""
+    dados, binario = versao_dados(alias), versao_major()
+    return bool(dados and binario and dados != binario)
+
+
+def segurar_pacote():
+    """`apt-mark hold postgresql`: o `pkg upgrade` não troca mais a versão major.
+
+    Sem isso, um upgrade para outra major deixa todos os bancos sem subir. Falhar
+    aqui não impede nada: só fica o aviso no log.
+    """
+    try:
+        proc = subprocess.run(["apt-mark", "hold", PACOTE], capture_output=True, text=True,
+                              timeout=30, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as e:
+        log.warning("[Banco] Não foi possível segurar o pacote %s: %s", PACOTE, e)
+        return False
+    if proc.returncode != 0:
+        log.warning("[Banco] apt-mark hold %s falhou: %s", PACOTE, (proc.stderr or proc.stdout or "").strip())
+        return False
+    return True
+
+
 def instalar():
     """`pkg install -y postgresql`. Devolve (ok, mensagem)."""
     log.info("[Banco] Instalando o PostgreSQL do Termux...")
     try:
-        proc = subprocess.run(["pkg", "install", "-y", "postgresql"], capture_output=True, text=True,
+        proc = subprocess.run(["pkg", "install", "-y", PACOTE], capture_output=True, text=True,
                               timeout=INSTALAR_TIMEOUT, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return False, "Tempo esgotado ao instalar o PostgreSQL."
@@ -143,6 +209,7 @@ def instalar():
     if proc.returncode != 0 or not instalado():
         erro = ((proc.stderr or "") + (proc.stdout or "")).strip()[-300:]
         return False, f"Falha ao instalar o PostgreSQL: {erro}"
+    segurar_pacote()
     return True, "PostgreSQL instalado."
 
 
@@ -264,6 +331,8 @@ def criar(alias, senha):
         ok, msg = instalar()
         if not ok:
             return False, msg
+    else:
+        segurar_pacote()  # instalado antes (à mão ou por uma versão antiga do agente)
 
     porta = escolher_porta()
     if porta is None:
@@ -280,10 +349,10 @@ def criar(alias, senha):
         if proc.returncode != 0:
             raise RuntimeError(((proc.stderr or "") + (proc.stdout or "")).strip()[-300:] or "initdb falhou")
         _configurar_cluster(alias, porta)
-        servico._gravar_atomico(arquivo_info(alias), json.dumps({
+        _gravar_info(alias, {
             "tipo": TIPO, "porta": porta, "usuario": USUARIO, "banco": BANCO, "senha": senha,
-            "versao": versao(), "criado_em": round(time.time()),
-        }, indent=2) + "\n", 0o600)
+            "versao": versao(), "criado_em": round(time.time()), "bancos": {},
+        })
         gravar_conf(alias)
     except Exception as e:
         log.error("[-] Falha ao criar o banco '%s': %s", alias, e)
@@ -319,6 +388,117 @@ def remover(alias):
 
 
 # ---------------------------------------------------------------------------
+# Bancos dentro da instância
+# ---------------------------------------------------------------------------
+
+def nome_banco_valido(nome):
+    return isinstance(nome, str) and bool(NOME_BANCO_RE.fullmatch(nome)) and nome not in NOMES_RESERVADOS
+
+
+def rodando(alias):
+    return (servico.status_supervisor().get(alias) or {}).get("estado") == "RUNNING"
+
+
+def _psql(alias, script, variaveis):
+    """Roda um script no psql da instância, como superusuário.
+
+    Os valores entram por `\\set` no próprio script (stdin): não aparecem no
+    argv (ps) e o psql os cita com :'var' / :"var", sem SQL montado à mão.
+    Só aceita valores já validados (letras, dígitos, _ e -).
+    """
+    info = ler_info(alias) or {}
+    porta = int(info.get("porta") or PORTA_PADRAO)
+    cabecalho = "".join(f"\\set {k} '{v}'\n" for k, v in variaveis.items())
+    env = {**os.environ, "PGPASSWORD": str(info.get("senha") or "")}
+    return subprocess.run(
+        ["psql", "-h", "127.0.0.1", "-p", str(porta), "-U", USUARIO, "-d", BANCO,
+         "-v", "ON_ERROR_STOP=1", "-X", "-q", "-t", "-A", "-f", "-"],
+        input=cabecalho + script, capture_output=True, text=True, timeout=PSQL_TIMEOUT, env=env)
+
+
+def _erro_psql(proc):
+    return ((proc.stderr or "") + (proc.stdout or "")).strip()[-300:] or "psql falhou"
+
+
+def _pre_banco(alias, nome):
+    """Validações comuns de criar_banco/apagar_banco. Devolve a mensagem de erro ou None."""
+    if not existe(alias):
+        return f"Worker de banco '{alias}' não encontrado."
+    if not nome_banco_valido(nome):
+        return ("Nome de banco inválido: use letras minúsculas, dígitos e _ "
+                "(começando por letra ou _), até 63 caracteres, e não um nome reservado.")
+    if incompativel(alias):
+        return "Os dados desta instância são de outra versão do PostgreSQL; veja o aviso na Visão geral."
+    if not rodando(alias):
+        return "Inicie o banco antes de criar ou apagar bancos."
+    return None
+
+
+def criar_banco(alias, nome):
+    """Cria um banco e um usuário dono, de mesmo nome, com senha gerada aqui."""
+    erro = _pre_banco(alias, nome)
+    if erro:
+        return False, erro
+    info = ler_info(alias)
+    if nome in _bancos(info):
+        return False, f"O banco '{nome}' já existe."
+    try:
+        proc = _psql(alias, "SELECT 1 FROM pg_roles WHERE rolname = :'nome' "
+                            "UNION ALL SELECT 1 FROM pg_database WHERE datname = :'nome';\n", {"nome": nome})
+        if proc.returncode != 0:
+            return False, f"Falha ao consultar o banco: {_erro_psql(proc)}"
+        if (proc.stdout or "").strip():
+            return False, (f"Já existe um banco ou usuário '{nome}' nesta instância "
+                           "(criado pelo psql?). Escolha outro nome.")
+        senha = secrets.token_urlsafe(18)
+        proc = _psql(alias, "\n".join([
+            "CREATE ROLE :\"nome\" LOGIN PASSWORD :'senha';",
+            "CREATE DATABASE :\"nome\" OWNER :\"nome\";",
+            "REVOKE CONNECT, TEMPORARY ON DATABASE :\"nome\" FROM PUBLIC;",
+            "",
+        ]), {"nome": nome, "senha": senha})
+        if proc.returncode != 0:
+            erro = _erro_psql(proc)
+            # Desfaz o que chegou a ser criado (a consulta acima garantiu que nada era de antes)
+            _psql(alias, "DROP DATABASE IF EXISTS :\"nome\" WITH (FORCE);\n"
+                         "DROP ROLE IF EXISTS :\"nome\";\n", {"nome": nome})
+            return False, f"Falha ao criar o banco '{nome}': {erro}"
+    except subprocess.TimeoutExpired:
+        return False, "Tempo esgotado falando com o PostgreSQL."
+    except OSError as e:
+        return False, f"Não foi possível rodar o psql: {e}"
+
+    info = ler_info(alias) or info
+    info["bancos"] = {**_bancos(info), nome: {"senha": senha, "criado_em": round(time.time())}}
+    _gravar_info(alias, info)
+    log.info("[+] Banco '%s' criado na instância '%s'.", nome, alias)
+    return True, f"Banco '{nome}' criado (usuário '{nome}'). Use Mostrar senha para ver a senha."
+
+
+def apagar_banco(alias, nome):
+    """Apaga o banco e o usuário dono (desconecta quem estiver usando)."""
+    erro = _pre_banco(alias, nome)
+    if erro:
+        return False, erro
+    if nome not in _bancos(ler_info(alias)):
+        return False, f"O banco '{nome}' não foi criado pelo painel; apague-o pelo psql."
+    try:
+        proc = _psql(alias, "DROP DATABASE IF EXISTS :\"nome\" WITH (FORCE);\n"
+                            "DROP ROLE IF EXISTS :\"nome\";\n", {"nome": nome})
+    except subprocess.TimeoutExpired:
+        return False, "Tempo esgotado falando com o PostgreSQL."
+    except OSError as e:
+        return False, f"Não foi possível rodar o psql: {e}"
+    if proc.returncode != 0:
+        return False, f"Falha ao apagar o banco '{nome}': {_erro_psql(proc)}"
+    info = ler_info(alias) or {}
+    info["bancos"] = {k: v for k, v in _bancos(info).items() if k != nome}
+    _gravar_info(alias, info)
+    log.info("[+] Banco '%s' apagado da instância '%s'.", nome, alias)
+    return True, f"Banco '{nome}' apagado."
+
+
+# ---------------------------------------------------------------------------
 # Painel
 # ---------------------------------------------------------------------------
 
@@ -328,21 +508,37 @@ disco = servico.DiscoCache()
 def extras(alias):
     """Campos da visão geral de um worker de banco (substituem os de container)."""
     info = info_publica(alias) or {}
+    v_dados, v_bin = versao_dados(alias), versao_major()
+    ruim = bool(v_dados and v_bin and v_dados != v_bin)
+    if ruim:
+        distro = f"PostgreSQL {versao()} (dados da {v_dados} — incompatível)"
+    elif versao():
+        distro = f"PostgreSQL {versao()} (Termux)"
+    else:
+        distro = "PostgreSQL (Termux)"
     return {
         "tipo": TIPO,
         "banco": info,
         "porta": info.get("porta"),
-        "distro": f"PostgreSQL {info['versao']} (Termux)" if info.get("versao") else "PostgreSQL (Termux)",
+        "versao_dados": v_dados,
+        "incompativel": ruim,
+        "distro": distro,
         "disco_mb": disco.mb(alias, diretorio(alias)),
         "script_salvo_em": None,
         "tem_script": True,  # não há run.sh: o serviço é o próprio postgres
     }
 
 
-def credenciais(alias):
+def credenciais(alias, nome=None):
+    """Usuário/senha/banco/porta do admin (nome vazio) ou de um banco criado pelo painel."""
     info = ler_info(alias)
     if not info:
         return None
+    if nome and nome != info.get("banco"):
+        item = _bancos(info).get(nome)
+        if not isinstance(item, dict):
+            return None
+        return {"usuario": nome, "senha": item.get("senha"), "banco": nome, "porta": info.get("porta")}
     return {k: info.get(k) for k in ("usuario", "senha", "banco", "porta")}
 
 

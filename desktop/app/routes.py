@@ -753,7 +753,7 @@ def node_sync():
 #   node --logs_saida--> host --logs_saida--> só a sala logs:<ip>:<alias>
 # ---------------------------------------------------------------------------
 ACOES_SERVICO = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo",
-                 "credenciais"}
+                 "credenciais", "criar_banco", "apagar_banco"}
 # (ip, alias) -> sids dos navegadores com a aba de logs aberta
 assinantes_logs = {}
 

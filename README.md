@@ -143,6 +143,38 @@ No formulário **Criar novo worker**, o tipo **Banco PostgreSQL** cria uma inst�
 
 Na aba **Serviço**, o editor do `run.sh` dá lugar ao card **Conexão** (host, porta, usuário, banco e senha). **Mostrar senha** e **Copiar URL** (`postgresql://droidserver:<senha>@<ip>:5432/postgres`) pedem a senha ao Node na hora, pela ação `credenciais`, que responde só ao navegador que pediu. Ela nunca vem no sync. **Testar** abre uma conexão TCP na porta. A aba **Terminal** abre o `psql` já conectado. Iniciar/Parar/Reiniciar, opções, logs, falhas do dia, CPU, RAM e disco funcionam como nos outros Workers.
 
+#### Vários bancos numa instância
+
+Cada instância custa ~70 MB de RAM, então o caminho preferido para várias aplicações é **uma instância com vários bancos**. No card Conexão, **Novo banco** pede um nome (minúsculas, dígitos e `_`) e o Node cria, pelo `psql` local, um usuário e um banco com esse nome, com senha própria gerada no celular. O `CONNECT` do banco é revogado de `PUBLIC`, então só o dono e o `droidserver` entram nele. O seletor **Banco** troca usuário, senha, URL e os comandos de migração do card. **Apagar banco** pede para digitar o nome de novo e roda `DROP DATABASE … WITH (FORCE)` e `DROP ROLE`. As senhas ficam no `banco.json` (0600) e, como a do admin, só saem pela ação `credenciais`. Os nomes vão para o `psql` por `\set` no stdin (citados com `:"nome"`/`:'senha'`), nunca no argv nem montados no SQL. A instância precisa estar rodando. Bancos criados à mão pelo `psql` funcionam, mas não aparecem na lista.
+
+Também dá para ter várias instâncias, uma por worker (portas 5432, 5433…), quando for preciso isolar de verdade (versões de configuração, reinícios independentes).
+
+#### Versão do PostgreSQL
+
+Não dá para escolher a versão: o Termux empacota uma só (a atual do repositório), e outras versões no proot esbarram no mesmo travamento do `initdb`. O risco real é o `pkg upgrade` do `setup.sh` trocar a versão **major** e deixar os dados antigos sem subir. Por isso o agente roda `apt-mark hold postgresql` ao instalar o pacote ou criar uma instância. O custo é que as atualizações *minor* (correções) também ficam presas até você liberar à mão.
+
+Se a major dos dados (`dados/PG_VERSION`) não bater com a do binário, a Visão geral mostra o aviso **Versão incompatível**, e Iniciar/Reiniciar e a criação de bancos são recusados (sem isso, o Supervisor ficaria reiniciando em loop).
+
+**Atualizar a versão do PostgreSQL** (planejado, com os dados):
+
+1. Com a instância ainda na versão antiga, faça o backup pelo seu computador, com os comandos do bloco **Migrar dados** (banco *admin*: `pg_dumpall -d "<url>" -f instancia.sql`).
+2. No Termux: `apt-mark unhold postgresql && pkg upgrade postgresql && apt-mark hold postgresql`.
+3. Crie um worker de banco novo (e apague o antigo depois de conferir).
+4. Restaure: `psql -d "<url do novo>" -f instancia.sql`.
+
+#### Migrar dados
+
+A porta do worker aceita conexões da rede, então a migração usa as ferramentas do próprio PostgreSQL rodando no seu computador. O bloco **Migrar dados** do card Conexão traz os comandos prontos, com a URL do banco selecionado (a senha entra depois de **Mostrar senha**):
+
+| Para | Comando |
+|---|---|
+| Importar de outro servidor | `pg_dump --no-owner --no-acl "<origem>" \| psql "<destino>"` |
+| Fazer backup | `pg_dump -Fc "<destino>" -f banco.dump` |
+| Restaurar um backup | `pg_restore --no-owner --no-acl -d "<destino>" banco.dump` |
+| Instância inteira (admin) | `pg_dumpall -d "<destino>" -f instancia.sql` e, na nova, `psql -d "<destino>" -f instancia.sql` |
+
+O `pg_dump` precisa ser da mesma versão do servidor de origem ou mais novo. `--no-owner --no-acl` faz os objetos ficarem com o dono do banco de destino.
+
 **Por que fora do proot:** o PostgreSQL precisa de memória compartilhada System V, e a emulação do proot (`--sysvipc`) trava quando o `postgres` roda pela segunda vez na mesma sessão. O `initdb` faz isso várias vezes, então nunca termina (testado no moto e40 com Debian 13 e PostgreSQL 17; o defeito é do proot, não da distribuição). O pacote do Termux usa a `libandroid-shmem` e roda direto: `initdb` em ~3 s e cerca de 70 MB de RAM parado por instância (soma dos processos do PostgreSQL, como o painel mostra).
 
 ### Terminal (WebSocket)
@@ -365,7 +397,7 @@ No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{ho
 | `cmd_to_<ip>_<alias>` | Host → Node | `{input}` |
 | `resize_to_<ip>_<alias>` | Host → Node | `{cols, rows}` |
 | `output_for_<ip>_<alias>` | Host → sala do terminal | `{output}` |
-| `servico` | Navegador → Host | `{ip, alias, acao, dados, req}` — `acao`: iniciar, parar, reiniciar, ler_script, salvar_script, configurar, exemplo, credenciais (só banco) |
+| `servico` | Navegador → Host | `{ip, alias, acao, dados, req}` — `acao`: iniciar, parar, reiniciar, ler_script, salvar_script, configurar, exemplo; só banco: credenciais (`dados.banco` opcional), criar_banco e apagar_banco (`dados.nome`) |
 | `servico_to_<ip>` | Host → Node | `{alias, acao, dados, sid, req}` |
 | `servico_resposta` | Node → Host → navegador que pediu | `{alias, acao, req, ok, msg, dados, servico}` |
 | `logs_assinar` / `logs_cancelar` | Navegador → Host | `{ip, alias}` (entra/sai da sala `logs:<ip>:<alias>`) |
@@ -407,7 +439,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 286 testes (103 no Host e 183 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 312 testes (106 no Host e 206 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 

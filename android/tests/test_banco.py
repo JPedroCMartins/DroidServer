@@ -40,8 +40,17 @@ def comandos(monkeypatch):
     registro.senhas = []
     registro.initdb_rc = 0
 
+    registro.psql = []          # (argv, script do stdin, PGPASSWORD)
+    registro.psql_falha = None  # trecho de SQL que faz o psql falhar
+
     def fake_run(cmd, **kw):
         registro.append(cmd)
+        if cmd[:1] == ["psql"]:
+            script = kw.get("input") or ""
+            registro.psql.append((cmd, script, (kw.get("env") or {}).get("PGPASSWORD")))
+            if registro.psql_falha and registro.psql_falha in script:
+                return _Proc(3, err="ERROR: erro simulado")
+            return _Proc()
         if cmd[:1] == ["initdb"]:
             dados = cmd[cmd.index("-D") + 1]
             with open(cmd[cmd.index("--pwfile") + 1]) as f:
@@ -200,7 +209,7 @@ def test_estado_servicos_de_banco_sem_senha(termux, comandos):
                                                    "detalhe": ""}})["pg1"]
     assert sv["tipo"] == "postgres" and sv["porta"] == 5432
     assert sv["banco"] == {"tipo": "postgres", "porta": 5432, "usuario": "droidserver",
-                           "banco": "postgres", "versao": "18.7"}
+                           "banco": "postgres", "versao": "18.7", "bancos": []}
     assert sv["tem_script"] is True and sv["gerenciado"] is True
     assert sv["distro"] == "PostgreSQL 18.7 (Termux)"
     assert SENHA not in json.dumps(sv)
@@ -261,3 +270,167 @@ def test_sem_segredo_oculta_a_senha_nos_logs(caplog):
     with caplog.at_level(logging.INFO):
         logging.getLogger("node").info("Tarefa recebida: %s", limpa)
     assert SENHA not in caplog.text
+
+
+# ---------- vários bancos por instância ----------
+
+@pytest.fixture
+def instancia(termux, comandos, monkeypatch):
+    assert banco.criar("pg1", SENHA)[0]
+    monkeypatch.setattr(banco, "rodando", lambda alias: True)
+    comandos.psql.clear()
+    return comandos
+
+
+def test_criar_banco_usa_psql_sem_segredo_no_argv(instancia):
+    ok, msg = banco.criar_banco("pg1", "app1")
+    assert ok, msg
+    info = banco.ler_info("pg1")
+    senha_app = info["bancos"]["app1"]["senha"]
+    assert banco.senha_valida(senha_app) and senha_app != SENHA
+
+    consulta, criacao = instancia.psql
+    for argv, script, pgpass in instancia.psql:
+        assert argv[:2] == ["psql", "-h"] and "ON_ERROR_STOP=1" in argv
+        assert senha_app not in " ".join(argv) and SENHA not in " ".join(argv)
+        assert pgpass == SENHA
+    assert "\\set nome 'app1'" in consulta[1] and "pg_roles" in consulta[1]
+    assert f"\\set senha '{senha_app}'" in criacao[1]
+    assert 'CREATE ROLE :"nome" LOGIN PASSWORD :\'senha\'' in criacao[1]
+    assert 'CREATE DATABASE :"nome" OWNER :"nome"' in criacao[1]
+    assert "REVOKE CONNECT" in criacao[1]
+    # o sync mostra os nomes, nunca as senhas
+    publica = banco.info_publica("pg1")
+    assert publica["bancos"] == ["app1"] and senha_app not in json.dumps(publica)
+
+
+@pytest.mark.parametrize("nome", ["postgres", "droidserver", "template1", "App", "1app", "a-b",
+                                  "x'; DROP TABLE y; --", "", None, "a" * 64])
+def test_criar_banco_valida_nome(instancia, nome):
+    ok, msg = banco.criar_banco("pg1", nome)
+    assert not ok and "inválido" in msg
+    assert instancia.psql == []
+
+
+def test_criar_banco_exige_servico_rodando(instancia, monkeypatch):
+    monkeypatch.setattr(banco, "rodando", lambda alias: False)
+    ok, msg = banco.criar_banco("pg1", "app1")
+    assert not ok and "Inicie" in msg and instancia.psql == []
+
+
+def test_criar_banco_recusa_nome_ja_existente_no_postgres(instancia, monkeypatch):
+    original = banco.subprocess.run
+
+    def com_existente(cmd, **kw):
+        if cmd[:1] == ["psql"]:
+            instancia.psql.append((cmd, kw.get("input"), None))
+            return _Proc(0, out="1\n")
+        return original(cmd, **kw)
+
+    monkeypatch.setattr("subprocess.run", com_existente)
+    ok, msg = banco.criar_banco("pg1", "app1")
+    assert not ok and "Já existe" in msg
+    assert len(instancia.psql) == 1  # nada foi criado nem desfeito
+    assert banco.ler_info("pg1")["bancos"] == {}
+
+
+def test_criar_banco_desfaz_se_falhar(instancia):
+    instancia.psql_falha = "CREATE DATABASE"
+    ok, msg = banco.criar_banco("pg1", "app1")
+    assert not ok and "erro simulado" in msg
+    assert "DROP DATABASE IF EXISTS" in instancia.psql[-1][1]
+    assert banco.ler_info("pg1")["bancos"] == {}
+
+
+def test_apagar_banco(instancia):
+    assert banco.criar_banco("pg1", "app1")[0]
+    assert banco.criar_banco("pg1", "app2")[0]
+    ok, msg = banco.apagar_banco("pg1", "app1")
+    assert ok, msg
+    assert 'DROP DATABASE IF EXISTS :"nome" WITH (FORCE)' in instancia.psql[-1][1]
+    assert "\\set nome 'app1'" in instancia.psql[-1][1]
+    assert banco.info_publica("pg1")["bancos"] == ["app2"]
+
+
+def test_apagar_banco_so_os_do_painel(instancia):
+    ok, msg = banco.apagar_banco("pg1", "outro")
+    assert not ok and "psql" in msg and instancia.psql == []
+
+
+def test_credenciais_por_banco_pela_acao(instancia):
+    assert servico.executar("pg1", "criar_banco", {"nome": "app1"})[0]
+    senha_app = banco.ler_info("pg1")["bancos"]["app1"]["senha"]
+    ok, _, extra = servico.executar("pg1", "credenciais", {"banco": "app1"})
+    assert ok and extra == {"usuario": "app1", "senha": senha_app, "banco": "app1", "porta": 5432}
+    ok, _, extra = servico.executar("pg1", "credenciais", {})
+    assert ok and extra["usuario"] == "droidserver" and extra["senha"] == SENHA
+    ok, msg, extra = servico.executar("pg1", "credenciais", {"banco": "nao_existe"})
+    assert not ok and extra == {}
+
+
+def test_acao_criar_banco_nao_devolve_senha(instancia):
+    ok, msg, extra = servico.executar("pg1", "criar_banco", {"nome": "app1"})
+    senha_app = banco.ler_info("pg1")["bancos"]["app1"]["senha"]
+    assert ok and extra == {"bancos": ["app1"]}
+    assert senha_app not in msg
+
+
+def test_acoes_de_banco_so_para_worker_de_banco(termux, comandos):
+    (termux / "usr/var/lib/proot-distro/containers/web/rootfs/app").mkdir(parents=True)
+    ok, msg, _ = servico.executar("web", "criar_banco", {"nome": "app1"})
+    assert not ok
+
+
+# ---------- versão ----------
+
+def test_instalar_segura_o_pacote(termux, comandos, monkeypatch):
+    estado = {"instalado": False}
+    monkeypatch.setattr(banco, "instalado", lambda: estado["instalado"])
+    original = banco.subprocess.run
+
+    def pkg(cmd, **kw):
+        if cmd[:2] == ["pkg", "install"]:
+            estado["instalado"] = True
+        return original(cmd, **kw)
+
+    monkeypatch.setattr("subprocess.run", pkg)
+    assert banco.criar("pg1", SENHA)[0]
+    assert ["apt-mark", "hold", "postgresql"] in comandos
+
+
+def test_criar_segura_pacote_ja_instalado(termux, comandos):
+    assert banco.criar("pg1", SENHA)[0]
+    assert ["apt-mark", "hold", "postgresql"] in comandos
+
+
+def _pg_version(alias, major):
+    with open(os.path.join(banco.dir_dados(alias), "PG_VERSION"), "w") as f:
+        f.write(f"{major}\n")
+
+
+def test_versao_compativel(termux, comandos):
+    assert banco.criar("pg1", SENHA)[0]
+    _pg_version("pg1", "18")
+    assert not banco.incompativel("pg1")
+    ext = banco.extras("pg1")
+    assert ext["versao_dados"] == "18" and ext["incompativel"] is False
+    assert ext["distro"] == "PostgreSQL 18.7 (Termux)"
+
+
+def test_versao_incompativel_avisa_e_nao_inicia(termux, comandos, monkeypatch):
+    assert banco.criar("pg1", SENHA)[0]
+    _pg_version("pg1", "17")
+    assert banco.incompativel("pg1")
+    ext = banco.extras("pg1")
+    assert ext["incompativel"] is True and "dados da 17" in ext["distro"]
+
+    comandos.clear()
+    for acao in ("iniciar", "reiniciar"):
+        ok, msg, _ = servico.executar("pg1", acao)
+        assert not ok and "17" in msg and "18.7" in msg
+    assert _sup(comandos) == []  # nem tentou subir
+    assert servico.executar("pg1", "parar")[0]
+
+    monkeypatch.setattr(banco, "rodando", lambda alias: True)
+    ok, msg = banco.criar_banco("pg1", "app1")
+    assert not ok and "versão" in msg

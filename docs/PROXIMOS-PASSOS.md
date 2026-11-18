@@ -35,7 +35,7 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 - [ ] `setup.sh` roda `pkg upgrade` completo a cada execução; separar "instalar" de "reconfigurar".
 - [ ] `index.html` com ~1770 linhas (HTML, CSS e JS de todas as telas num arquivo).
 - [ ] `SystemMonitor._prev_ts` gravado e nunca lido (`android/sysinfo.py`).
-- [ ] **Workers de banco, próximos passos:** backup e restauração (`pg_dump`) pelo painel; outros bancos (Redis, MariaDB) no mesmo molde do `android/banco.py`; mostrar a URL de conexão para Workers da mesma rede usarem como `DATABASE_URL`.
+- [ ] **Workers de banco, próximos passos:** backup e restauração automáticos pelo painel (por ora, só os comandos `pg_dump`/`pg_restore` documentados no card Conexão); outros bancos (Redis, MariaDB) no mesmo molde do `android/banco.py`; mostrar a URL de conexão para Workers da mesma rede usarem como `DATABASE_URL`.
 
 ## 5. Organização do repositório
 
