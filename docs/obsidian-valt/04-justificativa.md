@@ -2,7 +2,7 @@
 
 ## 4.1 Relevância ambiental
 
-A principal motivação deste trabalho reside na intersecção entre a TI Verde e a engenharia de sistemas distribuídos. A geração de lixo eletrônico cresce cinco vezes mais rápido do que a reciclagem documentada (BALDÉ et al., 2024), e a maior parte da pegada de carbono de um smartphone concentra-se na fabricação, não no uso: Belkhir e Elmeligi (2018) estimam que a produção responde por 85% a 95% das emissões ao longo do ciclo de vida desses aparelhos. Prolongar a vida útil de um dispositivo já fabricado é, portanto, uma das formas mais efetivas de reduzir seu impacto, o que Switzer et al. (2023) formalizam com a métrica de Intensidade de Carbono Computacional (*Computational Carbon Intensity* — CCI), segundo a qual smartphones reaproveitados apresentam o melhor potencial entre servidores antigos, *laptops* e telefones.
+A principal motivação deste trabalho reside na intersecção entre a TI Verde e a engenharia de sistemas distribuídos. A geração de lixo eletrônico cresce cinco vezes mais rápido do que a reciclagem documentada (BALDÉ et al., 2024), e a maior parte da pegada de carbono de um smartphone concentra-se na fabricação, não no uso: Belkhir e Elmeligi (2018) estimam que, com a vida útil média de dois anos, a fabricação responde por 85% a 95% da pegada de carbono anual desses aparelhos. Prolongar a vida útil de um dispositivo já fabricado é, portanto, uma das formas mais efetivas de reduzir seu impacto, o que Switzer et al. (2023) formalizam com a métrica de Intensidade de Carbono Computacional (*Computational Carbon Intensity* — CCI), segundo a qual smartphones reaproveitados apresentam o melhor potencial entre servidores antigos, *laptops* e telefones.
 
 ## 4.2 Relevância econômica e social
 

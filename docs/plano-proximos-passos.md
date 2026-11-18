@@ -8,7 +8,7 @@ Escrito em 15/11/2026 e atualizado em 18/11/2026, com pouco tempo até a entrega
 |---|---|
 | `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | (Opcional) E7 com o Android em configuração padrão (P3) |
 | Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | |
-| **Dois Nodes** (POCO X6 Pro e moto e40) | Conferir as referências ⚠ (4.5) |
+| **Dois Nodes** (POCO X6 Pro e moto e40) | |
 | Criar e remover Worker (Alpine e Debian) pelo painel | |
 | Capturas de tela do painel na seção 8.8 (4.6) | |
 | **Aba Serviço** (`/app/run.sh`): estado, editor, logs ao vivo, opções, visão geral e ajuda "?" | `.docx` final e revisão do orientador (4.7, 4.8) |
@@ -191,7 +191,7 @@ Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a p
 | 4.2 | ✅ *16/11:* Capítulo 9.5 (Resultados) escrito com tabelas e gráficos de E1, E3, E4 e E8; *18/11:* E7 incluída |
 | 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (232/221 palavras com a E7, em 18/11) |
 | 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; *18/11:* fechada com a E7 (H1 confirmada) |
-| 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) |
+| 4.5 | ✅ *18/11:* as 7 referências ⚠ conferidas na Crossref (autores, volume, páginas e DOI corretos; DOIs adicionados; nº do evento no Soltesz) e as citações conferidas no texto; Büsching et al. (2012) lido no PDF (Debian em `chroot` no cartão SD, HPL, 6 LG P500); a frase de Belkhir e Elmeligi passou a dizer "pegada anual, vida útil de 2 anos". Falta, se der tempo: ler na íntegra Switzer et al. (2023) e Shahrad e Wentzlaff (2017) |
 | 4.6 | ✅ *16/11:* seção 8.8 com as Figuras 5–9 (Dashboard com gráfico, Node, aba Serviço, ajuda, terminal), geradas por `bench/capturas_tela.py` no moto e40 |
 | 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final |
 | 4.8 | Revisão do orientador |
@@ -206,11 +206,11 @@ Primeiro o que não depende de esperar; os experimentos ficam como pendências (
 
 ```
 Feito       ✅ 4.6 capturas de tela → ✅ registro local no Node → ✅ P1 (E7) → ✅ P2 → ✅ P4
-Agora       4.5 referências ⚠ → enxugar o texto → .docx final (4.7) → orientador
+Agora       ✅ 4.5 referências ⚠ → enxugar o texto → .docx final (4.7) → orientador
 Opcional    P3 (E7 com o Android padrão, mais 24 h)
 ```
 
-A E7 terminou em 17/11 e confirmou a H1 na configuração (c). O caminho crítico agora é o texto: referências ⚠ (4.5), revisão e o `.docx` final. Se o prazo apertar, corte P3.
+A E7 terminou em 17/11 e confirmou a H1 na configuração (c). O caminho crítico agora é o texto: revisão e o `.docx` final. Se o prazo apertar, corte P3.
 
 ## Riscos
 
