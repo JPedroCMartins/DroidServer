@@ -6,7 +6,6 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 
 ## 1. TCC — entrega
 
-- [ ] Preencher as lacunas em amarelo do `.docx`: nome do(a) orientador(a), e-mail na nota de rodapé e o aviso de revisão do Quadro 2 (trabalhos relacionados).
 - [ ] Aplicar o modelo oficial da Uninorte, se houver (capa, margens, fontes).
 - [ ] Enxugar o texto (repetições entre os capítulos 8, 9 e 11).
 - [ ] Conferir no artigo original o número de Belkhir e Elmeligi (2018): 85% a 95% da pegada anual de um smartphone vem da fabricação (a fonte consultada foi uma reportagem).

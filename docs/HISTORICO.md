@@ -18,7 +18,7 @@ O que já foi feito no DroidServer, em resumo. Os detalhes (decisões, telas pro
 | 16/11 | **Fase 3 — experimentos:** E1/E2/E5 (provisionamento), E3 (sobrecarga do PRoot), E4 (latência do terminal), E8 (vazão), E10 (consumo do agente); registro local de métricas no Node (o painel pode ficar desligado) |
 | 17/11 | **E7 — disponibilidade em 24 h** no moto e40 (16/11 23:21 a 17/11 23:21): **99,94%**, 0 reinícios do serviço, 4 lacunas curtas do agente (a maior de 25 s) |
 | 16–17/11 | Apresentação do TCC em `/apresentar_tcc`, painel em Docker, visual do portfolio-page, copiar e colar no terminal por HTTP (PRs #24–#29) |
-| 16–18/11 | **Fase 4 — texto:** título único, resumo/abstract, conclusão, capturas do painel (8.8), gerador do `.docx` a partir do vault, resultados da E7 (PR #30), referências ⚠ conferidas na Crossref com DOIs (PR #31) |
+| 16–18/11 | **Fase 4 — texto:** título único, resumo/abstract, conclusão, capturas do painel (8.8), gerador do `.docx` a partir do vault, resultados da E7 (PR #30), referências ⚠ conferidas na Crossref com DOIs (PR #31); orientador, e-mail e Quadro 2 conferidos nas fontes (Junkyard: Ubuntu Touch + Docker Swarm) |
 
 ## Bugs corrigidos (numeração da revisão de 15/11)
 
