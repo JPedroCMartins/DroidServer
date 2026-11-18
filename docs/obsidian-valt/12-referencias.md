@@ -1,9 +1,9 @@
 # Referências
 
 > [!note] Como usar esta lista
-> Formato ABNT NBR 6023. Itens marcados com ⚠ foram incluídos a partir de conhecimento prévio e de buscas rápidas: **confira número de páginas, volume e DOI na fonte original** antes de entregar. Remova os itens que não forem citados no texto final — a ABNT só admite na lista obras efetivamente citadas.
+> Formato ABNT NBR 6023. Volume, páginas e DOI dos artigos conferidos na Crossref em 18/11/2026. Remova os itens que não forem citados no texto final — a ABNT só admite na lista obras efetivamente citadas.
 
-ABRAHAMSSON, P. et al. Affordable and energy-efficient cloud computing clusters: the Bolzano Raspberry Pi cloud cluster experiment. In: IEEE INTERNATIONAL CONFERENCE ON CLOUD COMPUTING TECHNOLOGY AND SCIENCE (CloudCom), 5., 2013, Bristol. **Proceedings** [...]. Bristol: IEEE, 2013. v. 2, p. 170-175. ⚠
+ABRAHAMSSON, P. et al. Affordable and energy-efficient cloud computing clusters: the Bolzano Raspberry Pi cloud cluster experiment. In: IEEE INTERNATIONAL CONFERENCE ON CLOUD COMPUTING TECHNOLOGY AND SCIENCE (CloudCom), 5., 2013, Bristol. **Proceedings** [...]. Bristol: IEEE, 2013. v. 2, p. 170-175. DOI: 10.1109/CloudCom.2013.121.
 
 ANDROID DEVELOPERS. **Optimize for Doze and App Standby**. 2024. Disponível em: https://developer.android.com/training/monitoring-device-state/doze-standby. Acesso em: 15 nov. 2026.
 
@@ -11,11 +11,11 @@ ANDROID OPEN SOURCE PROJECT. **Application sandbox**. 2024a. Disponível em: htt
 
 ANDROID OPEN SOURCE PROJECT. **Low memory killer daemon (lmkd)**. 2024b. Disponível em: https://source.android.com/docs/core/perf/lmkd. Acesso em: 15 nov. 2026.
 
-ARSLAN, M. Y. et al. Computing while charging: building a distributed computing infrastructure using smartphones. In: INTERNATIONAL CONFERENCE ON EMERGING NETWORKING EXPERIMENTS AND TECHNOLOGIES (CoNEXT), 8., 2012, Nice. **Proceedings** [...]. New York: ACM, 2012. p. 193-204. ⚠
+ARSLAN, M. Y. et al. Computing while charging: building a distributed computing infrastructure using smartphones. In: INTERNATIONAL CONFERENCE ON EMERGING NETWORKING EXPERIMENTS AND TECHNOLOGIES (CoNEXT), 8., 2012, Nice. **Proceedings** [...]. New York: ACM, 2012. p. 193-204. DOI: 10.1145/2413176.2413199.
 
 BALDÉ, C. P. et al. **The global e-waste monitor 2024**. Geneva; Bonn: International Telecommunication Union (ITU); United Nations Institute for Training and Research (UNITAR), 2024. Disponível em: https://ewastemonitor.info/. Acesso em: 15 nov. 2026.
 
-BELKHIR, L.; ELMELIGI, A. Assessing ICT global emissions footprint: trends to 2040 & recommendations. **Journal of Cleaner Production**, v. 177, p. 448-463, 2018. ⚠
+BELKHIR, L.; ELMELIGI, A. Assessing ICT global emissions footprint: trends to 2040 & recommendations. **Journal of Cleaner Production**, v. 177, p. 448-463, 2018. DOI: 10.1016/j.jclepro.2017.12.239.
 
 BONOMI, F. et al. Fog computing and its role in the internet of things. In: MCC WORKSHOP ON MOBILE CLOUD COMPUTING, 1., 2012, Helsinki. **Proceedings** [...]. New York: ACM, 2012. p. 13-16.
 
@@ -25,7 +25,7 @@ BRASIL. Decreto nº 10.240, de 12 de fevereiro de 2020. Regulamenta a implementa
 
 BURNS, B. et al. Borg, Omega, and Kubernetes. **Communications of the ACM**, v. 59, n. 5, p. 50-57, 2016.
 
-BÜSCHING, F.; SCHILDT, S.; WOLF, L. DroidCluster: towards smartphone cluster computing — the streets are paved with potential computer clusters. In: INTERNATIONAL CONFERENCE ON DISTRIBUTED COMPUTING SYSTEMS WORKSHOPS (ICDCSW) — PhoneCom, 32., 2012, Macau. **Proceedings** [...]. Los Alamitos: IEEE, 2012. p. 114-117. ⚠
+BÜSCHING, F.; SCHILDT, S.; WOLF, L. DroidCluster: towards smartphone cluster computing — the streets are paved with potential computer clusters. In: INTERNATIONAL CONFERENCE ON DISTRIBUTED COMPUTING SYSTEMS WORKSHOPS (ICDCSW) — PhoneCom, 32., 2012, Macau. **Proceedings** [...]. Los Alamitos: IEEE, 2012. p. 114-117. DOI: 10.1109/ICDCSW.2012.59.
 
 CHANDRA, T. D.; TOUEG, S. Unreliable failure detectors for reliable distributed systems. **Journal of the ACM**, v. 43, n. 2, p. 225-267, 1996.
 
@@ -49,7 +49,7 @@ HEVNER, A. R. et al. Design science in information systems research. **MIS Quart
 
 JAIN, R. **The art of computer systems performance analysis**: techniques for experimental design, measurement, simulation, and modeling. New York: Wiley, 1991.
 
-JOHNSTON, S. J. et al. Commodity single board computer clusters and their applications. **Future Generation Computer Systems**, v. 89, p. 201-212, 2018. ⚠
+JOHNSTON, S. J. et al. Commodity single board computer clusters and their applications. **Future Generation Computer Systems**, v. 89, p. 201-212, 2018. DOI: 10.1016/j.future.2018.06.048.
 
 KERRISK, M. **The Linux programming interface**: a Linux and UNIX system programming handbook. San Francisco: No Starch Press, 2010.
 
@@ -79,7 +79,7 @@ SILBERSCHATZ, A.; GALVIN, P. B.; GAGNE, G. **Fundamentos de sistemas operacionai
 
 SLADE, G. **Made to break**: technology and obsolescence in America. Cambridge: Harvard University Press, 2006.
 
-SOLTESZ, S. et al. Container-based operating system virtualization: a scalable, high-performance alternative to hypervisors. In: EUROPEAN CONFERENCE ON COMPUTER SYSTEMS (EuroSys), 2007, Lisboa. **Proceedings** [...]. New York: ACM, 2007. p. 275-287. ⚠
+SOLTESZ, S. et al. Container-based operating system virtualization: a scalable, high-performance alternative to hypervisors. In: EUROPEAN CONFERENCE ON COMPUTER SYSTEMS (EuroSys), 2., 2007, Lisboa. **Proceedings** [...]. New York: ACM, 2007. p. 275-287. DOI: 10.1145/1272996.1273025.
 
 SUPERVISOR. **Supervisor**: a process control system. 2024. Disponível em: http://supervisord.org/. Acesso em: 15 nov. 2026.
 
@@ -89,7 +89,7 @@ TANENBAUM, A. S.; VAN STEEN, M. **Sistemas distribuídos**: princípios e paradi
 
 TERMUX. **Process completed (signal 9) - press Enter**. Issue #2366. GitHub, 2021. Disponível em: https://github.com/termux/termux-app/issues/2366. Acesso em: 15 nov. 2026.
 
-TSO, F. P. et al. The Glasgow Raspberry Pi cloud: a scale model for cloud computing infrastructures. In: INTERNATIONAL CONFERENCE ON DISTRIBUTED COMPUTING SYSTEMS WORKSHOPS (ICDCSW), 33., 2013, Philadelphia. **Proceedings** [...]. IEEE, 2013. p. 108-112. ⚠
+TSO, F. P. et al. The Glasgow Raspberry Pi cloud: a scale model for cloud computing infrastructures. In: INTERNATIONAL CONFERENCE ON DISTRIBUTED COMPUTING SYSTEMS WORKSHOPS (ICDCSW), 33., 2013, Philadelphia. **Proceedings** [...]. IEEE, 2013. p. 108-112. DOI: 10.1109/ICDCSW.2013.25.
 
 VERMA, A. et al. Large-scale cluster management at Google with Borg. In: EUROPEAN CONFERENCE ON COMPUTER SYSTEMS (EuroSys), 10., 2015, Bordeaux. **Proceedings** [...]. New York: ACM, 2015. art. 18.
 
