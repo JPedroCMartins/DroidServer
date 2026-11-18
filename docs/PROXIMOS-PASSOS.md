@@ -35,6 +35,7 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 - [ ] `setup.sh` roda `pkg upgrade` completo a cada execução; separar "instalar" de "reconfigurar".
 - [ ] `index.html` com ~1770 linhas (HTML, CSS e JS de todas as telas num arquivo).
 - [ ] `SystemMonitor._prev_ts` gravado e nunca lido (`android/sysinfo.py`).
+- [ ] **Workers de banco, próximos passos:** backup e restauração (`pg_dump`) pelo painel; outros bancos (Redis, MariaDB) no mesmo molde do `android/banco.py`; mostrar a URL de conexão para Workers da mesma rede usarem como `DATABASE_URL`.
 
 ## 5. Organização do repositório
 
@@ -42,6 +43,7 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 - [ ] `desktop/.python-version` versionado, apesar de o `.gitignore` ignorar `.python-version`.
 - [ ] CI: GitHub Actions rodando o `pytest` do `desktop/` e do `android/`.
 - [ ] Definir uma licença (`LICENSE`).
+- [ ] **Depois da defesa — nomenclatura:** trocar no painel "Node" por **Dispositivo** (também acaba com a confusão com "Node.js" nos exemplos do `run.sh`) e "Worker" por **Instância** ("Sistema" foi descartado: lê-se como sistema operacional ou como o próprio DroidServer). Começar só pelos rótulos do `index.html` e do README; renomear código e protocolo (`/api/node_sync`, `criar_worker`, `node_updated`, `nodes.json`, `DROID_NODE_PORT`, ~1.200 ocorrências de "node" e ~450 de "worker") exigiria compatibilidade com os agentes já pareados e não traz ganho funcional.
 - [ ] Depois da entrega: renomear `docs/obsidian-valt` para `docs/vault` (atualizar o gerador do `.docx`, os READMEs e reabrir o vault no Obsidian).
 
 ## Trabalhos futuros

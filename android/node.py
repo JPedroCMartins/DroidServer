@@ -17,6 +17,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 import socketio
 
+import banco
 import registro
 import servico
 import tunnel
@@ -359,6 +360,9 @@ class WorkerManager:
         if WorkerManager._existe(alias):
             return False, f"Container '{alias}' já existe"
 
+        if banco.existe(alias):
+            return False, f"Já existe um worker de banco chamado '{alias}'"
+
         prefix = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
 
         # Onde o arquivo de configuração do serviço vai ficar
@@ -515,7 +519,12 @@ class TerminalManager:
             # Garante que aplicativos interativos (vim, htop, nano) renderizem corretamente
             os.environ['TERM'] = 'xterm-256color'
             try:
-                cmd = WorkerManager.comando_login(alias, WorkerManager.esta_isolado(alias))
+                if banco.existe(alias):
+                    # Worker de banco: sem container, o terminal é o psql
+                    cmd, env = banco.comando_terminal(alias)
+                    os.environ.update(env)
+                else:
+                    cmd = WorkerManager.comando_login(alias, WorkerManager.esta_isolado(alias))
                 os.execvp(cmd[0], cmd)
             except OSError as e:
                 # Sem o exec, este filho seria uma cópia do agente rodando em
@@ -815,7 +824,8 @@ class NodeAgent:
         """Mede o Node: estado dos serviços, CPU e RAM. Não depende do painel."""
         status_sup = servico.status_supervisor()
         worker_pids = {a: s["pid"] for a, s in status_sup.items() if s["pid"]}
-        workers = WorkerManager.get_installed_workers()
+        # Containers do proot-distro + workers de banco (PostgreSQL no Termux)
+        workers = sorted(set(WorkerManager.get_installed_workers()) | set(banco.listar()))
         servicos = servico.estado_servicos(workers, status_sup)
         uso = self.monitor.sample()
         cpu_proc = self.cpu_processos.sample(self._grupos_de_processos(worker_pids))
@@ -850,7 +860,8 @@ class NodeAgent:
             item = {"estado": sv.get("estado"), "pid": sv.get("pid"), "uptime": sv.get("uptime"),
                     "porta": sv.get("porta"), "cpu": medida["cpu_workers"].get(alias),
                     "ram_mb": sv.get("ram_mb")}
-            if sv.get("porta"):
+            # Verificação HTTP só para serviços web (um banco não fala HTTP)
+            if sv.get("porta") and not sv.get("tipo"):
                 item.update(registro.checar_http(sv["porta"]))
             servicos[alias] = item
         # supervisord = pai do processo de qualquer serviço rodando
@@ -974,7 +985,10 @@ class NodeAgent:
             imagem = tarefa.get("imagem", "alpine")
             isolado = bool(tarefa.get("isolado", True))
             try:
-                ok, msg = WorkerManager.criar(alias, imagem, isolado)
+                if tarefa.get("tipo") == banco.TIPO:
+                    ok, msg = banco.criar(alias, tarefa.get("senha"))
+                else:
+                    ok, msg = WorkerManager.criar(alias, imagem, isolado)
             except Exception as e:
                 ok, msg = False, f"Erro inesperado ao criar '{alias}': {e}"
             self._registrar_resultado(acao, alias, ok, msg)
@@ -987,7 +1001,10 @@ class NodeAgent:
             self.terminal.encerrar(alias)
             self.logs.cancelar(alias)
             try:
-                ok, msg = WorkerManager.deletar(alias)
+                if banco.existe(alias):
+                    ok, msg = banco.remover(alias)
+                else:
+                    ok, msg = WorkerManager.deletar(alias)
             except Exception as e:
                 ok, msg = False, f"Erro inesperado ao deletar '{alias}': {e}"
             self._registrar_resultado(acao, alias, ok, msg)

@@ -188,7 +188,11 @@ def estado(status=None):
 
 
 def sem_segredo(tarefa):
-    """Cópia da tarefa sem o token, para logs e para o painel."""
-    if isinstance(tarefa, dict) and "token" in tarefa:
-        return {**tarefa, "token": "…" + str(tarefa["token"])[-4:]}
-    return tarefa
+    """Cópia da tarefa sem segredos (token do tunnel, senha do banco), para logs e para o painel."""
+    if not isinstance(tarefa, dict):
+        return tarefa
+    copia = dict(tarefa)
+    for chave in ("token", "senha"):
+        if chave in copia:
+            copia[chave] = "…" + str(copia[chave])[-4:]
+    return copia
