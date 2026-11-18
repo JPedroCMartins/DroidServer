@@ -18,7 +18,7 @@ Manaus - AM, 2026
 > Compatível com o **Word** e com o **WordCraft** (Linux): o arquivo passa na validação do esquema OOXML, não tem entradas de pasta no ZIP e a equação vai como imagem (o WordCraft ainda não tem editor de equações). Para equação nativa do Word: `EQUACOES=word npm run gerar`.
 
 > [!note] Título
-> O mesmo título está na capa e na folha de rosto do `docs/artigo_nao_finalizado.odt`. "Servidor virtual privado" é usado no sentido do **modelo de serviço** (um ambiente Linux próprio, acessível pela rede e administrado como um servidor), e não no de virtualização de *hardware*: ver a definição na seção 1.1 e o glossário.
+> O mesmo título está na capa e na folha de rosto do `docs/DroidServer_TCC_artigo.docx`, gerado a partir destas notas. "Servidor virtual privado" é usado no sentido do **modelo de serviço** (um ambiente Linux próprio, acessível pela rede e administrado como um servidor), e não no de virtualização de *hardware*: ver a definição na seção 1.1 e o glossário.
 
 ---
 
