@@ -11,7 +11,7 @@ Esta seção posiciona o DroidServer em relação a trabalhos que usam smartphon
 ## 6.2 Reúso de aparelhos descomissionados
 
 - **Shahrad e Wentzlaff (2017)** propuseram construir servidores densos com smartphones usados e parcialmente quebrados, analisando o custo total de propriedade e mostrando que a energia de fabricação domina o consumo ao longo da vida útil do aparelho.
-- **Junkyard Computing** (SWITZER et al., 2023) analisou a execução de aplicações de microsserviços completas (o *DeathStarBench*) em *clusters* de smartphones descartados, propôs a métrica CCI (gramas de CO₂ por unidade de computação) e concluiu que smartphones reaproveitados superam servidores e *laptops* antigos em carbono por computação. O trabalho recebeu o prêmio de *Distinguished Paper* do ASPLOS 2023.
+- **Junkyard Computing** (SWITZER et al., 2023) analisou a execução de aplicações de microsserviços completas (o *DeathStarBench*) em *clusters* de smartphones descartados — dez Pixel 3A com o Android substituído pelo Ubuntu Touch e os serviços distribuídos com Docker Swarm —, propôs a métrica CCI (gramas de CO₂ por unidade de computação) e concluiu que smartphones reaproveitados superam servidores e *laptops* antigos em carbono por computação. O trabalho recebeu o prêmio de *Distinguished Paper* do ASPLOS 2023.
 
 ## 6.3 Clusters de baixo custo com computadores de placa única
 
@@ -28,11 +28,11 @@ O **udocker** (GOMES et al., 2018) executa imagens Docker sem *root* em ambiente
 | Hyrax (2009) | Não (app Android) | Tarefa MapReduce | Sim (Hadoop) | Não | Processamento em lote |
 | CWC (2012) | Não (app) | Tarefa | Sim (escalonador) | Não | Computação durante a carga |
 | DroidCluster (2012) | Sim (Debian no SD) | Processo MPI | Sim (MPI) | Não | HPC / *benchmark* |
-| Shahrad & Wentzlaff (2017) | Não especificado | Servidor | Proposta | Não | TCO / energia |
-| Junkyard (2023) | Sim (aparelhos preparados) | Microsserviço | Sim | Não | Carbono |
+| Shahrad & Wentzlaff (2017) | Não especificado | Servidor | Proposta, sem implementação | Não | TCO / energia |
+| Junkyard (2023) | Sim (Ubuntu Touch com *kernel* modificado) | Microsserviço (Docker) | Sim (Docker Swarm) | Não | Carbono |
 | udocker (2018) | Não | Contêiner | Não | Não | HPC sem *root* |
 | **DroidServer** | **Não** | **Ambiente Linux tipo VPS** | **Sim (Host–Node)** | **Sim, com terminal** | **Reúso sem *root*** |
 
-*Quadro 2 — Trabalhos relacionados. Fonte: elaborado pelo autor. Verifique os detalhes de cada linha na leitura completa dos artigos antes de publicar.*
+*Quadro 2 — Trabalhos relacionados. Fonte: elaborado pelo autor.*
 
 **Lacuna:** nenhum dos trabalhos encontrados combina (i) aparelhos com *firmware* original e sem *root*, (ii) a abstração de um servidor Linux de uso geral e (iii) um plano de controle com painel e terminal remoto. Esta é a contribuição pretendida pelo DroidServer.

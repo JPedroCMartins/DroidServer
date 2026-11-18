@@ -42,10 +42,10 @@ const META = {
   titulo: "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados",
   natureza: "Artigo científico apresentado ao curso de Engenharia da Computação do Centro Universitário do " +
     "Norte — Uninorte, como requisito parcial para obtenção do título de Bacharel em Engenharia da Computação.",
-  orientador: "[Nome do(a) orientador(a)]",
+  orientador: "Euler de Azevedo Costa",
   local: "MANAUS – AM",
   ano: "2026",
-  notaAutor: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte. E-mail: [e-mail].",
+  notaAutor: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte. E-mail: jpedro7682@gmail.com.",
 };
 
 // Ordem do artigo (NBR 6022): resumo/abstract, texto, referências, glossário
