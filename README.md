@@ -376,7 +376,7 @@ cd android && uv run pytest -v
 
 A suíte do Host usa o `test_client` do Flask e o `socketio.test_client`; a do agente usa `monkeypatch` em `subprocess`, `pty` e `requests`, então roda em qualquer Linux, sem Termux.
 
-São 233 testes (87 no Host e 146 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
+São 236 testes (90 no Host e 146 no agente), incluindo testes de regressão para a perda de resultados no sync, o uso do `supervisord.conf` correto e o fechamento das sessões de PTY.
 
 ## Segurança e limitações
 
