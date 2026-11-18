@@ -22,7 +22,7 @@ O que já foi feito no DroidServer, em resumo. Os detalhes (decisões, telas pro
 
 ## Bugs corrigidos (numeração da revisão de 15/11)
 
-- **2.1** 10 de 69 testes falhavam depois da migração para SPA; suíte atualizada (hoje são 233 testes).
+- **2.1** 10 de 69 testes falhavam depois da migração para SPA; suíte atualizada (hoje são 236 testes).
 - **2.2** Resultados de tarefa apagados se chegassem durante o POST do sync.
 - **2.4** `supervisorctl` sem `-c` em `criar`/`deletar`: Worker criado "sem serviço".
 - **2.5** Vazamento de PTY (descritor aberto e processo zumbi por sessão).
