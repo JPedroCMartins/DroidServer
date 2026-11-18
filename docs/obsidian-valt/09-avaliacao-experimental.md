@@ -1,6 +1,6 @@
 # 9. Protocolo de Avaliação Experimental
 
-> [!info] Executado em 16/11/2026 (E7 pendente)
+> [!info] Executado de 16 a 17/11/2026
 > Este capítulo define **o que medir, como e com quais critérios**, para que os resultados sejam reprodutíveis (JAIN, 1991), e registra os resultados (seção 9.5). Os *scripts* e os dados brutos (CSV) estão em `bench/` no repositório; as figuras são geradas por `bench/graficos.py`.
 
 ## 9.1 Ambiente de testes
@@ -43,7 +43,7 @@ Compare pelo menos duas configurações para sustentar a hipótese H1:
 
 | Critério | Limite | Resultado (16/11/2026) |
 |---|---|---|
-| Disponibilidade do Worker em 24 h (configuração 2) | ≥ 99% | ⏳ E7 pendente (parciais: 99,94% em 4,4 h) |
+| Disponibilidade do Worker em 24 h (configuração 2) | ≥ 99% | ✅ 99,94% em 24 h, sem reinícios do serviço |
 | Latência de eco do terminal, p95, em LAN | ≤ 200 ms | ✅ 58 ms em 5 GHz · ❌ 360 ms em 2,4 GHz |
 | Detecção de Node *offline* | ≤ 35 s | ✅ por construção: `STALE_TIMEOUT` = 25 s + até 10 s até o próximo *refresh* (não medido; E6 fora do escopo) |
 | Provisionamento de Worker Alpine | ≤ 2 min | ✅ 1,9 s no aparelho; 16 s (mediana) a 32 s (máx.) no painel |
@@ -126,22 +126,37 @@ Nota de método: as versões do Python diferem (3.14 no Termux e no Alpine; o ap
 | Node | RSS do agente | RSS do `supervisord` | CPU do DroidServer em repouso (% do aparelho) |
 |---|---|---|---|
 | POCO X6 Pro (Android 16) | ~25 MB | ~10 MB | ~0,6% |
-| moto e40 (Android 11) | ~43 MB | ~23 MB | ~0,1–0,7% |
+| moto e40 (Android 11), 24 h da E7 | 20 MB (mediana; 18–41 MB) | 9,6 MB (mediana; 8–21 MB) | 1,6% (média; p99 de 3,2%) |
 
-*(Valores iniciais; o resumo completo sai com a E7.)*
+Os valores do POCO X6 Pro são leituras pontuais; os do moto e40 vêm das 8.638 amostras da E7, com o registro local (seção 8.5.1) gravando a cada 10 s, o que explica a CPU um pouco maior que a de repouso (0,1–0,7%) medida antes dele. A memória do agente não cresceu ao longo do dia: subiu em dois trechos (na primeira hora e entre a 7ª e a 13ª hora) até ~41 MB e voltou a ~19 MB, terminando a medição em 18 MB. A RAM total do aparelho ficou em 57% na média (máximo de 64%).
 
-### E7 e E6 — Disponibilidade em 24 h (Node 2, pendente)
+### E7 e E6 — Disponibilidade em 24 h (Node 2)
 
-A rodada completa de 24 h no moto e40 ainda não foi concluída. Duas rodadas parciais (Worker Alpine com a API de demonstração, porta 8080; aparelho na tomada e tela apagada; uma amostra a cada 10 s):
+Worker Alpine com a API de demonstração (porta 8080) no moto e40, na configuração 2 (otimização de bateria desativada para o Termux, *wake-lock* ativo), aparelho na tomada e com a tela apagada, uma amostra a cada 10 s. A rodada definitiva foi de 16/11 às 23:21 a 17/11 às 23:21; o painel ficou desligado ou inacessível em 1.915 das amostras (~5,3 h) sem afetar a medição.
+
+| Indicador | Resultado |
+|---|---|
+| Duração | 23,99 h (8.643 amostras esperadas) |
+| **Disponibilidade** | **99,94%** (8.638/8.643) |
+| Falhas | 5 amostras ausentes no registro, nenhuma resposta de erro; maior indisponibilidade contínua de ~20 s |
+| Reinícios do serviço (PID novo) | 0 |
+| Lacunas do agente (E6) | 4, a maior de 25 s |
+| Tempo de resposta do `GET` local | mediana de 8,9 ms; p95 de 11,5 ms; p99 de 13,4 ms; máximo de 99 ms |
+
+![[figuras/e7_disponibilidade.png]]
+
+*Figura 9.5 — Tempo de resposta da API ao longo das 24 h; os triângulos marcam as amostras sem resposta.*
+
+Todas as amostras registradas responderam com sucesso; as 5 indisponibilidades vêm de 4 lacunas curtas no registro do próprio agente (às 06:50, 16:42, 17:18 e 19:00 de 17/11), contadas como falha pelo critério conservador descrito abaixo. O PID do serviço foi o mesmo do início ao fim, ou seja, o Supervisor não precisou reiniciá-lo e o Android não encerrou o processo. O critério de aceitação (≥ 99%) foi atendido com folga.
+
+Antes da rodada definitiva, duas rodadas parciais foram interrompidas:
 
 | Rodada | Duração | Disponibilidade | Falhas | Reinícios do serviço | Quedas do Node (E6) | Interrupção |
 |---|---|---|---|---|---|---|
 | 1 | 4,42 h (1593 amostras) | 99,94% | 1 *timeout* de 10 s | 0 | 0 | queda de energia no PC (o celular seguiu na bateria; o serviço ficou 6 h no ar sem reiniciar) |
 | 2 | 0,23 h (82 amostras) | 100% | 0 | 0 | 0 | adiada pelo usuário |
 
-As rodadas 1 e 2 mediam a partir do PC, pelo painel; a rodada 1 terminou justamente porque o PC desligou. A rodada definitiva usa o registro local do Node (seção 8.5.1), que não depende do PC: o `GET` parte do próprio celular, pela interface local. Assim, a E7 mede se o serviço permanece vivo e respondendo no Android, que é o que a H1 afirma, e não a estabilidade do Wi-Fi entre o celular e o PC (a latência pela rede já é tratada na E4). Uma amostra ausente (agente parado, aparelho desligado ou Termux congelado pelo sistema) conta como indisponibilidade, o que torna a medida conservadora.
-
-*(Preencher com a rodada de 24 h: `uv run bench/e7_disponibilidade.py --worker demo_api --inicio "<data hora>" --horas 24`.)*
+As rodadas 1 e 2 mediam a partir do PC, pelo painel; a rodada 1 terminou justamente porque o PC desligou. A rodada definitiva usou o registro local do Node (seção 8.5.1), que não depende do PC: o `GET` parte do próprio celular, pela interface local. Assim, a E7 mede se o serviço permanece vivo e respondendo no Android, que é o que a H1 afirma, e não a estabilidade do Wi-Fi entre o celular e o PC (a latência pela rede já é tratada na E4). Uma amostra ausente (agente parado, aparelho desligado ou Termux congelado pelo sistema) conta como indisponibilidade, o que torna a medida conservadora.
 
 ### E9 — Temperatura e energia
 

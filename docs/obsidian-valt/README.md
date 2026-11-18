@@ -24,7 +24,7 @@ Manaus - AM, 2026
 
 ## Sumário
 
-0. [Resumo / Abstract](00-resumo.md) *(preenchido; falta a E7)*
+0. [Resumo / Abstract](00-resumo.md) *(preenchido)*
 1. [Introdução](01-introducao.md)
    - 1.1 Contextualização
    - 1.2 Limites do Trabalho (Escopo e Delimitação)
@@ -79,13 +79,13 @@ Manaus - AM, 2026
 
 | Nota | Situação |
 |---|---|
-| 00 Resumo | Preenchido com os resultados; falta a E7 |
+| 00 Resumo | Preenchido com os resultados, inclusive a E7 |
 | 01–05 | Revisadas e ampliadas |
 | 06 Trabalhos relacionados | Nova |
 | 07 Metodologia | Revisada (antiga 06) |
 | 08 Prototipação | Ampliada com a implementação real |
-| 09 Avaliação | Executada em 16/11 (E7 em andamento) |
+| 09 Avaliação | Executada em 16 e 17/11 (E1–E8, E10) |
 | 10 Limitações | Nova |
-| 11 Conclusão | Nova (16/11); falta a E7 |
+| 11 Conclusão | Nova (16/11); completada com a E7 (18/11) |
 | 13 Glossário | Nova (era a 11) |
 | 12 Referências | Ampliada (antiga 08) |

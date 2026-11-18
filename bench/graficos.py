@@ -236,7 +236,7 @@ def fig_e7():
     ax.set_ylabel("ms (escala log)")
     ax.set_title(f"E7 — Disponibilidade: {100 * ok / len(linhas):.2f}% em {horas[-1]:.1f} h "
                  f"({len(reinicios)} reinício(s) do serviço)")
-    ax.legend(loc="upper right", fontsize=8)
+    ax.legend(loc="upper left", fontsize=8)
     salvar(fig, "e7_disponibilidade")
 
 

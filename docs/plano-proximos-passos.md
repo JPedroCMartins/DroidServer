@@ -1,13 +1,13 @@
 # Plano de próximos passos
 
-Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega. Prioridade: **(1) o sistema funcionando de ponta a ponta numa demonstração, (2) dados medidos para o TCC, (3) texto final.** Tudo o que não serve a esses três itens fica para "trabalhos futuros".
+Escrito em 15/11/2026 e atualizado em 18/11/2026, com pouco tempo até a entrega. Prioridade: **(1) o sistema funcionando de ponta a ponta numa demonstração, (2) dados medidos para o TCC, (3) texto final.** Tudo o que não serve a esses três itens fica para "trabalhos futuros".
 
 ## Onde estamos (16/11, depois da Fase 2B)
 
 | Já funciona (validado nos aparelhos) | Ainda falta |
 |---|---|
-| `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | Estabilidade por **24 h** de uso (E7 — pendência P1) |
-| Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | Números da E7 no resumo, na 9.5 e na conclusão (P2) |
+| `setup.sh`, agente, Host, painel; reboot do celular (Termux:Boot) | (Opcional) E7 com o Android em configuração padrão (P3) |
+| Cadastro de Nodes pelo painel (varredura + token); troca de IP do celular e do PC | |
 | **Dois Nodes** (POCO X6 Pro e moto e40) | Conferir as referências ⚠ (4.5) |
 | Criar e remover Worker (Alpine e Debian) pelo painel | |
 | Capturas de tela do painel na seção 8.8 (4.6) | |
@@ -15,9 +15,9 @@ Escrito em 15/11/2026 e atualizado em 16/11/2026, com pouco tempo até a entrega
 | Aplicações reais respondendo na rede (portas 8080–8082) | |
 | Segurança mínima (Fase 2) e painel sem internet | |
 | Terminal no navegador, isolamento do `/sdcard`; CPU/RAM em tempo real | |
-| Experimentos E1–E5, E8 e E10 com figuras e resultados (nota 09) | |
+| Experimentos E1–E5, **E7 (99,94% em 24 h, 0 reinícios)**, E8 e E10 com figuras e resultados (nota 09) | |
 | 233 testes automatizados | |
-| Vault com 13 capítulos, título único, resumo/abstract e conclusão (faltando a E7) | |
+| Vault com 13 capítulos, título único, resumo/abstract e conclusão, com a E7 | |
 
 ---
 
@@ -27,10 +27,10 @@ A pedido do usuário, os experimentos que exigem esperar ficam para depois; prim
 
 | # | Pendência | Depende de |
 |---|---|---|
-| P1 | 🟡 **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada), **iniciada em 16/11 às 23:21, termina em 17/11 às 23:21**. A medição é do próprio agente (registro local, vault 8.5.1) e o celular acompanha e calcula sozinho (`~/.config/droidserver/e7/progresso.txt` e `resultado.txt`); o PC e o painel podem ser desligados. Progresso: `DROID_SSH="-p 8022 192.168.1.100" uv run bench/e7_disponibilidade.py --status`; no fim, o mesmo comando sem `--status` gera o CSV oficial. Se o moto reiniciar, `--retomar`. Rodadas anteriores (medidas pelo PC) interrompidas: 1ª por queda de energia (4,42 h, 99,94%) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*` | Deixar o moto 24 h sem mexer |
-| P2 | Preencher os `[RESULTADO E7: ...]` do resumo/abstract (nota 00), da 9.5 e da conclusão (11.1 QP3 e 11.2), gerar a figura da E7 (`bench/graficos.py`) e decidir se a H1 fica **confirmada** ou **parcialmente confirmada** | P1 |
+| P1 | ✅ **E7 — disponibilidade em 24 h** no moto e40 (tela apagada, na tomada), de 16/11 às 23:21 a 17/11 às 23:21: **99,94%** (8.638/8.643), **0 reinícios** do serviço, 4 lacunas curtas do agente (E6, a maior de 25 s). CSV oficial e registro bruto em `bench/resultados/e7_disponibilidade_20261118_*.csv` e `e7_registro_20261118_*.jsonl`. Rodadas anteriores (medidas pelo PC) interrompidas: 1ª por queda de energia (4,42 h, 99,94%) e 2ª pelo usuário (0,23 h, 100%) — dados em `bench/resultados/e7_rodada*` | — |
+| P2 | ✅ *18/11:* resultados da E7 no resumo/abstract (nota 00), na 9.5 (com a Figura 9.5 e a E10 do moto e40) e na conclusão (11.1 QP3 e 11.2); **H1 confirmada** para a configuração (c) | P1 |
 | P3 | (Opcional) E7 com o Android em configuração padrão (otimização de bateria ativa), para saber se a condição (c) da H1 é necessária, não só suficiente | P1 + mais 24 h |
-| P4 | Regenerar o `.docx` com os números da E7 | P2 |
+| P4 | ✅ *18/11:* `.docx` gerado de novo com os números da E7 | P2 |
 
 ## Fase 1 — Deixar a demonstração funcionando
 
@@ -133,7 +133,7 @@ Corrigir só o que uma banca aponta em 1 minuto. O resto vai para as limitaçõe
 
 A 2.5 entrou na revisão de 16/11: numa rede de laboratório sem internet, o painel não abre. É barata e protege a demonstração.
 
-## Fase 3 — Dados para o TCC 🟡 (16/11: E1–E5, E8 e E10 feitos; E7 pendente — ver Pendências)
+## Fase 3 — Dados para o TCC ✅ (16/11: E1–E5, E8 e E10; 17/11: E7 — ver Pendências)
 
 > **16/11, 18:37:** uma queda de energia desligou o PC (e com ele o Host e o *script* da E7) depois de 4,4 h de medição (rodada 1, 99,9%, guardada em `bench/resultados/e7_rodada1_interrompida_*.csv`). O moto e40 seguiu na bateria e o serviço **não reiniciou** (6 h no ar). A E7 foi reiniciada às 20:22 (rodada 2, 24 h).
 
@@ -188,9 +188,9 @@ Restrição verificada: sem *root*, o Android nega `/proc/net/tcp`, então **a p
 | # | Tarefa |
 |---|---|
 | 4.1 | ✅ *Feito em 16/11:* "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados" (capa, folha de rosto, vault, README; termo definido na seção 1.1) |
-| 4.2 | 🟡 *16/11:* Capítulo 9.5 (Resultados) escrito com tabelas e gráficos de E1, E3, E4 e E8; falta a E7 |
-| 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (226/216 palavras); falta o valor da E7 |
-| 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; falta fechar com a E7 |
+| 4.2 | ✅ *16/11:* Capítulo 9.5 (Resultados) escrito com tabelas e gráficos de E1, E3, E4 e E8; *18/11:* E7 incluída |
+| 4.3 | ✅ *16/11:* Resumo/Abstract (nota 00) preenchidos com os números reais (232/221 palavras com a E7, em 18/11) |
+| 4.4 | ✅ *16/11:* Conclusão (nota 11) responde QP1–QP3 e discute a H1; *18/11:* fechada com a E7 (H1 confirmada) |
 | 4.5 | Conferir as referências marcadas com ⚠ e ler na íntegra Switzer et al. (2023), Shahrad e Wentzlaff (2017) e Büsching et al. (2012) |
 | 4.6 | ✅ *16/11:* seção 8.8 com as Figuras 5–9 (Dashboard com gráfico, Node, aba Serviço, ajuda, terminal), geradas por `bench/capturas_tela.py` no moto e40 |
 | 4.7 | 🟡 *16/11: versão inicial gerada automaticamente do vault* — `docs/DroidServer_TCC_artigo.docx` (ABNT: capa, folha de rosto, resumo/abstract, seções 1–10, referências, glossário; figuras e quadros numerados com título acima e fonte abaixo; lacunas em amarelo). Regenerar com `cd docs/gerador-docx && npm install && npm run gerar`. Falta: modelo oficial da Uninorte (se houver), nome do orientador e revisão final |
@@ -205,12 +205,12 @@ Escalonador automático, persistência do Host (SQLite), UUID por Node, proxy re
 Primeiro o que não depende de esperar; os experimentos ficam como pendências (P1–P4, no topo).
 
 ```
-Agora       ✅ 4.6 capturas de tela → ✅ registro local no Node → iniciar P1 (E7, 24 h com o moto parado; PC pode desligar)
-Durante a E7  4.5 referências ⚠ → enxugar o texto
-Depois      P2 → P4 → .docx final (4.7) → orientador
+Feito       ✅ 4.6 capturas de tela → ✅ registro local no Node → ✅ P1 (E7) → ✅ P2 → ✅ P4
+Agora       4.5 referências ⚠ → enxugar o texto → .docx final (4.7) → orientador
+Opcional    P3 (E7 com o Android padrão, mais 24 h)
 ```
 
-A E7 é o caminho crítico (P2, P4, 4.7 e 4.8 dependem dela): iniciar assim que as capturas estiverem prontas e fazer 4.5 e o texto enquanto ela roda. Se o prazo apertar, corte P3. **Não corte** a E7 (P1): é a evidência da H1.
+A E7 terminou em 17/11 e confirmou a H1 na configuração (c). O caminho crítico agora é o texto: referências ⚠ (4.5), revisão e o `.docx` final. Se o prazo apertar, corte P3.
 
 ## Riscos
 
