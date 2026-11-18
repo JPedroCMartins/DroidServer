@@ -950,3 +950,63 @@ def test_apresentacao_imagens_existem(client):
     assert imagens, "a apresentação deveria ter figuras"
     for src in imagens:
         assert client.get(src).status_code == 200, src
+
+
+# ---------- Cloudflare Tunnel ----------
+
+TUNNEL_TOKEN = "eyJhIjoiMTIzNDU2Nzg5MCIsInQiOiJhYmNkZWYtMTIzNCIsInMiOiJzZWdyZWRvIn0=Zz9k"
+
+
+def test_tunnel_token_invalido(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    resp = client.post("/node/10.0.0.5/tunnel", json={"token": "curto"})
+    assert resp.status_code == 400
+    assert client.post("/node/10.9.9.9/tunnel", json={"token": TUNNEL_TOKEN}).status_code == 404
+
+
+def test_tunnel_enfileira_sem_expor_o_token(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    # aceita o comando inteiro copiado da Cloudflare
+    resp = client.post("/node/10.0.0.5/tunnel",
+                       json={"token": f"sudo cloudflared service install --token {TUNNEL_TOKEN}"})
+    assert resp.status_code == 200 and resp.get_json()["token_fim"] == "Zz9k"
+    # trocar de novo antes da entrega substitui a tarefa
+    client.post("/node/10.0.0.5/tunnel", json={"token": TUNNEL_TOKEN})
+
+    publico = client.get("/api/nodes").get_json()["10.0.0.5"]
+    assert TUNNEL_TOKEN not in json.dumps(publico)
+    assert publico["tarefas_pendentes"] == [{"acao": "configurar_tunnel", "token": "…Zz9k"}]
+
+    tarefas = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).get_json()["tarefas"]
+    assert tarefas == [{"acao": "configurar_tunnel", "token": TUNNEL_TOKEN}]
+    assert TUNNEL_TOKEN not in json.dumps(_routes().nodes_conectados, default=str)
+
+
+def test_tunnel_remover_e_estado_do_sync(client):
+    estado = {"instalado": True, "configurado": True, "token_fim": "Zz9k", "estado": "RUNNING"}
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": [], "tunnel": estado})
+    assert client.get("/api/nodes").get_json()["10.0.0.5"]["tunnel"] == estado
+    assert client.post("/node/10.0.0.5/tunnel/delete").status_code == 200
+    tarefas = client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []}).get_json()["tarefas"]
+    assert tarefas == [{"acao": "remover_tunnel"}]
+
+
+def test_worker_nao_pode_se_chamar_tunnel(client):
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": []})
+    resp = client.post("/deploy_worker", data={"ip": "10.0.0.5", "alias": "tunnel", "imagem": "alpine"})
+    assert resp.status_code == 400
+
+
+def test_pagina_do_tunnel(client):
+    assert client.get("/node/10.0.0.5/tunnel").status_code == 200
+
+
+def test_servico_do_tunnel_vai_ao_node_e_atualiza_estado(ambiente_servico):
+    node, nav_a, _ = ambiente_servico
+    nav_a.emit("servico", {"ip": "10.0.0.5", "alias": "tunnel", "acao": "parar", "req": 1})
+    pedido = _eventos(node, "servico_to_10.0.0.5")[0]
+    assert (pedido["alias"], pedido["acao"]) == ("tunnel", "parar")
+    node.emit("servico_resposta", {**pedido, "ip": "10.0.0.5", "ok": True, "msg": "Serviço parado.",
+                                   "servico": {"estado": "STOPPED", "configurado": True}})
+    assert _routes().nodes_conectados["10.0.0.5"]["tunnel"]["estado"] == "STOPPED"
+    assert "tunnel" not in _routes().nodes_conectados["10.0.0.5"].get("servicos", {})

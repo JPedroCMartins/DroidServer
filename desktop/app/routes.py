@@ -49,6 +49,19 @@ IMAGENS_PERMITIDAS = {"alpine", "debian"}
 # Alias de worker: caracteres seguros (usado em caminhos, serviços e eventos WS).
 ALIAS_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
+# Cloudflare Tunnel (cloudflared no Termux, fora do proot): um por node, com o
+# nome reservado "tunnel". O token só passa pela fila em memória até o node
+# buscá-lo; nunca é gravado no host nem devolvido ao navegador.
+TUNNEL = "tunnel"
+TUNNEL_TOKEN_RE = re.compile(r"^[A-Za-z0-9+/=_-]{40,4096}$")
+
+
+def _sem_segredo(tarefa):
+    """Cópia da tarefa sem o token do tunnel (para o navegador e os logs)."""
+    if isinstance(tarefa, dict) and "token" in tarefa:
+        return {**tarefa, "token": "…" + str(tarefa["token"])[-4:]}
+    return tarefa
+
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +247,7 @@ def _estado_publico(ip, node):
     info = dict(node)
     info["ip"] = ip
     info["workers"] = list(node.get("workers", []))
+    info["tarefas_pendentes"] = [_sem_segredo(t) for t in node.get("tarefas_pendentes", [])]
 
     ultimo = node.get("last_seen_ts")
     if ultimo is None or (datetime.now() - ultimo) > timedelta(seconds=STALE_TIMEOUT):
@@ -337,6 +351,7 @@ def _bloquear_outros_sites():
 @app.route('/node/<ip>')
 @app.route('/node/<ip>/worker/<alias>')
 @app.route('/node/<ip>/worker/<alias>/terminal')
+@app.route('/node/<ip>/tunnel')
 def spa(ip=None, alias=None):
     return render_template('index.html', senha_exigida=_senha_exigida())
 
@@ -386,6 +401,9 @@ def deploy_worker():
         logger.warning("Alias inválido rejeitado no deploy: %r", alias)
         return jsonify({"ok": False, "erro": "Alias inválido."}), 400
 
+    if alias == TUNNEL:
+        return jsonify({"ok": False, "erro": "O nome 'tunnel' é reservado para o tunnel da Cloudflare."}), 400
+
     if alias in nodes_conectados[ip_alvo]["workers"]:
         logger.info("Worker '%s' já existe no node %s; nada a fazer.", alias, ip_alvo)
         return jsonify({"ok": False, "erro": "Worker já existe."}), 409
@@ -399,6 +417,43 @@ def deploy_worker():
     nodes_conectados[ip_alvo]["tarefas_pendentes"].append(nova_tarefa)
     logger.info("Tarefa enfileirada: criar worker '%s' (%s, isolado=%s) no node %s", alias, imagem, isolado, ip_alvo)
     socketio.emit('node_updated', {'ip': ip_alvo})
+    return jsonify({"ok": True})
+
+
+@app.route('/node/<ip>/tunnel', methods=['POST'])
+def configurar_tunnel(ip):
+    """Enfileira a instalação/configuração do cloudflared com o token colado no painel."""
+    _prune_nodes()
+    if ip not in nodes_conectados:
+        return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
+    dados = request.get_json(silent=True) or request.form
+    token = (dados.get("token") or "").strip()
+    # Aceita o comando inteiro copiado da Cloudflare ("cloudflared ... --token <t>")
+    if "--token" in token:
+        resto = token.split("--token", 1)[1].split()
+        token = resto[0] if resto else ""
+    if not TUNNEL_TOKEN_RE.fullmatch(token):
+        return jsonify({"ok": False, "erro": "Token inválido. Cole o token do tunnel (ou o comando com --token)."}), 400
+    pendentes = [t for t in nodes_conectados[ip]["tarefas_pendentes"]
+                 if t.get("acao") not in ("configurar_tunnel", "remover_tunnel")]
+    pendentes.append({"acao": "configurar_tunnel", "token": token})
+    nodes_conectados[ip]["tarefas_pendentes"] = pendentes
+    logger.info("Tarefa enfileirada: configurar o tunnel (token …%s) no node %s", token[-4:], ip)
+    socketio.emit('node_updated', {'ip': ip})
+    return jsonify({"ok": True, "token_fim": token[-4:]})
+
+
+@app.route('/node/<ip>/tunnel/delete', methods=['POST'])
+def remover_tunnel(ip):
+    _prune_nodes()
+    if ip not in nodes_conectados:
+        return jsonify({"ok": False, "erro": "Node não encontrado."}), 404
+    pendentes = [t for t in nodes_conectados[ip]["tarefas_pendentes"]
+                 if t.get("acao") not in ("configurar_tunnel", "remover_tunnel")]
+    pendentes.append({"acao": "remover_tunnel"})
+    nodes_conectados[ip]["tarefas_pendentes"] = pendentes
+    logger.info("Tarefa enfileirada: remover o tunnel do node %s", ip)
+    socketio.emit('node_updated', {'ip': ip})
     return jsonify({"ok": True})
 
 
@@ -610,6 +665,7 @@ def node_sync():
             "cpu_workers": dados.get("cpu_workers", {}),
             "servicos": dados.get("servicos", {}),
             "mem": dados.get("mem"),
+            "tunnel": dados.get("tunnel"),
         }
         logger.info("Novo node registrado: %s (workers=%s)", ip_node, dados.get("workers", []))
     else:
@@ -627,6 +683,7 @@ def node_sync():
         nodes_conectados[ip_node]["cpu_workers"] = dados.get("cpu_workers", {})
         nodes_conectados[ip_node]["servicos"] = dados.get("servicos", {})
         nodes_conectados[ip_node]["mem"] = dados.get("mem")
+        nodes_conectados[ip_node]["tunnel"] = dados.get("tunnel")
 
     # Painel recém-ligado (ou node novo): pede o histórico gravado no celular
     pedir_historico = ip_node not in historico and "historico" not in dados
@@ -694,7 +751,9 @@ def handle_servico_resposta(data):
     data['ip'] = ip
     # Atualiza o estado guardado para o painel não esperar o próximo sync
     alias, est = data.get('alias'), data.get('servico')
-    if ip in nodes_conectados and _alias_valido(alias) and isinstance(est, dict):
+    if ip in nodes_conectados and alias == TUNNEL and isinstance(est, dict):
+        nodes_conectados[ip]["tunnel"] = est
+    elif ip in nodes_conectados and _alias_valido(alias) and isinstance(est, dict):
         nodes_conectados[ip].setdefault("servicos", {})[alias] = est
     socketio.emit('servico_resposta', {k: v for k, v in data.items() if k != 'sid'}, to=sid)
 

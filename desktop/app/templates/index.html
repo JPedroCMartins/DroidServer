@@ -157,7 +157,18 @@
         // Utilidades
         // =====================================================================
         const $ = (id) => document.getElementById(id);
-        const ACAO_CRIAR = 'criar_worker';
+        const TUNNEL = 'tunnel';  // nome reservado do Cloudflare Tunnel (um por node)
+        const TUNNEL_TOKEN_RE = /^[A-Za-z0-9+/=_-]{40,4096}$/;
+        // Texto das tarefas da fila: [executando, aguardando, resultado]
+        const TAREFAS = {
+            criar_worker: ['Criando', 'Criar', 'Criação'],
+            deletar_worker: ['Deletando', 'Deletar', 'Deleção'],
+            configurar_tunnel: ['Configurando', 'Configurar', 'Configuração do'],
+            remover_tunnel: ['Removendo', 'Remover', 'Remoção do'],
+        };
+        const textoTarefa = (acao, i) => (TAREFAS[acao] || TAREFAS.deletar_worker)[i];
+        const TOM_PILL = { ok: 'pill-online', warn: 'pill-warn', bad: 'pill-offline', muted: 'pill-muted' };
+        const ehTarefaTunnel = (t) => t && (t.acao === 'configurar_tunnel' || t.acao === 'remover_tunnel');
         const ALIAS_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
         const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -209,6 +220,7 @@
             pause: '<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>',
             download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
             gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+            cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>',
             full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
         };
 
@@ -461,6 +473,9 @@
             let m;
             if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)\/terminal$/))) {
                 return viewTerminal(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+            }
+            if ((m = path.match(/^\/node\/([^/]+)\/tunnel$/))) {
+                return viewTunnel(decodeURIComponent(m[1]));
             }
             if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)$/))) {
                 return viewServico(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
@@ -804,6 +819,7 @@
 
                 <div id="pendingCard"></div>
                 <div id="resultsCard"></div>
+                <div id="tunnelCard"></div>
                 <div id="workersSection"></div>
             </div>`;
 
@@ -833,8 +849,9 @@
                         <span>${verbo} <strong class="text-slate-200">${esc(alias)}</strong> (${extra})</span>
                     </div>`;
                 let items = '';
-                if (atual) items += item('', atual.acao === ACAO_CRIAR ? 'Criando' : 'Deletando', atual.alias, 'executando agora');
-                pend.forEach(t => items += item('spinner-muted', t.acao === ACAO_CRIAR ? 'Criar' : 'Deletar', t.alias, 'aguardando o node'));
+                const nome = (t) => ehTarefaTunnel(t) ? TUNNEL : t.alias;
+                if (atual) items += item('', textoTarefa(atual.acao, 0), nome(atual), 'executando agora');
+                pend.forEach(t => items += item('spinner-muted', textoTarefa(t.acao, 1), nome(t), 'aguardando o node'));
 
                 el.innerHTML = `
                 <div class="card card-static p-5 mb-7">
@@ -852,7 +869,7 @@
                     <div class="flex items-start gap-2.5 text-[13px] px-3 py-2.5 rounded-xl border bg-slate-950/35 ${r.ok ? 'border-ok/30' : 'border-bad/30'}">
                         <span class="font-bold shrink-0 leading-tight ${r.ok ? 'text-ok' : 'text-bad'}">${r.ok ? '✓' : '✗'}</span>
                         <span>
-                            ${r.acao === ACAO_CRIAR ? 'Criação' : 'Deleção'}
+                            ${textoTarefa(r.acao, 2)}
                             ${r.alias ? `<strong>${esc(r.alias)}</strong>` : ''}
                             — ${esc(r.msg)}
                             ${r.ts ? `<span class="text-muted text-[11px] ml-1.5">${esc(r.ts)}</span>` : ''}
@@ -890,7 +907,7 @@
                 // Workers com deleção pendente/em execução
                 const removendo = new Set(
                     [...(n.tarefas_pendentes || []), ...(n.tarefa_atual ? [n.tarefa_atual] : [])]
-                        .filter(t => t.acao !== ACAO_CRIAR).map(t => t.alias)
+                        .filter(t => t.acao === 'deletar_worker').map(t => t.alias)
                 );
                 const TONES = {
                     ok: { bar: 'from-ok to-emerald-300', pill: 'pill-online', dot: 'bg-ok' },
@@ -955,6 +972,57 @@
                 el.innerHTML = head + `<div class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(280px,1fr))]">${cards}</div>`;
             }
 
+            // ---- Cloudflare Tunnel (cloudflared no Termux, um por node) ----
+            const vigia = tunnelVigia(ip);
+            let tunnelForm = false;  // formulário aberto (não redesenha enquanto o usuário digita)
+            function renderTunnel(n) {
+                const el = $('tunnelCard');
+                const tn = n.tunnel || null;
+                const tarefa = [n.tarefa_atual, ...(n.tarefas_pendentes || [])].find(ehTarefaTunnel);
+                const perdida = vigia.atualizar(n);
+                if (tunnelForm && el.querySelector('#tunnelToken')) return;
+                let corpo;
+                if (tarefa) {
+                    corpo = `<div class="flex items-center gap-2.5 text-[13px] text-muted"><span class="spinner"></span>
+                        ${tarefa.acao === 'remover_tunnel' ? 'Removendo o tunnel…' : 'Instalando e configurando o cloudflared… (a 1ª vez baixa o pacote)'}</div>`;
+                } else if (tn && tn.configurado) {
+                    const e = estadoServico(tn);
+                    corpo = `<div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2.5 flex-wrap text-[13px]">
+                            <span class="pill ${TOM_PILL[e.tone]}">${esc(e.label)}</span>
+                            <span class="text-muted">token <code class="text-slate-300">…${esc(tn.token_fim || '????')}</code></span>
+                            ${tn.uptime ? `<span class="text-muted">· no ar há ${esc(tn.uptime)}</span>` : ''}
+                            ${tn.versao ? `<span class="text-muted">· cloudflared ${esc(tn.versao)}</span>` : ''}
+                        </div>
+                        <a href="/node/${esc(ip)}/tunnel" data-link class="btn btn-primary">${svg(ICON.gear)}Abrir tunnel</a>
+                    </div>`;
+                } else {
+                    corpo = `<form id="tunnelForm" class="flex gap-3 items-end flex-wrap">
+                        <div class="flex-1 min-w-[260px]">
+                            <label for="tunnelToken" class="block text-[11px] uppercase tracking-wider text-muted font-semibold mb-2">Token do tunnel</label>
+                            <input class="input font-mono" type="password" id="tunnelToken" autocomplete="off" spellcheck="false"
+                                placeholder="eyJh… ou o comando inteiro: cloudflared tunnel run --token eyJh…">
+                        </div>
+                        <button type="submit" class="btn btn-success">${svg(ICON.cloud)}Configurar tunnel</button>
+                    </form>`;
+                }
+                el.innerHTML = `
+                <div class="card card-static p-5 mb-7">
+                    <div class="flex items-center gap-2.5 mb-1">${svg(ICON.cloud, 'w-5 h-5 text-accent2')}<h3 class="text-[15px] font-bold">Tunnel Cloudflare</h3></div>
+                    <p class="text-[12.5px] text-muted mb-4">Publica os Workers deste node na Internet pelo <code>cloudflared</code>, que roda no Termux (fora dos containers). Crie o tunnel em <strong class="text-slate-300">Cloudflare Zero Trust → Networks → Tunnels</strong>, cole o token aqui e aponte cada hostname público para <code>http://localhost:&lt;porta do Worker&gt;</code>.</p>
+                    ${perdida ? `<div class="px-3.5 py-2.5 mb-3 rounded-xl border border-warn/30 bg-warn/10 text-[12.5px]">O node não confirmou a configuração do tunnel (a tarefa pode ter se perdido). Configure de novo.</div>` : ''}
+                    ${corpo}
+                </div>`;
+            }
+            $('tunnelCard').addEventListener('focusin', (e) => { if (e.target.id === 'tunnelToken') tunnelForm = true; });
+            $('tunnelCard').addEventListener('focusout', (e) => { if (e.target.id === 'tunnelToken' && !e.target.value) tunnelForm = false; });
+            $('tunnelCard').addEventListener('submit', async (e) => {
+                if (e.target.id !== 'tunnelForm') return;
+                e.preventDefault();
+                const ok = await enviarTokenTunnel(ip, $('tunnelToken').value, vigia);
+                if (ok) { tunnelForm = false; carregar(); }
+            });
+
             async function carregar() {
                 try {
                     const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
@@ -972,7 +1040,7 @@
                     }
                     if (!res.ok || notFound) return;
                     const n = await res.json();
-                    renderHero(n); renderPending(n); renderResults(n); renderWorkers(n);
+                    renderHero(n); renderPending(n); renderResults(n); renderTunnel(n); renderWorkers(n);
                 } catch (e) { /* ignora falhas momentâneas de rede */ }
             }
 
@@ -1492,6 +1560,281 @@ exec python3 bot.py`)}
                 socket.off('node_updated', onUpd);
                 socket.off('connect', onConnect);
                 document.removeEventListener('keydown', onTeclaAjuda);
+                pendentes.forEach(fn => fn({ ok: false, msg: 'cancelado' }));
+            };
+        }
+
+        // =====================================================================
+        // Cloudflare Tunnel: envio do token e vigia da tarefa
+        //   POST /node/<ip>/tunnel {token}  -> fila do node (configurar_tunnel)
+        //   POST /node/<ip>/tunnel/delete   -> fila do node (remover_tunnel)
+        // O token nunca volta do host: o painel só vê os últimos 4 caracteres.
+        // =====================================================================
+        function extrairToken(texto) {
+            texto = (texto || '').trim();
+            const m = texto.match(/--token\s+(\S+)/);
+            return m ? m[1] : texto;
+        }
+
+        async function enviarTokenTunnel(ip, texto, vigia) {
+            const token = extrairToken(texto);
+            if (!TUNNEL_TOKEN_RE.test(token)) { toast('Token inválido: cole o token do tunnel ou o comando com --token'); return false; }
+            try {
+                const resp = await fetch(`/node/${encodeURIComponent(ip)}/tunnel`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+                });
+                const r = await resp.json().catch(() => ({}));
+                if (!resp.ok) { toast(r.erro || 'Falha ao enviar'); return false; }
+                vigia.esperar(r.token_fim);
+                toast('Token enviado ao node');
+                return true;
+            } catch (e) { toast('Falha ao enviar'); return false; }
+        }
+
+        // A fila do Host entrega cada tarefa no máximo uma vez: se a resposta do
+        // sync se perder, a configuração some. A vigia avisa quando o node não
+        // confirma (token novo nem resultado) bem depois de a tarefa sair da fila.
+        const vigiasTunnel = {};
+        function tunnelVigia(ip) {
+            if (vigiasTunnel[ip]) return vigiasTunnel[ip];
+            let esperado = null, resultados = 0, sumiuEm = null;
+            const contar = (n) => (n.resultados || []).filter(r => r.acao === 'configurar_tunnel').length;
+            return (vigiasTunnel[ip] = {
+                esperar(fim) { esperado = fim; resultados = null; sumiuEm = null; },
+                atualizar(n) {
+                    if (!esperado) return false;
+                    if (resultados === null) resultados = contar(n);
+                    const tn = n.tunnel || {};
+                    const naFila = [n.tarefa_atual, ...(n.tarefas_pendentes || [])].some(t => t && t.acao === 'configurar_tunnel');
+                    if (tn.token_fim === esperado || contar(n) > resultados) { esperado = null; return false; }
+                    if (naFila) { sumiuEm = null; return false; }
+                    sumiuEm = sumiuEm || Date.now();
+                    return Date.now() - sumiuEm > 25000;
+                },
+            });
+        }
+
+        // =====================================================================
+        // VIEW: Tunnel (estado, iniciar/parar, token e logs do cloudflared)
+        //   reaproveita os eventos da aba Serviço com o alias "tunnel"
+        // =====================================================================
+        function viewTunnel(ip) {
+            setNav(ip);
+            setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Logs ao vivo</div>`);
+            const alias = TUNNEL, MAX_LINHAS = 2000;
+            const vigia = tunnelVigia(ip);
+
+            $('view').innerHTML = `
+            <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14 flex flex-col gap-6">
+                <header class="flex items-end justify-between gap-4 flex-wrap">
+                    <div>
+                        <h1 class="section-title text-[26px] tracking-tight flex items-center gap-2.5">${svg(ICON.cloud, 'w-7 h-7 text-accent2')}Tunnel Cloudflare</h1>
+                        <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — <code class="text-slate-300">cloudflared tunnel run</code> no Termux, vigiado pelo DroidServer.</p>
+                    </div>
+                    <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao node</a>
+                </header>
+
+                <section class="card card-static p-5 flex flex-col gap-4">
+                    <div class="flex items-center justify-between gap-4 flex-wrap">
+                        <div class="flex items-center gap-3">
+                            <span class="dot dot-idle" id="svDot"></span>
+                            <div>
+                                <div class="text-[16px] font-bold" id="svEstado">Carregando…</div>
+                                <div class="text-[12px] text-muted" id="svInfo">—</div>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 flex-wrap">
+                            <button class="btn btn-success !py-2" data-acao="iniciar">${svg(ICON.play)}Iniciar</button>
+                            <button class="btn btn-danger" data-acao="parar">${svg(ICON.stop)}Parar</button>
+                            <button class="btn btn-primary" data-acao="reiniciar">${svg(ICON.refresh)}Reiniciar</button>
+                        </div>
+                    </div>
+                    <div id="svAlerta"></div>
+                    <div class="flex gap-6 flex-wrap pt-3 border-t border-slate-400/15 text-[13px]">
+                        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+                            <input type="checkbox" id="optAutostart" class="w-4 h-4 accent-accent cursor-pointer"> Iniciar junto com o celular
+                        </label>
+                        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+                            <input type="checkbox" id="optAutorestart" class="w-4 h-4 accent-accent cursor-pointer"> Reiniciar automaticamente se cair
+                        </label>
+                        <span class="text-[11.5px] text-muted self-center" id="optNota"></span>
+                    </div>
+                </section>
+
+                <section class="card card-static p-5 flex flex-col gap-3">
+                    <h2 class="text-[15px] font-bold">Token</h2>
+                    <p class="text-[12.5px] text-muted">Fica só no celular (<code>~/.config/droidserver/tunnel.env</code>, legível só pelo Termux) e nunca volta ao painel. Atual: <code class="text-slate-300" id="tnFim">—</code></p>
+                    <form id="tunnelForm" class="flex gap-3 items-end flex-wrap">
+                        <input class="input font-mono flex-1 min-w-[260px]" type="password" id="tunnelToken" autocomplete="off" spellcheck="false"
+                            aria-label="Novo token do tunnel" placeholder="Novo token (ou o comando com --token)">
+                        <button type="submit" class="btn btn-primary">${svg(ICON.refresh)}Trocar token</button>
+                        <button type="button" id="btnRemoverTunnel" class="btn btn-danger">${svg(ICON.trash)}Remover tunnel</button>
+                    </form>
+                </section>
+
+                <section class="card card-static p-5 flex flex-col gap-3">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2.5">
+                            <h2 class="text-[15px] font-bold">Logs do cloudflared</h2>
+                            <span class="flex items-center gap-1.5 text-[11.5px] text-muted"><span class="w-2 h-2 rounded-full bg-ok animate-pulseDot" id="logsDot"></span><span id="logsEstado">ao vivo</span></span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-ghost" id="btnPausar">${svg(ICON.pause)}Pausar</button>
+                            <button class="btn btn-ghost" id="btnLimparLogs">${svg(ICON.eraser)}Limpar</button>
+                            <button class="btn btn-ghost" id="btnBaixarLogs">${svg(ICON.download)}Baixar</button>
+                        </div>
+                    </div>
+                    <pre id="logs" class="h-[420px] overflow-auto px-4 py-3 rounded-xl bg-term border border-slate-400/15 font-mono text-[12.5px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all" aria-live="polite">Carregando logs…</pre>
+                </section>
+            </div>`;
+
+            // ---- Comandos (mesmo canal da aba Serviço) ----
+            const pendentes = new Map();
+            function comando(acao, dados = {}) {
+                return new Promise((resolve) => {
+                    const req = ++reqSeq;
+                    const timer = setTimeout(() => { pendentes.delete(req); resolve({ ok: false, msg: 'O node não respondeu (está online?).' }); }, 30000);
+                    pendentes.set(req, (r) => { clearTimeout(timer); resolve(r); });
+                    socket.emit('servico', { ip, alias, acao, dados, req });
+                });
+            }
+            const onResposta = (r) => {
+                const fn = pendentes.get(r.req);
+                if (!fn) return;
+                pendentes.delete(r.req);
+                if (r.servico) mostrarEstado(r.servico, null);
+                fn(r);
+            };
+            socket.on('servico_resposta', onResposta);
+
+            // ---- Estado ----
+            const TOM_DOT = { ok: 'dot-online', warn: 'dot-idle', bad: 'dot-offline', muted: 'dot-idle' };
+            const TOM_TXT = { ok: 'text-ok', warn: 'text-warn', bad: 'text-bad', muted: 'text-muted' };
+            let ultimo = null;
+            function mostrarEstado(tn, n) {
+                ultimo = tn;
+                const tarefa = n && [n.tarefa_atual, ...(n.tarefas_pendentes || [])].find(ehTarefaTunnel);
+                const e = tarefa ? { tone: 'warn', label: textoTarefa(tarefa.acao, 0) + '…' }
+                    : (!tn.configurado ? { tone: 'muted', label: 'Não configurado' } : estadoServico(tn));
+                $('svDot').className = 'dot ' + TOM_DOT[e.tone];
+                $('svEstado').className = 'text-[16px] font-bold ' + TOM_TXT[e.tone];
+                $('svEstado').textContent = e.label;
+                const partes = [];
+                if (tn.pid) partes.push(`pid ${tn.pid}`);
+                if (tn.uptime) partes.push(`no ar há ${tn.uptime}`);
+                if (tn.versao) partes.push(`cloudflared ${tn.versao}`);
+                $('svInfo').textContent = partes.join(' · ') || '—';
+                $('tnFim').textContent = tn.token_fim ? '…' + tn.token_fim : 'nenhum';
+
+                const rodando = ['RUNNING', 'STARTING', 'BACKOFF'].includes(tn.estado);
+                document.querySelector('[data-acao="iniciar"]').disabled = rodando || !tn.configurado;
+                document.querySelector('[data-acao="parar"]').disabled = !rodando;
+                document.querySelector('[data-acao="reiniciar"]').disabled = !tn.configurado;
+
+                let alerta = '';
+                if (n && vigia.atualizar(n)) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-warn/30 bg-warn/10 text-[13px]">O node não confirmou o token novo (a tarefa pode ter se perdido). Envie de novo.</div>`;
+                } else if (!tn.configurado && !tarefa) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-accent2/30 bg-accent2/10 text-[13px]"><strong>Nenhum tunnel configurado neste node.</strong> Cole o token abaixo.</div>`;
+                } else if (['FATAL', 'BACKOFF'].includes(tn.estado)) {
+                    alerta = `<div class="px-3.5 py-3 rounded-xl border border-bad/30 bg-bad/10 text-[13px]"><strong>O cloudflared não fica de pé.</strong> Veja os logs: token revogado, sem internet ou relógio do celular errado são as causas comuns.
+                        ${tn.detalhe ? `<div class="mt-1 text-muted">Supervisor: ${esc(tn.detalhe)}</div>` : ''}</div>`;
+                }
+                $('svAlerta').innerHTML = alerta;
+                if (document.activeElement !== $('optAutostart')) $('optAutostart').checked = tn.autostart !== false;
+                if (document.activeElement !== $('optAutorestart')) $('optAutorestart').checked = tn.autorestart !== false;
+            }
+
+            async function carregarEstado() {
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
+                    if (!res.ok) { $('svEstado').textContent = 'Node não encontrado ou offline'; return; }
+                    const n = await res.json();
+                    mostrarEstado(n.tunnel || { configurado: false }, n);
+                } catch (e) { }
+            }
+
+            document.querySelectorAll('[data-acao]').forEach(b => b.addEventListener('click', async () => {
+                b.disabled = true;
+                const r = await comando(b.dataset.acao);
+                toast(r.msg || (r.ok ? 'Feito' : 'Falhou'));
+                b.disabled = false;
+                if (ultimo) mostrarEstado(ultimo, null);
+            }));
+
+            async function configurar(chave, valor) {
+                const r = await comando('configurar', { [chave]: valor });
+                toast(r.ok ? 'Configuração salva' : (r.msg || 'Falhou'));
+                $('optNota').textContent = r.ok ? 'Vale a partir da próxima reinicialização do tunnel.' : '';
+            }
+            $('optAutostart').addEventListener('change', (e) => configurar('autostart', e.target.checked));
+            $('optAutorestart').addEventListener('change', (e) => configurar('autorestart', e.target.checked));
+
+            $('tunnelForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                if (await enviarTokenTunnel(ip, $('tunnelToken').value, vigia)) { $('tunnelToken').value = ''; carregarEstado(); }
+            });
+            $('btnRemoverTunnel').addEventListener('click', async () => {
+                if (!confirm('Remover o tunnel deste node? O cloudflared para, e o token e os logs são apagados do celular.')) return;
+                try {
+                    const resp = await fetch(`/node/${encodeURIComponent(ip)}/tunnel/delete`, { method: 'POST' });
+                    const r = await resp.json().catch(() => ({}));
+                    toast(resp.ok ? 'Remoção enfileirada' : (r.erro || 'Falhou'));
+                } catch (err) { toast('Falha ao enviar'); }
+                carregarEstado();
+            });
+
+            // ---- Logs ao vivo ----
+            const pre = $('logs');
+            let linhas = [], pausado = false, pendentesLog = [];
+            function desenharLogs() {
+                const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+                pre.textContent = linhas.length ? linhas.join('\n') : 'Sem saída ainda. O que o cloudflared imprimir aparece aqui.';
+                if (noFim) pre.scrollTop = pre.scrollHeight;
+            }
+            const onLogs = (d) => {
+                if (!d || d.alias !== alias) return;
+                if (d.inicial) { linhas = d.linhas.slice(); pendentesLog = []; }
+                else if (pausado) { pendentesLog.push(...d.linhas); return; }
+                else linhas.push(...d.linhas);
+                if (linhas.length > MAX_LINHAS) linhas = linhas.slice(-MAX_LINHAS);
+                desenharLogs();
+                if (d.inicial) pre.scrollTop = pre.scrollHeight;
+            };
+            socket.on('logs_saida', onLogs);
+            const assinar = () => socket.emit('logs_assinar', { ip, alias });
+            const onConnect = () => { assinar(); carregarEstado(); };
+            socket.on('connect', onConnect);
+            assinar();
+
+            $('btnPausar').addEventListener('click', () => {
+                pausado = !pausado;
+                $('btnPausar').innerHTML = pausado ? `${svg(ICON.play)}Retomar` : `${svg(ICON.pause)}Pausar`;
+                $('logsEstado').textContent = pausado ? 'pausado' : 'ao vivo';
+                $('logsDot').className = 'w-2 h-2 rounded-full ' + (pausado ? 'bg-warn' : 'bg-ok animate-pulseDot');
+                if (!pausado && pendentesLog.length) { linhas.push(...pendentesLog); pendentesLog = []; desenharLogs(); }
+            });
+            $('btnLimparLogs').addEventListener('click', () => { linhas = []; pendentesLog = []; desenharLogs(); });
+            $('btnBaixarLogs').addEventListener('click', () => {
+                const blob = new Blob([linhas.join('\n') + '\n'], { type: 'text/plain' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `tunnel-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            carregarEstado();
+            const onUpd = (data) => { if (data && data.ip === ip) carregarEstado(); };
+            socket.on('node_updated', onUpd);
+            const timer = setInterval(carregarEstado, 10000);
+            cleanup = () => {
+                clearInterval(timer);
+                socket.emit('logs_cancelar', { ip, alias });
+                socket.off('logs_saida', onLogs);
+                socket.off('servico_resposta', onResposta);
+                socket.off('node_updated', onUpd);
+                socket.off('connect', onConnect);
                 pendentes.forEach(fn => fn({ ok: false, msg: 'cancelado' }));
             };
         }
