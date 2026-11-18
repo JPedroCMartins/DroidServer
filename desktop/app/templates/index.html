@@ -1056,7 +1056,7 @@
             // Tipo de worker: ambiente Linux (proot-distro) ou banco PostgreSQL (nativo do Termux)
             const AJUDA_TIPO = {
                 linux: 'Cria um container via proot-distro e registra como serviço no Supervisor do node. Prefira <strong class="text-slate-300">Alpine</strong>: imagem de ~50 MB, criada em segundos. O <strong class="text-slate-300">Debian</strong> (~150 MB) é a alternativa quando o software exige glibc ou pacotes <code>apt</code>.',
-                postgres: 'Cria uma instância do <strong class="text-slate-300">PostgreSQL</strong> do Termux (sem container), pronta para conexões pela rede na porta 5432 (ou a próxima livre). O usuário é <code>droidserver</code> e a senha é gerada na hora — veja na aba Serviço. Na primeira vez o node instala o pacote (~30 MB). Usa ~70 MB de RAM parado.',
+                postgres: 'Cria uma instância do <strong class="text-slate-300">PostgreSQL</strong> do Termux (sem container), pronta para conexões pela rede na porta 5432 (ou a próxima livre). O usuário é <code>droidserver</code> e a senha é gerada na hora — veja na aba Serviço, onde também dá para criar <strong class="text-slate-300">vários bancos</strong> nesta instância. A versão é a do pacote do Termux (não dá para escolher) e fica presa contra upgrades automáticos. Na primeira vez o node instala o pacote (~30 MB). Usa ~70 MB de RAM parado: prefira vários bancos numa instância a várias instâncias.',
             };
             function aplicarTipo() {
                 const banco = $('tipo').value === 'postgres';
@@ -1245,6 +1245,7 @@ exec python3 bot.py`)}
                         </div>
                     </div>
                     <div id="svAlerta"></div>
+                    <div id="svAlertaVersao" class="hidden text-[12.5px] text-bad p-3 rounded-xl border border-red-400/30 bg-red-500/10"></div>
                     <div class="flex flex-col gap-2 pt-3 border-t border-slate-400/15 text-[13px]" id="svVisao">
                         <div class="flex items-center gap-2 flex-wrap">
                             <span class="label-xs w-20">Endereço</span>
@@ -1284,8 +1285,22 @@ exec python3 bot.py`)}
                         <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Banco</span><span class="font-mono truncate" id="cxBanco">—</span></div>
                         <div class="flex flex-col gap-1 min-w-0"><span class="label-xs tracking-wider">Senha</span><span class="font-mono truncate" id="cxSenha">••••••••</span></div>
                     </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <label for="cxSeletor" class="label-xs tracking-wider">Banco</label>
+                        <select id="cxSeletor" class="input cursor-pointer !w-auto !py-1.5 font-mono text-[13px] [&>option]:bg-[#16213e]"></select>
+                        <button type="button" class="btn btn-ghost !py-1.5" id="btnNovoBanco">${svg(ICON.plus)}Novo banco</button>
+                        <button type="button" class="btn btn-danger !py-1.5 hidden" id="btnApagarBanco">${svg(ICON.trash)}Apagar banco</button>
+                    </div>
+                    <p class="text-[11.5px] text-muted">Cada banco criado aqui tem um usuário dono com o mesmo nome e senha própria; só ele (e o <code>droidserver</code>) conecta nele. Prefira vários bancos numa instância a várias instâncias: cada instância usa ~70 MB de RAM. Bancos criados à mão pelo <code>psql</code> não aparecem nesta lista.</p>
                     <input id="cxUrl" readonly aria-label="URL de conexão" class="input font-mono text-[12.5px] hidden">
                     <p class="text-[11.5px] text-muted">Conecte de qualquer máquina da rede (ex.: <code>psql "postgresql://…"</code>, DBeaver, ou a variável <code>DATABASE_URL</code> de uma aplicação). A aba <strong>Terminal</strong> abre o <code>psql</code> já conectado. O acesso é pela rede local: não exponha a porta na internet.</p>
+                    <details class="text-[12.5px] border-t border-slate-400/15 pt-3" id="cxMigrar">
+                        <summary class="cursor-pointer select-none font-semibold">Migrar dados (backup, importação, restauração)</summary>
+                        <div class="flex flex-col gap-2 mt-3">
+                            <p class="text-[11.5px] text-muted">Rode no seu computador, na mesma rede, com o cliente do PostgreSQL instalado. Os comandos usam o banco selecionado acima; clique em <strong>Mostrar senha</strong> para preenchê-los com a senha. O <code>pg_dump</code> precisa ser da mesma versão do servidor de origem ou mais novo, e o celular precisa de espaço em disco para os dados.</p>
+                            <div id="cxComandos" class="flex flex-col gap-2"></div>
+                        </div>
+                    </details>
                 </section>
 
                 <section class="card card-static p-5 flex flex-col gap-3" id="secScript">
@@ -1407,6 +1422,11 @@ exec python3 bot.py`)}
                         ? ` · última às ${esc(u.quando)} — <span class="text-bad">${esc(u.motivo)}</span> (código ${esc(String(u.codigo))})` : '');
                 }
 
+                $('svAlertaVersao').classList.toggle('hidden', !(banco && sv.incompativel));
+                if (banco && sv.incompativel) {
+                    $('svAlertaVersao').innerHTML = `<strong>Versão incompatível:</strong> os dados são do PostgreSQL ${esc(String(sv.versao_dados || '?'))}, mas o instalado é outro, então o serviço não sobe. Reinstale a versão antiga para exportar os dados, ou crie um worker novo e restaure um backup (README: <em>Atualizar a versão do PostgreSQL</em>).`;
+                }
+
                 const fmt = (v, suf) => (v === undefined || v === null ? '—' : `${String(v).replace('.', ',')}${suf}`);
                 const disco = sv.disco_mb === undefined ? '—' : (sv.disco_mb === null ? 'calculando…' : fmt(sv.disco_mb, ' MB'));
                 $('svRecursos').textContent = [
@@ -1418,6 +1438,7 @@ exec python3 bot.py`)}
 
             // Worker de banco: sem run.sh; mostra a conexão no lugar do editor
             let ehBanco = false;
+            let bancoInfo = {};
             function aplicarBanco(sv) {
                 if (sv.tipo !== 'postgres') return;
                 if (!ehBanco) {
@@ -1426,10 +1447,19 @@ exec python3 bot.py`)}
                     $('secConexao').classList.remove('hidden');
                     $('svSub').innerHTML = `Node ${esc(ip)} — banco PostgreSQL rodando no Termux, vigiado pelo DroidServer.`;
                 }
-                const b = sv.banco || {};
-                $('cxPorta').textContent = b.porta || sv.porta || '—';
-                $('cxUsuario').textContent = b.usuario || '—';
-                $('cxBanco').textContent = b.banco || '—';
+                bancoInfo = sv.banco || {};
+                $('cxPorta').textContent = bancoInfo.porta || sv.porta || '—';
+                const sel = $('cxSeletor');
+                const nomes = Array.isArray(bancoInfo.bancos) ? bancoInfo.bancos : [];
+                const chave = JSON.stringify([bancoInfo.banco, nomes]);
+                if (sel.dataset.chave !== chave) {
+                    const atual = sel.value;
+                    sel.dataset.chave = chave;
+                    sel.innerHTML = `<option value="">${esc(bancoInfo.banco || 'postgres')} (admin)</option>`
+                        + nomes.map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+                    sel.value = nomes.includes(atual) ? atual : '';
+                }
+                mostrarSelecionado();
             }
 
             function mostrarEstado(sv) {
@@ -1522,31 +1552,94 @@ exec python3 bot.py`)}
             $('optAutorestart').addEventListener('change', (e) => configurar('autorestart', e.target.checked));
 
             // ---- Conexão do banco (senha só sob pedido, direto do node) ----
-            let cred = null;
+            // Senhas pedidas ao node, uma por banco ('' = admin), guardadas só nesta página
+            const creds = new Map();
+            const NOME_BANCO_RE = /^[a-z_][a-z0-9_]{0,62}$/;
+            const RESERVADOS = new Set(['postgres', 'template0', 'template1', 'droidserver', 'public']);
+            const selecionado = () => $('cxSeletor').value;
+            const senhaVisivel = () => $('btnSenha').dataset.visivel === '1';
             async function obterCredenciais() {
-                if (cred) return cred;
-                const r = await comando('credenciais');
+                const nome = selecionado();
+                if (creds.has(nome)) return creds.get(nome);
+                const r = await comando('credenciais', nome ? { banco: nome } : {});
                 if (!r.ok) { toast(r.msg || 'Não foi possível obter a senha'); return null; }
-                cred = r.dados;
-                return cred;
+                creds.set(nome, r.dados);
+                return r.dados;
             }
             const urlConexao = (c) => `postgresql://${encodeURIComponent(c.usuario)}:${encodeURIComponent(c.senha)}@${ip}:${c.porta}/${encodeURIComponent(c.banco)}`;
+            function mostrarSelecionado() {
+                const nome = selecionado();
+                $('cxUsuario').textContent = nome || bancoInfo.usuario || '—';
+                $('cxBanco').textContent = nome || bancoInfo.banco || '—';
+                $('btnApagarBanco').classList.toggle('hidden', !nome);
+                const c = senhaVisivel() ? creds.get(nome) : null;
+                $('cxSenha').textContent = c ? c.senha : '••••••••';
+                if (c) $('cxUrl').value = urlConexao(c);
+                $('cxUrl').classList.toggle('hidden', !c);
+                montarComandos(c);
+            }
+            // Comandos de migração (rodam no computador do usuário, contra a porta do banco)
+            function montarComandos(c) {
+                const nome = selecionado();
+                const usuario = nome || bancoInfo.usuario || 'droidserver';
+                const banco = nome || bancoInfo.banco || 'postgres';
+                const destino = c ? urlConexao(c) : `postgresql://${usuario}:SENHA@${ip}:${bancoInfo.porta || 5432}/${banco}`;
+                const linhas = [
+                    ['Importar de outro servidor', `pg_dump --no-owner --no-acl "postgresql://usuario:senha@origem:5432/banco" | psql "${destino}"`],
+                    ['Fazer backup', `pg_dump -Fc "${destino}" -f ${banco}.dump`],
+                    ['Restaurar um backup', `pg_restore --no-owner --no-acl -d "${destino}" ${banco}.dump`],
+                ];
+                if (!nome) {
+                    linhas.push(['Instância inteira: backup (todos os bancos e usuários)', `pg_dumpall -d "${destino}" -f instancia.sql`]);
+                    linhas.push(['Instância inteira: restaurar numa instância nova', `psql -d "${destino}" -f instancia.sql`]);
+                }
+                $('cxComandos').innerHTML = linhas.map(([t, cmd]) => `
+                    <label class="flex flex-col gap-1">
+                        <span class="label-xs tracking-wider">${esc(t)}</span>
+                        <input readonly class="input font-mono text-[12px] !py-1.5" value="${esc(cmd)}" data-selecionar>
+                    </label>`).join('');
+            }
+            $('cxComandos').addEventListener('focusin', (e) => { if (e.target.matches('[data-selecionar]')) e.target.select(); });
+            $('cxSeletor').addEventListener('change', async () => {
+                if (senhaVisivel()) await obterCredenciais();
+                mostrarSelecionado();
+            });
             $('btnSenha').addEventListener('click', async () => {
-                const visivel = $('btnSenha').dataset.visivel === '1';
-                if (visivel) {
-                    $('cxSenha').textContent = '••••••••';
-                    $('cxUrl').classList.add('hidden');
+                if (senhaVisivel()) {
                     $('btnSenha').dataset.visivel = '0';
                     $('btnSenha').textContent = 'Mostrar senha';
+                    mostrarSelecionado();
                     return;
                 }
                 const c = await obterCredenciais();
                 if (!c) return;
-                $('cxSenha').textContent = c.senha;
-                $('cxUrl').value = urlConexao(c);
-                $('cxUrl').classList.remove('hidden');
                 $('btnSenha').dataset.visivel = '1';
                 $('btnSenha').textContent = 'Ocultar senha';
+                mostrarSelecionado();
+            });
+            $('btnNovoBanco').addEventListener('click', async () => {
+                const nome = (prompt('Nome do novo banco (minúsculas, dígitos e _). O usuário dono terá o mesmo nome:') || '').trim();
+                if (!nome) return;
+                if (!NOME_BANCO_RE.test(nome) || RESERVADOS.has(nome)) { toast('Nome inválido ou reservado'); return; }
+                $('btnNovoBanco').disabled = true;
+                try {
+                    const r = await comando('criar_banco', { nome });
+                    toast(r.msg || (r.ok ? 'Banco criado' : 'Falha ao criar o banco'));
+                    if (r.ok) { $('cxSeletor').value = nome; mostrarSelecionado(); }
+                } finally { $('btnNovoBanco').disabled = false; }
+            });
+            $('btnApagarBanco').addEventListener('click', async () => {
+                const nome = selecionado();
+                if (!nome) return;
+                const digitado = prompt(`Apagar o banco "${nome}" e o usuário "${nome}"? Os dados são perdidos e quem estiver conectado é desconectado. Digite o nome do banco para confirmar:`);
+                if (digitado === null) return;
+                if (digitado.trim() !== nome) { toast('O nome não confere; nada foi apagado'); return; }
+                $('btnApagarBanco').disabled = true;
+                try {
+                    const r = await comando('apagar_banco', { nome });
+                    toast(r.msg || (r.ok ? 'Banco apagado' : 'Falha ao apagar o banco'));
+                    if (r.ok) { creds.delete(nome); $('cxSeletor').value = ''; mostrarSelecionado(); }
+                } finally { $('btnApagarBanco').disabled = false; }
             });
             $('btnCopiarUrl').addEventListener('click', async () => {
                 const c = await obterCredenciais();

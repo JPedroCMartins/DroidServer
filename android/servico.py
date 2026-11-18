@@ -595,9 +595,9 @@ def _extras_visao_geral(alias):
 # ---------------------------------------------------------------------------
 
 ACOES = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script", "configurar", "exemplo",
-         "credenciais"}
+         "credenciais", "criar_banco", "apagar_banco"}
 # Ações de um worker de banco (banco.py): não há container nem run.sh
-ACOES_BANCO = {"iniciar", "parar", "reiniciar", "configurar", "credenciais"}
+ACOES_BANCO = {"iniciar", "parar", "reiniciar", "configurar", "credenciais", "criar_banco", "apagar_banco"}
 
 
 def _saida(proc):
@@ -650,10 +650,24 @@ def executar(alias, acao, dados=None):
         return False, f"Container '{alias}' não encontrado.", {}
 
     if acao == "credenciais":
-        cred = banco.credenciais(alias) if e_banco else None
-        if not cred:
+        if not e_banco:
             return False, "Só workers de banco têm credenciais.", {}
+        cred = banco.credenciais(alias, dados.get("banco") or None)
+        if not cred:
+            return False, f"Banco '{dados.get('banco')}' não encontrado.", {}
         return True, "", cred
+
+    if acao in ("criar_banco", "apagar_banco"):
+        if not e_banco:
+            return False, "Só workers de banco têm bancos.", {}
+        funcao = banco.criar_banco if acao == "criar_banco" else banco.apagar_banco
+        ok, msg = funcao(alias, dados.get("nome"))
+        return ok, msg, {"bancos": (banco.info_publica(alias) or {}).get("bancos", [])}
+
+    if e_banco and acao in ("iniciar", "reiniciar") and banco.incompativel(alias):
+        return False, (f"Os dados são do PostgreSQL {banco.versao_dados(alias)}, mas o instalado é o "
+                       f"{banco.versao()}: o serviço não sobe. Veja 'Atualizar a versão do PostgreSQL' "
+                       "no README."), {}
 
     if acao == "exemplo":
         return True, "Exemplo", {"conteudo": EXEMPLO}

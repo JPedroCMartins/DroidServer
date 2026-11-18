@@ -20,6 +20,7 @@ O que já foi feito no DroidServer, em resumo. Os detalhes (decisões, telas pro
 | 16–17/11 | Apresentação do TCC em `/apresentar_tcc`, painel em Docker, visual do portfolio-page, copiar e colar no terminal por HTTP (PRs #24–#29) |
 | 18/11 | **Cloudflare Tunnel** (fora do escopo do TCC): `cloudflared` no Termux como programa `tunnel` do Supervisor, token pelo painel (só os 4 últimos caracteres voltam), instalação sob demanda e logs ao vivo; validado no moto e40 com token de teste |
 | 18/11 | **Workers de banco: PostgreSQL** (fora do escopo do TCC): novo tipo de Worker, com o PostgreSQL nativo do Termux (o `initdb` trava dentro do proot por causa da emulação System V), senha gerada pelo Host e mostrada só sob pedido, card Conexão, teste TCP e `psql` no Terminal; validado no moto e40 |
+| 18/11 | **Workers de banco, refinamento:** vários bancos por instância (usuário dono por banco, criar/apagar pelo painel), pacote preso com `apt-mark hold` e aviso de versão incompatível (major dos dados ≠ binário), comandos de migração (`pg_dump`/`pg_restore`/`pg_dumpall`) no card Conexão |
 | 16–18/11 | **Fase 4 — texto:** título único, resumo/abstract, conclusão, capturas do painel (8.8), gerador do `.docx` a partir do vault, resultados da E7 (PR #30), referências ⚠ conferidas na Crossref com DOIs (PR #31); orientador, e-mail e Quadro 2 conferidos nas fontes (Junkyard: Ubuntu Touch + Docker Swarm) |
 
 ## Bugs corrigidos (numeração da revisão de 15/11)
@@ -76,4 +77,5 @@ Também resolvidos na revisão do texto: título único; terminologia Host/Node/
 - Aba Serviço na abordagem A (ajuda + visão geral); o assistente que gera o `run.sh` (B), a configuração sem shell (C), repositório Git e variáveis de ambiente ficaram para trabalhos futuros (CI/CD, seção 10.3 do vault).
 - Testes, deploys e experimentos só no moto e40; o POCO é o celular pessoal.
 - PostgreSQL roda fora do proot (pacote do Termux): no proot, o `initdb` trava na emulação de memória compartilhada System V (`--sysvipc`).
+- Versão do PostgreSQL não é escolhível (o Termux só empacota uma); o pacote fica preso (`apt-mark hold`) e a troca de major é manual, via dump/restore. Migração de dados fica nos comandos documentados, sem backup automático pelo painel.
 - Os nomes Node e Worker ficam como estão até a defesa: aparecem no protocolo com os Nodes já pareados, nos testes, no bench e no texto e nas capturas do TCC.

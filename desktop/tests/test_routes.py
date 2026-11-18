@@ -1100,3 +1100,25 @@ def test_credenciais_vao_so_para_o_navegador_que_pediu(terminal):
     resposta = [e["args"][0] for e in dono.get_received() if e["name"] == "servico_resposta"]
     assert resposta and resposta[0]["dados"] == {"senha": "segredo123"} and "sid" not in resposta[0]
     assert outro.get_received() == []
+
+
+def test_credenciais_de_um_banco_vao_so_para_quem_pediu(terminal):
+    node, dono, outro = terminal
+    dono.emit("servico", {"ip": "10.0.0.5", "alias": "w1", "acao": "credenciais",
+                          "dados": {"banco": "app1"}, "req": 8})
+    pedido = [e["args"][0] for e in node.get_received() if e["name"] == "servico_to_10.0.0.5"]
+    assert len(pedido) == 1 and pedido[0]["dados"] == {"banco": "app1"}
+
+    node.emit("servico_resposta", {**pedido[0], "ok": True, "msg": "",
+                                   "dados": {"usuario": "app1", "senha": "outra-senha-123"}})
+    resposta = [e["args"][0] for e in dono.get_received() if e["name"] == "servico_resposta"]
+    assert resposta and resposta[0]["dados"]["senha"] == "outra-senha-123"
+    assert outro.get_received() == []
+
+
+@pytest.mark.parametrize("acao", ["criar_banco", "apagar_banco"])
+def test_acoes_de_banco_chegam_ao_node(terminal, acao):
+    node, dono, _ = terminal
+    dono.emit("servico", {"ip": "10.0.0.5", "alias": "w1", "acao": acao, "dados": {"nome": "app1"}, "req": 9})
+    pedido = [e["args"][0] for e in node.get_received() if e["name"] == "servico_to_10.0.0.5"]
+    assert len(pedido) == 1 and pedido[0]["acao"] == acao and pedido[0]["dados"] == {"nome": "app1"}
