@@ -1,25 +1,20 @@
 # 6. Trabalhos Relacionados
 
-Esta seção posiciona o DroidServer em relação a trabalhos que usam smartphones como recurso computacional ou que executam ambientes Linux sem privilégios.
-
 ## 6.1 Computação distribuída em smartphones
 
-- **Hyrax** (MARINELLI, 2009) portou o Hadoop para Android e executou tarefas MapReduce em um *cluster* de telefones, concluindo que era viável, mas com desempenho e eficiência limitados pelo hardware da época.
-- **Computing While Charging (CWC)** (ARSLAN et al., 2012) propôs usar smartphones de uma empresa enquanto carregam à noite como infraestrutura de computação distribuída, com um escalonador que considera a heterogeneidade dos aparelhos e o impacto na bateria.
-- **DroidCluster** (BÜSCHING; SCHILDT; WOLF, 2012) avaliou um *cluster* de smartphones executando uma distribuição Debian instalada no cartão SD e mediu o desempenho com o *benchmark* LINPACK, argumentando que "as ruas estão pavimentadas" de *clusters* em potencial.
+O **Hyrax** (MARINELLI, 2009) portou o Hadoop para Android e rodou MapReduce em um *cluster* de telefones, com desempenho limitado pelo hardware da época. O **Computing While Charging** (ARSLAN et al., 2012) usou os celulares de uma empresa enquanto carregavam à noite, com um escalonador atento à bateria. O **DroidCluster** (BÜSCHING; SCHILDT; WOLF, 2012) instalou Debian no cartão SD e mediu o *cluster* com o LINPACK.
 
 ## 6.2 Reúso de aparelhos descomissionados
 
-- **Shahrad e Wentzlaff (2017)** propuseram construir servidores densos com smartphones usados e parcialmente quebrados, analisando o custo total de propriedade e mostrando que a energia de fabricação domina o consumo ao longo da vida útil do aparelho.
-- **Junkyard Computing** (SWITZER et al., 2023) analisou a execução de aplicações de microsserviços completas (o *DeathStarBench*) em *clusters* de smartphones descartados — dez Pixel 3A com o Android substituído pelo Ubuntu Touch e os serviços distribuídos com Docker Swarm —, propôs a métrica CCI (gramas de CO₂ por unidade de computação) e concluiu que smartphones reaproveitados superam servidores e *laptops* antigos em carbono por computação. O trabalho recebeu o prêmio de *Distinguished Paper* do ASPLOS 2023.
+Shahrad e Wentzlaff (2017) propuseram servidores densos feitos de smartphones usados e mostraram que a energia de fabricação domina o consumo ao longo da vida útil. O **Junkyard Computing** (SWITZER et al., 2023) rodou microsserviços completos em dez Pixel 3A com o Android trocado pelo Ubuntu Touch e Docker Swarm, propôs a métrica CCI e concluiu que celulares reaproveitados superam servidores e *laptops* antigos em carbono por computação.
 
 ## 6.3 Clusters de baixo custo com computadores de placa única
 
-*Clusters* de Raspberry Pi foram usados como modelos em escala de *data centers* para ensino e pesquisa (ABRAHAMSSON et al., 2013; TSO et al., 2013; JOHNSTON et al., 2018). Eles demonstram o valor pedagógico de *clusters* baratos, mas exigem compra de hardware novo — exatamente o que o DroidServer procura evitar.
+*Clusters* de Raspberry Pi servem de modelos em escala de *data centers* para ensino e pesquisa (ABRAHAMSSON et al., 2013; TSO et al., 2013; JOHNSTON et al., 2018), mas exigem comprar hardware novo, o que o DroidServer quer evitar.
 
 ## 6.4 Execução de ambientes Linux sem privilégios
 
-O **udocker** (GOMES et al., 2018) executa imagens Docker sem *root* em ambientes multiusuário de HPC, usando o PRoot como motor padrão. Aplicativos como UserLAnd e Andronix, e o próprio `proot-distro` do Termux, oferecem distribuições Linux em Android sem *root*, mas voltadas a um único usuário interativo, sem orquestração entre aparelhos.
+O **udocker** (GOMES et al., 2018) roda imagens Docker sem *root* em HPC usando o PRoot. O UserLAnd, o Andronix e o próprio `proot-distro` oferecem Linux no Android sem *root*, mas para um único usuário interativo, sem orquestração entre aparelhos.
 
 ## 6.5 Quadro comparativo
 
@@ -35,4 +30,4 @@ O **udocker** (GOMES et al., 2018) executa imagens Docker sem *root* em ambiente
 
 *Quadro 2 — Trabalhos relacionados. Fonte: elaborado pelo autor.*
 
-**Lacuna:** nenhum dos trabalhos encontrados combina (i) aparelhos com *firmware* original e sem *root*, (ii) a abstração de um servidor Linux de uso geral e (iii) um plano de controle com painel e terminal remoto. Esta é a contribuição pretendida pelo DroidServer.
+**Lacuna:** nenhum trabalho encontrado combina (i) aparelhos com *firmware* original e sem *root*, (ii) a abstração de um servidor Linux de uso geral e (iii) um plano de controle com painel e terminal remoto. Essa é a contribuição do DroidServer.

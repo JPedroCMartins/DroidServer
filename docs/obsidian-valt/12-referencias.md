@@ -99,13 +99,3 @@ VINCENT, C. **PRoot**: chroot, mount --bind, and binfmt_misc without privilege/s
 
 WAZLAWICK, R. S. **Metodologia de pesquisa para ciência da computação**. 2. ed. Rio de Janeiro: Elsevier, 2014.
 
----
-
-## Fontes online consultadas nesta revisão
-
-- Junkyard Computing — [arXiv 2110.06870](https://arxiv.org/abs/2110.06870) e [nota da UC San Diego](https://today.ucsd.edu/story/uc-san-diego-computer-scientists-tackle-annual-waste-of-1.5-billion-junked-smartphones)
-- Shahrad & Wentzlaff — [USENIX HotCloud '17](https://usenix.org/conference/hotcloud17/program/presentation/shahrad) ([PDF](https://usenix.org/system/files/conference/hotcloud17/hotcloud17-paper-shahrad.pdf))
-- DroidCluster — [BibTeX TU Braunschweig](https://www.ibr.cs.tu-bs.de/bib/tex/Buesching-ICDCS2012.bib)
-- Global E-waste Monitor 2024 — [ITU](https://www.itu.int/en/ITU-D/Environment/Pages/Publications/The-Global-E-waste-Monitor-2024.aspx) e [UNITAR](https://unitar.org/about/news-stories/press/global-e-waste-monitor-2024-electronic-waste-rising-five-times-faster-documented-e-waste-recycling)
-- udocker — [arXiv 1711.01758](https://arxiv.org/pdf/1711.01758) e [documentação](https://indigo-dc.gitbook.io/udocker)
-- Phantom process killer — [termux-app#2366](https://github.com/termux/termux-app/issues/2366) e [Android-Docs (agnostic-apollo)](https://github.com/agnostic-apollo/Android-Docs/blob/master/en/docs/apps/processes/phantom-cached-and-empty-processes.md)

@@ -1,10 +1,8 @@
 # 8. Prototipação e Implementação
 
-Este capítulo descreve o protótipo implementado no repositório DroidServer: seus componentes, o protocolo de comunicação e os principais fluxos.
-
 ## 8.1 Visão geral
 
-Um Host (PC ou servidor) controla vários Nodes Android. Em cada aparelho, o Termux executa o agente e o `proot-distro`, que hospeda os Workers mantidos pelo Supervisor.
+Um Host (PC ou servidor) controla vários Nodes Android. Em cada aparelho, o Termux executa o agente e o `proot-distro`, que hospeda os Workers mantidos pelo Supervisor (Figura 1). O código está no repositório do projeto: o Host em `desktop/` e o agente em `android/`.
 
 ```mermaid
 flowchart LR
@@ -41,120 +39,17 @@ flowchart LR
     Ag2 -- "POST /api/node_sync (10 s)<br/>+ WebSocket" --> Host
 ```
 
-*Figura 1 — Arquitetura do DroidServer em operação. As setas partem de quem inicia a conexão: o sync e o terminal são iniciados pelo Node; o Host só contata o Node (porta 5051) para a varredura e o pareamento (Figura 2).*
+*Figura 1 — Arquitetura do DroidServer em operação. As setas partem de quem inicia a conexão: o sync e o terminal são iniciados pelo Node; o Host só contata o Node (porta 5051) para a varredura e o pareamento.*
 
-## 8.2 Componentes
+## 8.2 Protocolo de comunicação
 
-| Componente | Arquivo | Responsabilidade |
-|---|---|---|
-| Servidor Host | `desktop/app/__init__.py`, `desktop/main.py` | Cria a aplicação Flask, o Socket.IO e os *logs* rotativos; escuta em `0.0.0.0:5050` |
-| API e eventos | `desktop/app/routes.py` | Registro de Nodes, fila de tarefas, detecção de *offline*, retransmissão do terminal |
-| Painel (SPA) | `desktop/app/templates/index.html` | *Single Page Application* com três telas: Dashboard, Node e Terminal |
-| Agente | `android/node.py` | Classes `Config`, `WorkerManager`, `TerminalManager` e `NodeAgent` |
-| Métricas | `android/sysinfo.py` | CPU (delta de `/proc/stat` ou `top`) e memória (`/proc/meminfo`) |
-| Instalação | `android/setup.sh` | Pacotes, Supervisor, `supervisord.conf`, dependências, conexão, Termux:Boot |
-| Execução | `android/run.sh` | Inicia o agente em primeiro ou segundo plano com reinício automático |
-| Diagnóstico | `android/diagnostico.sh` | Coleta estado do `/proc`, `proot-distro`, Supervisor e *logs* |
+**Cadastro.** O painel encontra e adiciona os Nodes. O agente abre uma porta de descoberta (5051/TCP), o Host varre a rede local (uma `/24` em 3,2 s) e, ao "Adicionar", envia ao celular um *token* exclusivo. O Node passa a ser identificado pelo *token*, e não pelo IP, que muda a cada *reboot* (DHCP). O endereço do Host é tirado da própria conexão de pareamento, e um Node pareado só aceita novo pareamento do mesmo Host.
 
-## 8.3 Protocolo de comunicação
+**Sincronização.** A cada 10 s, o agente envia `POST /api/node_sync` com seus Workers e o estado de cada um, os resultados das tarefas concluídas, a CPU e a memória e o *token*. O Host atualiza o painel e responde com as tarefas pendentes daquele Node. A lista de Workers é sempre a que o Node reporta: o Host não a altera por conta própria.
 
-### 8.3.0 Cadastro dos Nodes (iniciado pelo painel)
+**Terminal.** As teclas digitadas no navegador vão ao Host por WebSocket, que as repassa ao Node. Na primeira tecla, o agente abre um PTY com `proot-distro login <alias>`. A saída faz o caminho inverso. Os comandos e os logs da aba Serviço usam o mesmo WebSocket, de modo que um botão responde em menos de 1 s, sem esperar o *sync*.
 
-Nas primeiras versões, cada celular precisava ser configurado com o IP do Host, e o Host aceitava qualquer Node que se apresentasse. Isso tinha dois problemas observados no aparelho de testes: o administrador precisava digitar o IP do Host em cada celular, e o celular mudava de IP a cada *reboot* (DHCP: `.7 → .4 → .7`), o que criava registros duplicados no painel.
-
-A versão atual inverte o cadastro: **o painel encontra e adiciona os Nodes**. O agente abre uma porta de descoberta (5051/TCP) que responde apenas à identificação (`GET /droidserver`) e ao pareamento (`POST /parear`, `POST /desparear`).
-
-```mermaid
-sequenceDiagram
-    participant A as Administrador
-    participant H as Host
-    participant N as Node (porta 5051)
-    A->>H: Varrer 192.168.1.0/24
-    loop 254 endereços, 64 em paralelo
-        H->>N: GET /droidserver
-        N-->>H: {modelo, android, pareado}
-    end
-    A->>H: Adicionar 192.168.1.7
-    H->>H: gera token exclusivo (secrets.token_hex(24))
-    H->>N: POST /parear {host_port, token}
-    N->>N: host = IP de origem do pedido, salva pareamento.json (0600)
-    N-->>H: ok
-    H->>H: salva nodes.json (0600)
-    loop a cada 10 s
-        N->>H: POST /api/node_sync {..., token}
-        H-->>N: tarefas (ou 401 se o token não for de um Node cadastrado)
-    end
-```
-
-*Figura 2 — Descoberta e pareamento de um Node.*
-
-Decisões:
-
-- **O endereço do Host vem do próprio pedido de pareamento** (IP de origem da conexão TCP), e não de um campo enviado: um terceiro não consegue apontar o Node para outra máquina.
-- **O Node é identificado pelo token, não pelo IP.** Se um sync chega com um token cadastrado e um IP diferente, o Host move o cadastro, o estado e o histórico para o novo IP.
-- **Um Node pareado só aceita novo pareamento do mesmo Host** e só o Host pareado, com o token, pode desfazê-lo.
-- **Depois do pareamento, a operação continua iniciada pelo Node** (sync e WebSocket), o que preserva a tolerância às restrições de energia do Android discutida em 5.6.
-
-Medições no aparelho (15/11/2026): a varredura de uma `/24` levou **3,2 s**; após "Adicionar", o Node apareceu *Online* com seus 4 Workers em ~10 s; reiniciar o Host não exigiu readicionar (cadastro persistido); um pedido de pareamento vindo de outro endereço foi recusado.
-
-### 8.3.1 Sincronização (HTTP, iniciada pelo Node)
-
-A cada `POLL_INTERVAL = 10 s`, o agente envia:
-
-```json
-POST /api/node_sync
-{
-  "ip": "192.168.0.23",
-  "status": "Online",
-  "workers": ["alpine_api", "debian_bd"],
-  "worker_status": {"alpine_api": "RUNNING", "debian_bd": "STARTING"},
-  "tarefa_atual": {"acao": "criar_worker", "alias": "debian_dev", "imagem": "debian"},
-  "resultados": [{"acao": "deletar_worker", "alias": "teste", "ok": true, "msg": "...", "ts": "14:02:11"}],
-  "cpu": null,
-  "cpu_termux": 25.0,
-  "cpu_workers": {"alpine_api": 24.9, "debian_bd": 0.0},
-  "mem": {"total": 3876544512, "usado": 2147483648, "percent": 55.4},
-  "token": "opcional"
-}
-```
-
-O Host atualiza o registro do Node, emite `node_updated` aos painéis abertos e responde com as tarefas pendentes, esvaziando a fila daquele Node:
-
-```json
-{"status": "ok", "tarefas": [{"acao": "criar_worker", "alias": "debian_dev", "imagem": "debian", "isolado": true}]}
-```
-
-A lista de Workers é **autoritativa do Node**: o Host nunca a altera de forma otimista, apenas exibe o que o aparelho reporta.
-
-### 8.3.2 Terminal (WebSocket)
-
-| Origem → destino | Evento | Conteúdo |
-|---|---|---|
-| Navegador → Host | `terminal_input` | `{ip, alias, input}` |
-| Host → Node | `cmd_to_<ip>_<alias>` | `{input}` |
-| Navegador → Host | `terminal_resize` | `{ip, alias, cols, rows}` |
-| Host → Node | `resize_to_<ip>_<alias>` | `{cols, rows}` |
-| Node → Host | `terminal_output` | `{ip, alias, output}` |
-| Host → Navegador | `output_for_<ip>_<alias>` | `{output}` |
-
-```mermaid
-sequenceDiagram
-    participant B as Navegador (xterm.js)
-    participant H as Host (Flask-SocketIO)
-    participant N as Node (node.py)
-    participant P as PTY → proot-distro login
-    B->>H: terminal_input {ip, alias, "ls\r"}
-    H->>N: cmd_to_<ip>_<alias> {input}
-    Note over N: Abre o PTY na primeira entrada (pty.fork)
-    N->>P: os.write(master_fd)
-    P-->>N: saída (select + os.read)
-    N->>H: terminal_output {ip, alias, output}
-    H->>B: output_for_<ip>_<alias> {output}
-```
-
-*Figura 3 — Fluxo de uma tecla no terminal remoto.*
-
-## 8.4 Ciclo de vida de um Worker
+## 8.3 Ciclo de vida de um Worker
 
 ```mermaid
 sequenceDiagram
@@ -173,126 +68,34 @@ sequenceDiagram
     N->>H: próximo sync: resultados [✓ criado], serviço "aguardando run.sh"
 ```
 
-*Figura 4 — Criação de um Worker.*
+*Figura 2 — Criação de um Worker.*
 
-O serviço gerado para o Supervisor tem a forma:
+A criação roda em uma *thread* separada, porque `proot-distro install` pode demorar minutos e o *sync* não pode parar (Figura 2). Cada Worker vira um programa do Supervisor com `autostart` e `autorestart`, executado com `proot-distro login --isolated` (o Worker não enxerga o *home* do Termux nem o `/sdcard`) e com `ulimit` de arquivos e processos, o único limite disponível sem *cgroups*.
 
-```ini
-[program:alpine_api]
-; droidserver-conf: 3
-command=sh -c 'ulimit -n 4096 2>/dev/null; ulimit -u 1024 2>/dev/null; exec proot-distro login --isolated alpine_api -- /bin/sh /app/.droidserver/lancador.sh'
-autostart=true
-autorestart=true
-startsecs=5
-startretries=5
-stopasgroup=true
-killasgroup=true
-redirect_stderr=true
-stdout_logfile=$PREFIX/var/log/droidserver_alpine_api.log
-stdout_logfile_maxbytes=1MB
-stdout_logfile_backups=3
-```
+Cada Worker roda **um serviço: o arquivo `/app/run.sh`**. Um lançador espera esse arquivo existir e o executa em primeiro plano, de modo que basta criá-lo para o serviço subir. Pela aba **Serviço** do painel, o administrador edita o `run.sh`, inicia, para e reinicia o serviço, acompanha os logs ao vivo e vê o endereço, as falhas do dia e o consumo de CPU, RAM e disco. A remoção faz o caminho inverso: para o serviço, encerra as sessões e executa `proot-distro remove`.
 
-### 8.4.1 O serviço do Worker
+## 8.4 Monitoramento e registro local
 
-Cada Worker executa **um serviço: o arquivo `/app/run.sh`**. O Supervisor roda um lançador que espera o `run.sh` existir e o executa com `exec`, em primeiro plano. Assim, o processo vigiado pelo Supervisor é o do próprio serviço, e criar o arquivo basta para o serviço subir. Como o *rootfs* do container pertence ao usuário do Termux, o agente lê e grava o `run.sh`, o lançador e o log **diretamente no sistema de arquivos**, sem abrir uma sessão do PRoot, que levaria segundos.
+Sem *root*, o SELinux do Android 16 nega a leitura de `/proc/stat`, da temperatura e da bateria. Por isso, a CPU é medida somando o tempo de processador (`utime + stime`) dos processos do Termux, normalizado pelo número de núcleos. Em testes com carga controlada, essa medida acompanhou a carga gerada (25% → 22,9%, 50% → 49,8%). A CPU de cada Worker considera só o processo do serviço e seus descendentes.
 
-O administrador controla o serviço pela aba **Serviço** do painel:
+O Host é apenas o plano de gerenciamento e pode ser desligado. A cada ciclo, o agente primeiro mede e grava a amostra no próprio celular (cerca de uma semana de histórico) e só depois tenta sincronizar. Quando o painel volta, recebe os últimos 30 minutos. Isso foi validado no moto e40: com o Host desligado, o serviço continuou no ar e o registro seguiu sem lacunas.
 
-| Necessidade | Recurso | Implementação |
-|---|---|---|
-| O que roda | Editor do `/app/run.sh` | gravação atômica, até 64 KB, `chmod 755` |
-| Como | Iniciar / Parar / Reiniciar | `supervisorctl start/stop/restart`; um `.conf` alterado é aplicado com `update` |
-| Quando | "Iniciar junto com o celular" / "Reiniciar se cair" | `autostart` / `autorestart` no `.conf` |
-| Diagnóstico | Logs ao vivo, aviso de `&`/`nohup`, explicação de `FATAL` | log único com rotação; o agente lê só o que foi acrescentado, 1×/s, enquanto alguém assiste |
-| Onde acessar | Endereço com "Abrir" e "Testar" | porta declarada no próprio `run.sh` (`# droidserver: porta=8080`), porque o Android nega `/proc/net/tcp` sem *root*; o "Testar" é um GET feito pelo Host, com *timeout* de 3 s |
-| Saúde | Falhas do dia e causa da última | saídas inesperadas lidas do log do supervisord (`exited: … (exit status 127; not expected)`), com o código traduzido (127 = comando não encontrado, 126 = sem permissão, 137 = encerrado pelo sistema) |
-| Recursos | CPU, RAM e disco do Worker | RAM somando o `VmRSS` da árvore de processos do serviço (o pid do Supervisor é só o *wrapper* do proot, ~3 MB); disco com `du` em segundo plano, com *cache* de 10 min, para não atrasar o *sync* |
-| Aprender a usar | Botões "?" com um guia lateral | passo a passo, regras, porta, exemplos, estados, erros comuns e opções, no próprio painel |
+## 8.5 Decisões de projeto e qualidade
 
-Os comandos e os logs usam o WebSocket já aberto pelo Node, e não o *sync* de 10 s: a resposta de um botão chega em menos de 1 s. As respostas vão só ao navegador que pediu e os logs só à sala Socket.IO daquele Worker.
+As principais decisões foram: (1) **polling iniciado pelo Node**, que funciona atrás de NAT e tolera o *Doze*, ao custo de até 10 s para uma tarefa começar; (2) **Supervisor** em vez de processos soltos, para reiniciar serviços que caem, já que não há `systemd`; (3) **`--isolated` e `ulimit`** como o isolamento possível sem *cgroups*; e (4) **segurança mínima para LAN**: senha única no painel, *token* por Node, validação dos nomes dos Workers contra injeção de comandos e verificação de `Origin` contra CSRF. Não há TLS, o que restringe o uso a uma rede local confiável.
 
-Dois problemas apareceram na validação no aparelho e moldaram o desenho:
+O projeto tem 236 testes automatizados com `pytest` (90 no Host e 146 no agente). Eles usam *mocks* de `subprocess`, `pty` e `requests` e por isso rodam em qualquer Linux, fora do Android.
 
-- **Processo antigo segurando a porta.** Na migração dos Workers antigos, o Supervisor sinalizava apenas o `proot-distro`, e o servidor do usuário sobrevivia alguns segundos. O serviço novo falhava com *"Address in use"* e, após 3 tentativas, ficava `FATAL`. Correções: `stopasgroup/killasgroup`, `startretries=5` e, na migração, parar o serviço e encerrar as sessões do container (`proot-distro kill`) antes de trocar o `.conf`.
-- **Saída ambígua do `supervisorctl`.** Um `restart` sobre um serviço `FATAL` imprime `ERROR (not running)` seguido de `started`. Tratar qualquer `ERROR` como falha fazia o painel acusar erro num reinício bem-sucedido.
+## 8.6 Interface
 
-Validação (Xiaomi 2311DRK48G, Android 16): migração dos 5 Workers existentes (3 scripts próprios preservados como `run.sh`), escrita de um `run.sh` do zero pelo painel com "Salvar e reiniciar", logs ao vivo, Parar/Iniciar e o caso de falha (comando inexistente → estado "Falhou", com a causa exata no log).
-
-A remoção segue o caminho inverso: encerra a sessão de terminal, para o serviço, remove o `.conf`, encerra as sessões restantes do container (`proot-distro kill`), executa `proot-distro remove` — com novas tentativas, pois o comando falha de imediato se alguma sessão ainda segura o *lock* do container — e apaga os *logs*.
-
-## 8.5 Monitoramento de recursos
-
-No aparelho de testes (Android 16, sem *root*), o SELinux nega a leitura de `/proc/stat` e `/proc/loadavg`, de temperatura e de bateria, e o `top` do sistema exibe 100% ocioso. Duas fontes permanecem acessíveis e foram avaliadas com cargas controladas (laços infinitos em 2, 4 e 8 núcleos, janelas de 6 s):
-
-| Carga gerada | `cpuidle` (tempo ocioso por núcleo) | Soma dos processos do Termux |
-|---|---|---|
-| 0% | 39–45% | 0,1% |
-| 25% | 93% | 22,9% |
-| 50% | 84% | 49,8% |
-| 100% | 100% | 87,5% |
-
-*Tabela 1 — Fontes de CPU acessíveis sem root. Fonte: medição do autor (Xiaomi 2311DRK48G, 15/11/2026).*
-
-O tempo ocioso exposto em `cpuidle` foi descartado por não ser monotônico com a carga. Adotou-se a soma de `utime + stime` dos processos visíveis (mesmo UID do Termux), normalizada pelo número de núcleos e pelo intervalo entre amostras:
-
-$$\text{CPU}_\%=100\cdot\frac{\sum_p \Delta(\text{utime}_p+\text{stime}_p)}{\text{CLK\_TCK}\cdot\Delta t\cdot N_\text{núcleos}}$$
-
-A CPU de cada Worker considera apenas o processo do serviço no Supervisor (PID obtido do `supervisorctl status`), a sessão de terminal e seus descendentes. Com dois laços infinitos dentro de um Worker, o painel exibiu 25,0% no total e 24,9% no Worker. A métrica não inclui outros aplicativos do aparelho, e processos que nascem e morrem entre duas amostras não são contabilizados.
-
-### 8.5.1 Registro local: o Node independe do painel
-
-O Host é apenas o plano de gerenciamento e pode ser desligado a qualquer momento. Por isso, a cada ciclo de 10 s, o agente primeiro mede o Node e grava a amostra no próprio celular, e só depois tenta sincronizar com o painel; com o painel desligado, ou antes do pareamento, a medição e o registro continuam. O registro (`~/.config/droidserver/registro/metricas.jsonl`, uma amostra JSON por linha, com rotação de 2 MB × 10 arquivos, cerca de uma semana) guarda a CPU do DroidServer, a RAM do aparelho, a memória do agente e do Supervisor e, para cada serviço, o estado no Supervisor, o PID e uma requisição HTTP local na porta declarada no `run.sh`. Quando o painel volta, a primeira resposta do *sync* pede o histórico, e o Node envia os últimos 30 minutos: o gráfico do painel é só um *cache* do que está no celular. Validado no moto e40 em 16/11/2026: com o Host desligado, o serviço manteve o PID, o registro seguiu sem lacunas, o agente gravou um único aviso e, ao religar o Host, o gráfico voltou com as amostras do período sem painel.
-
-## 8.6 Decisões de projeto
-
-| Decisão | Motivo | Consequência |
-|---|---|---|
-| *Polling* iniciado pelo Node | Funciona atrás de NAT; o Host não precisa conhecer nem alcançar o aparelho | Tarefas demoram até 10 s para começar |
-| Fila de tarefas em *thread* | `proot-distro install` pode levar até 20 min (`INSTALL_TIMEOUT = 1200`) | O *sync* continua mesmo durante instalações |
-| Supervisor em vez de processos soltos | Reinício automático; não há *systemd* no Android | Dependência extra; ajuste para Python sem `os.link()` |
-| `--isolated` por padrão | Evita que o Worker veja o *home* do Termux e o `/sdcard` | Requer `proot-distro` recente |
-| `ulimit` por Worker | Único limite disponível sem *cgroups* | Não limita CPU nem memória |
-| Validação do alias (`^[A-Za-z0-9_-]{1,64}$`) no Host e no Node | O alias vira caminho, nome de serviço e nome de evento | Previne injeção de comandos e de caminhos |
-| Cadastro de Nodes em disco no Host; métricas e logs no celular | O painel pode ser desligado a qualquer momento: o cadastro (tokens) sobrevive a reinícios e o histórico vem do registro de cada Node | O painel só mostra o que o Node já registrou; não há visão consolidada de longo prazo |
-| Node identificado por token, cadastrado pelo painel | O IP muda a cada reboot (DHCP); o celular não precisa saber o IP do Host | Um Node ainda não pareado aceita pareamento de qualquer máquina da LAN |
-| Senha única no painel (`DROID_PANEL_PASSWORD`) e sessão assinada | Só quem sabe a senha cria/apaga Workers e abre terminais; os Nodes seguem autenticados pelo token | Sem TLS, senha e tokens trafegam em claro: adequado a uma LAN confiável |
-| WebSocket do Node autenticado pelo token; salas por terminal e por log | A saída de um terminal ou de um serviço só chega a quem o abriu; navegadores não se passam por Nodes | Cada tela precisa entrar na sala ao (re)conectar |
-| `POST` + verificação de `Origin`; CORS só da mesma origem | Impede que uma página de outro site, aberta na mesma rede, comande o painel (CSRF) | Clientes de terceiros precisam de `DROID_CORS_ORIGINS` |
-| Bibliotecas do painel servidas pelo Host | A demonstração não pode depender de internet | Atualizar as versões é manual (`static/vendor/LEIAME.md`) |
-
-## 8.7 Garantia de qualidade
-
-O projeto possui 236 testes automatizados com `pytest` (90 no Host e 146 no agente), usando o `test_client` do Flask, o `socketio.test_client` e *mocks* de `subprocess`, `pty`, `select` e `requests` — de modo que rodam em qualquer Linux, fora do Android. A suíte inclui testes de regressão para defeitos encontrados durante o desenvolvimento: perda de resultados de tarefas registrados durante uma sincronização, chamadas ao `supervisorctl` sem o arquivo de configuração do Termux e vazamento de descritores e processos-zumbi nas sessões de terminal.
-
-## 8.8 Interface
-
-O painel é uma página única servida pelo Host, organizada em três níveis: o *Dashboard* (todos os Nodes), a página de cada Node (seus Workers) e a página de cada Worker, com as abas **Serviço** e **Terminal**. As capturas abaixo foram feitas no cluster de dois Nodes usado na avaliação (capítulo 9) pelo *script* `bench/capturas_tela.py`.
+O painel é uma página única servida pelo Host, com três níveis: o *Dashboard* (todos os Nodes), a página de cada Node (seus Workers) e a página de cada Worker, com as abas **Serviço** e **Terminal**.
 
 ![[figuras/painel_dashboard.png]]
 
-*Figura 5 — Dashboard: Nodes do cluster com estado, CPU do DroidServer e RAM, e o gráfico de uso em tempo real aberto para o moto e40. Fonte: o autor.*
-
-No *Dashboard*, cada Node aparece com o estado da última sincronização, o uso de CPU atribuído ao DroidServer e a memória do aparelho; o botão ao lado de "Gerenciar Workers" abre um gráfico dos últimos 10 minutos, atualizado em tempo real. Um Node cadastrado que ainda não sincronizou aparece como "Aguardando contato". É também nele que se cadastram Nodes novos, pela varredura da rede e pelo pareamento com *token* (seção 8.3).
-
-![[figuras/painel_node.png]]
-
-*Figura 6 — Página do Node: formulário de criação de Worker e cartões dos Workers, com a CPU de cada um. Fonte: o autor.*
-
-A página do Node concentra o ciclo de vida dos Workers: o formulário cria um Worker a partir de uma distribuição (Alpine ou Debian) e cada cartão mostra o estado do serviço, a CPU consumida e os atalhos para as abas Serviço e Terminal.
+*Figura 3 — Dashboard: Nodes do cluster com estado, CPU do DroidServer e RAM, e o gráfico de uso em tempo real aberto para o moto e40. Fonte: o autor.*
 
 ![[figuras/painel_servico.png]]
 
-*Figura 7 — Aba Serviço: visão geral (endereço, falhas, recursos), editor do `/app/run.sh` e logs ao vivo. Fonte: o autor.*
+*Figura 4 — Aba Serviço: endereço, falhas e recursos, editor do `/app/run.sh` e logs ao vivo. Fonte: o autor.*
 
-A aba Serviço (seção 8.4.1) permite pôr uma aplicação no ar sem terminal: a visão geral mostra o endereço em que o serviço responde, com os botões Abrir e Testar, as falhas do dia, a CPU e a RAM do serviço e o disco do Worker; abaixo ficam o editor do `run.sh` e os logs ao vivo. Os botões **?** abrem um guia lateral (Figura 8) com o passo a passo, as regras do *script*, exemplos por tipo de aplicação e os erros mais comuns.
-
-![[figuras/painel_servico_ajuda.png]]
-
-*Figura 8 — Guia lateral da aba Serviço, aberto pelo botão "?". Fonte: o autor.*
-
-![[figuras/painel_terminal.png]]
-
-*Figura 9 — Terminal no navegador com o `top` em execução dentro de um Worker. Fonte: o autor.*
-
-O terminal (Figura 9) é um *shell* dentro do Worker, transmitido pelo WebSocket (Figura 3); nele se instalam pacotes e se copiam os arquivos da aplicação para `/app`, como num VPS acessado por SSH. A figura também evidencia uma limitação do PRoot (seção 10.1): como ele não cria um espaço de processos próprio, o `top` executado dentro do Worker lista os processos de todo o Termux, inclusive o Supervisor e os outros Workers.
+O *Dashboard* (Figura 3) mostra cada Node com o estado, a CPU e a memória e permite cadastrar Nodes novos. A aba Serviço (Figura 4) põe uma aplicação no ar sem usar o terminal. O terminal é um *shell* dentro do Worker, como numa VPS acessada por SSH.

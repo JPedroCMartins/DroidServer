@@ -2,7 +2,6 @@
 
 | Termo | Definição |
 |---|---|
-| **ADB** | *Android Debug Bridge*; ferramenta de linha de comando para depurar e configurar um aparelho Android a partir de um computador. |
 | **Bionic** | Biblioteca C do Android, usada no lugar da glibc. |
 | **cgroups** | Recurso do *kernel* Linux que limita e contabiliza o uso de CPU, memória e E/S por grupo de processos. |
 | **Cloudlet** | Pequeno *data center* próximo ao usuário, acessível com baixa latência (SATYANARAYANAN et al., 2009). |
