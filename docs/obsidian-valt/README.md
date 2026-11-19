@@ -45,8 +45,7 @@ Manaus - AM, 2026
    - 5.3 TI Verde (Green Computing) e Sustentabilidade
    - 5.4 Arquitetura Android e Execução em Espaço de Usuário
    - 5.5 Virtualização, Contêineres e PRoot
-   - 5.6 Modelos de Comunicação: Polling, WebSockets e Detecção de Falhas
-   - 5.7 Pseudo-terminais e Supervisão de Processos
+   - 5.6 Comunicação, Detecção de Falhas e Supervisão
 6. [Trabalhos Relacionados](06-trabalhos-relacionados.md)
 7. [Metodologia](07-metodologia.md)
    - 7.1 Caracterização da Pesquisa
@@ -54,13 +53,12 @@ Manaus - AM, 2026
    - 7.3 Ferramentas e Tecnologias Utilizadas
    - 7.4 Procedimentos de Implementação
 8. [Prototipação e Implementação](08-prototipacao.md)
-9. [Protocolo de Avaliação Experimental](09-avaliacao-experimental.md)
+9. [Avaliação Experimental](09-avaliacao-experimental.md)
 10. [Limitações, Ameaças à Validade e Trabalhos Futuros](10-limitacoes-e-trabalhos-futuros.md)
 11. [Conclusão](11-conclusao.md)
     - 11.1 Respostas às questões de pesquisa
     - 11.2 Hipótese
-    - 11.3 Contribuições
-    - 11.4 Considerações finais
+    - 11.3 Contribuições e considerações finais
 12. [Referências](12-referencias.md)
 13. [Glossário](13-glossario.md)
 
@@ -77,15 +75,15 @@ Manaus - AM, 2026
 
 ## Status das notas
 
+Em 19/11/2026 o texto foi enxugado para o essencial (o .docx passou de 53 para 29 páginas): saíram os detalhes de implementação do capítulo 8, três das cinco capturas do painel e o detalhamento dos experimentos do capítulo 9, que ficou com uma tabela-resumo e duas figuras. A versão longa está no histórico do Git (commit 17f9f75).
+
 | Nota | Situação |
 |---|---|
 | 00 Resumo | Preenchido com os resultados, inclusive a E7 |
-| 01–05 | Revisadas e ampliadas |
-| 06 Trabalhos relacionados | Nova |
-| 07 Metodologia | Revisada (antiga 06) |
-| 08 Prototipação | Ampliada com a implementação real |
-| 09 Avaliação | Executada em 16 e 17/11 (E1–E8, E10) |
-| 10 Limitações | Nova |
-| 11 Conclusão | Nova (16/11); completada com a E7 (18/11) |
+| 01–07 | Enxutas (19/11) |
+| 08 Prototipação | Enxuta: arquitetura, protocolo, ciclo de vida, monitoramento, decisões e 2 capturas |
+| 09 Avaliação | Executada em 16 e 17/11; resumida em uma tabela e 2 figuras |
+| 10 Limitações | Enxuta |
+| 11 Conclusão | Enxuta |
+| 12 Referências | Só obras citadas |
 | 13 Glossário | Nova (era a 11) |
-| 12 Referências | Ampliada (antiga 08) |
