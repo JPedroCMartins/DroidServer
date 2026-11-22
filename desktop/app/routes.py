@@ -14,7 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
 from flask import current_app as app
-from flask import redirect, render_template, request, jsonify, session
+from urllib.parse import quote, unquote, urlencode
+
+from flask import Response, redirect, render_template, request, jsonify, session
 from flask_socketio import join_room, leave_room
 from . import socketio
 
@@ -358,6 +360,7 @@ def _bloquear_outros_sites():
 @app.route('/node/<ip>')
 @app.route('/node/<ip>/worker/<alias>')
 @app.route('/node/<ip>/worker/<alias>/terminal')
+@app.route('/node/<ip>/worker/<alias>/arquivos')
 @app.route('/node/<ip>/tunnel')
 def spa(ip=None, alias=None):
     return render_template('index.html', senha_exigida=_senha_exigida())
@@ -666,6 +669,118 @@ def api_testar_servico(ip, alias):
     ms = round((time.monotonic() - inicio) * 1000, 1)
     return jsonify({"ok": status is not None, "url": url, "status": status,
                     "ms": ms if status is not None else None, "erro": erro})
+
+
+# ---------------------------------------------------------------------------
+# Arquivos da home (/root) de um worker: o navegador fala com o Host, que
+# repassa ao node (porta 5051, rotas /arquivos/*) com o token do pareamento.
+# Envios e downloads passam em blocos, sem guardar o arquivo inteiro na memória.
+# ---------------------------------------------------------------------------
+ARQUIVOS_TIMEOUT = 60  # por operação de rede (não é o tempo total do envio)
+
+
+def _alvo_arquivos(ip, alias):
+    """Token do node para acessar os arquivos do worker, ou (resposta de erro)."""
+    node = nodes_conectados.get(ip)
+    if not node or not _alias_valido(alias) or alias not in node.get("workers", []):
+        return None, (jsonify({"ok": False, "erro": "Node ou worker não encontrado."}), 404)
+    if ((node.get("servicos") or {}).get(alias) or {}).get("tipo") == "postgres":
+        return None, (jsonify({"ok": False, "erro": "Worker de banco não tem aba Arquivos."}), 400)
+    token = (cadastro.get(ip) or {}).get("token")
+    if not token:
+        return None, (jsonify({"ok": False, "erro": "Este node não foi pareado pelo painel."}), 409)
+    return token, None
+
+
+def _abrir_no_node(metodo, ip, rota, alias, token, dados=None, tamanho=None):
+    params = urlencode({"alias": alias, "caminho": request.args.get("caminho", "")})
+    cab = {"X-Droid-Token": token}
+    if tamanho is not None:
+        cab["Content-Length"] = str(tamanho)
+        cab["Content-Type"] = "application/octet-stream"
+    req = urllib.request.Request(f"http://{ip}:{NODE_PORTA}/arquivos/{rota}?{params}",
+                                 data=dados, method=metodo, headers=cab)
+    return urllib.request.urlopen(req, timeout=ARQUIVOS_TIMEOUT)
+
+
+def _resposta_do_node(metodo, ip, alias, rota, dados=None, tamanho=None):
+    token, erro = _alvo_arquivos(ip, alias)
+    if erro:
+        return erro
+    try:
+        with _abrir_no_node(metodo, ip, rota, alias, token, dados, tamanho) as resp:
+            return jsonify(json.loads(resp.read() or b"{}")), resp.status
+    except urllib.error.HTTPError as e:
+        try:
+            corpo = json.loads(e.read() or b"{}")
+        except ValueError:
+            corpo = {}
+        return jsonify({"ok": False, "erro": corpo.get("erro") or f"O node respondeu {e.code}."}), e.code
+    except (OSError, ValueError) as e:
+        logger.warning("Arquivos: falha ao falar com o node %s (%s): %s", ip, rota, e)
+        return jsonify({"ok": False, "erro": "O node não respondeu. Ele está online?"}), 502
+
+
+@app.route('/api/node/<ip>/worker/<alias>/arquivos', methods=['GET'])
+def api_arquivos_listar(ip, alias):
+    return _resposta_do_node("GET", ip, alias, "listar")
+
+
+@app.route('/api/node/<ip>/worker/<alias>/arquivos/pasta', methods=['POST'])
+def api_arquivos_pasta(ip, alias):
+    return _resposta_do_node("POST", ip, alias, "pasta", dados=b"", tamanho=0)
+
+
+@app.route('/api/node/<ip>/worker/<alias>/arquivos/apagar', methods=['POST'])
+def api_arquivos_apagar(ip, alias):
+    return _resposta_do_node("POST", ip, alias, "apagar", dados=b"", tamanho=0)
+
+
+@app.route('/api/node/<ip>/worker/<alias>/arquivos/enviar', methods=['POST'])
+def api_arquivos_enviar(ip, alias):
+    """Corpo da requisição = o arquivo; repassado ao node em blocos."""
+    tamanho = request.content_length
+    if tamanho is None:
+        return jsonify({"ok": False, "erro": "Content-Length obrigatório."}), 411
+    return _resposta_do_node("POST", ip, alias, "enviar", dados=request.stream, tamanho=tamanho)
+
+
+@app.route('/api/node/<ip>/worker/<alias>/arquivos/baixar', methods=['GET'])
+def api_arquivos_baixar(ip, alias):
+    """Arquivo (ou a pasta em .zip) vindo do node, repassado em blocos."""
+    token, erro = _alvo_arquivos(ip, alias)
+    if erro:
+        return erro
+    try:
+        resp = _abrir_no_node("GET", ip, "baixar", alias, token)
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read() or b"{}").get("erro")
+        except (ValueError, AttributeError):
+            msg = None
+        return jsonify({"ok": False, "erro": msg or f"O node respondeu {e.code}."}), e.code
+    except OSError as e:
+        logger.warning("Arquivos: falha ao baixar do node %s: %s", ip, e)
+        return jsonify({"ok": False, "erro": "O node não respondeu. Ele está online?"}), 502
+
+    nome = unquote(resp.headers.get("X-Droid-Nome") or "") or "download"
+    cabecalhos = {"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nome)}",
+                  "Cache-Control": "no-store"}
+    if resp.headers.get("Content-Length"):
+        cabecalhos["Content-Length"] = resp.headers["Content-Length"]
+
+    def blocos():
+        try:
+            while True:
+                bloco = resp.read(256 * 1024)
+                if not bloco:
+                    break
+                yield bloco
+        finally:
+            resp.close()
+
+    return Response(blocos(), headers=cabecalhos,
+                    mimetype=resp.headers.get("Content-Type") or "application/octet-stream")
 
 
 @app.route('/api/node/<ip>/historico', methods=['GET'])

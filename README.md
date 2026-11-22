@@ -188,6 +188,16 @@ O agente abre o WebSocket com `auth={papel: "node", ip, token}`; o Host só mand
 
 O PTY é aberto na primeira tecla recebida, e o redimensionamento da janela é repassado via `terminal_resize` → `resize_to_<ip>_<alias>` (`TIOCSWINSZ`).
 
+### Arquivos do Worker (aba Arquivos)
+
+Ao lado do Terminal, a aba **Arquivos** navega pela pasta home do Worker (`/root`, a mesma em que o terminal abre) e permite **enviar** arquivos ou pastas inteiras (botões ou arrastar e soltar), **baixar** um arquivo ou uma pasta (em `.zip`), **criar pasta** e **apagar** arquivo ou pasta.
+
+```
+Navegador ─/api/node/<ip>/worker/<alias>/arquivos/*─► Host ─/arquivos/* + X-Droid-Token─► Node (porta 5051) ─► rootfs/root
+```
+
+O Host repassa cada requisição ao Node em blocos (nada é guardado inteiro na memória) com o token do pareamento; o Node só atende o Host pareado (mesmo IP e token) e lê/grava direto no rootfs, sem abrir sessão do proot (`android/arquivos.py`). Caminhos com `..` e links simbólicos que saem de `/root` são recusados (aparecem na lista, mas não são seguidos nem entram no `.zip`); um envio só substitui o arquivo quando termina (grava num temporário e troca). Workers de banco não têm a aba Arquivos (o terminal deles é o `psql`), e o Host recusa essas rotas para eles.
+
 ## Estrutura do projeto
 
 ```
@@ -195,6 +205,7 @@ DroidServer/
 ├── android/                  # Agente do Node (roda no Termux)
 │   ├── node.py               # NodeAgent, WorkerManager, TerminalManager
 │   ├── servico.py            # Serviço do Worker (/app/run.sh, lançador, .conf do Supervisor)
+│   ├── arquivos.py           # Aba Arquivos: listar, enviar, baixar (.zip) e apagar na home do Worker
 │   ├── banco.py              # Workers de banco: PostgreSQL nativo do Termux
 │   ├── tunnel.py             # Cloudflare Tunnel (cloudflared no Termux)
 │   ├── registro.py           # Registro local de métricas e disponibilidade
@@ -374,6 +385,11 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 | `POST` | `/deploy_worker` | Form `ip`, `alias`, `tipo` (`linux` ou `postgres`), `imagem`, `isolado` → enfileira `criar_worker` (com `tipo: "postgres"` e a senha gerada, no caso do banco) |
 | `POST` | `/api/node/<ip>/worker/<alias>/testar` | Testa o serviço a partir do Host: HTTP na porta do `run.sh`, ou TCP no caso do banco |
 | `POST` | `/node/<ip>/worker/<alias>/delete` | Enfileira `deletar_worker` (GET responde 405) |
+| `GET` | `/api/node/<ip>/worker/<alias>/arquivos?caminho=` | Lista a pasta (relativa a `/root`): `{itens: [{nome, tipo, tamanho, modificado, link}]}` |
+| `GET` | `/api/node/<ip>/worker/<alias>/arquivos/baixar?caminho=` | Baixa o arquivo, ou a pasta como `.zip` |
+| `POST` | `/api/node/<ip>/worker/<alias>/arquivos/enviar?caminho=` | Corpo = conteúdo do arquivo; cria as pastas que faltarem e substitui o existente |
+| `POST` | `/api/node/<ip>/worker/<alias>/arquivos/pasta?caminho=` | Cria a pasta |
+| `POST` | `/api/node/<ip>/worker/<alias>/arquivos/apagar?caminho=` | Apaga o arquivo ou a pasta inteira (a home não pode ser apagada) |
 | `GET` | `/node/<ip>/tunnel` | SPA: tela do Cloudflare Tunnel |
 | `POST` | `/node/<ip>/tunnel` | `{"token": "..."}` (ou o comando com `--token`) → enfileira `configurar_tunnel`; responde `{ok, token_fim}` |
 | `POST` | `/node/<ip>/tunnel/delete` | Enfileira `remover_tunnel` |
@@ -382,7 +398,7 @@ No Node, as variáveis de conexão ficam salvas em `~/.config/droidserver/env` e
 
 Com senha definida, as rotas acima exigem login (páginas redirecionam para `/login`; a API responde 401), exceto `/api/node_sync`, autenticada pelo token do Node. Todo `POST` vindo de **outro site** (cabeçalho `Origin` diferente do painel) é recusado com 403.
 
-No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{host_port, token, token_atual?}`; `token_atual` permite ao mesmo Host parear de um IP novo) e `POST /desparear` (`{token}`, só do Host pareado).
+No Node (porta 5051): `GET /droidserver` (identificação), `POST /parear` (`{host_port, token, token_atual?}`; `token_atual` permite ao mesmo Host parear de um IP novo) e `POST /desparear` (`{token}`, só do Host pareado). Também na 5051, só para o Host pareado (mesmo IP e cabeçalho `X-Droid-Token`): `GET /arquivos/listar`, `GET /arquivos/baixar`, `POST /arquivos/enviar`, `POST /arquivos/pasta` e `POST /arquivos/apagar`, todos com `?alias=&caminho=`.
 
 ### Socket.IO
 

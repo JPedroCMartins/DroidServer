@@ -222,6 +222,11 @@
             gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
             db: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/>',
             cloud: '<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9z"/>',
+            folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
+            folderPlus: '<path d="M12 10v6"/><path d="M9 13h6"/><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2z"/>',
+            file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+            upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/>',
+            link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
             full: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
         };
 
@@ -265,15 +270,41 @@
             return { tone: 'muted', label: st || 'Sem serviço', st };
         }
 
+        // Workers de banco não têm a aba Arquivos (o terminal deles é o psql).
+        // O tipo vem do /api/node/<ip>; enquanto não chega, vale o último conhecido.
+        const workersBanco = new Set();
+        function marcarTipoWorker(ip, alias, ehBanco) {
+            const chave = ip + '|' + alias;
+            if (ehBanco) workersBanco.add(chave); else workersBanco.delete(chave);
+            document.querySelectorAll('[data-aba-arquivos]').forEach(a => {
+                if (a.dataset.abaArquivos === chave) a.classList.toggle('hidden', ehBanco);
+            });
+            const arquivos = `/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}/arquivos`;
+            if (ehBanco && location.pathname === arquivos) {
+                history.replaceState({}, '', arquivos.replace(/\/arquivos$/, ''));
+                route();
+            }
+        }
+        async function conferirTipoWorker(ip, alias) {
+            try {
+                const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
+                if (!res.ok) return;
+                const n = await res.json();
+                const sv = (n.servicos || {})[alias];
+                if (sv) marcarTipoWorker(ip, alias, sv.tipo === 'postgres');
+            } catch (_) { }
+        }
+
         // Abas da página do worker
         function abasWorker(ip, alias, ativa) {
-            const aba = (id, href, icone, texto) => `
-                <a href="${href}" data-link class="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition
+            setTimeout(() => conferirTipoWorker(ip, alias), 0);
+            const aba = (id, href, icone, texto, extra = '') => `
+                <a href="${href}" data-link ${extra} class="${extra.includes('data-aba-arquivos') && workersBanco.has(ip + '|' + alias) ? 'hidden ' : ''}flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition
                     ${ativa === id ? 'bg-accent/20 text-white shadow-[inset_0_-2px_0_#e94560]' : 'text-muted hover:text-slate-200 hover:bg-slate-400/10'}">
                     ${svg(icone, 'w-4 h-4')}${texto}</a>`;
             const base = `/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}`;
             return `<nav class="flex gap-1 p-1 rounded-xl bg-surface border border-slate-400/15 w-fit">
-                ${aba('servico', base, ICON.gear, 'Serviço')}${aba('terminal', base + '/terminal', ICON.terminal, 'Terminal')}</nav>`;
+                ${aba('servico', base, ICON.gear, 'Serviço')}${aba('terminal', base + '/terminal', ICON.terminal, 'Terminal')}${aba('arquivos', base + '/arquivos', ICON.folder, 'Arquivos', `data-aba-arquivos="${esc(ip + '|' + alias)}"`)}</nav>`;
         }
 
         function topbar(title, subtitle, actions = '') {
@@ -474,6 +505,9 @@
             let m;
             if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)\/terminal$/))) {
                 return viewTerminal(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
+            }
+            if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)\/arquivos$/))) {
+                return viewArquivos(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
             }
             if ((m = path.match(/^\/node\/([^/]+)\/tunnel$/))) {
                 return viewTunnel(decodeURIComponent(m[1]));
@@ -928,6 +962,7 @@
                 const cards = workers.map(w => {
                     const sv = servicos[w] || null;
                     const ehBanco = !!(sv && sv.tipo === 'postgres');
+                    if (sv) (ehBanco ? workersBanco.add(ip + '|' + w) : workersBanco.delete(ip + '|' + w));
                     const apagando = removendo.has(w);
                     const e = estadoServico(sv, ws[w]);
                     const st = e.st;
@@ -973,6 +1008,7 @@
                         <div class="flex gap-2 mt-auto">
                             <a href="/node/${esc(ip)}/worker/${esc(w)}" data-link class="btn btn-primary flex-1">${svg(ICON.gear)}Serviço</a>
                             <a href="/node/${esc(ip)}/worker/${esc(w)}/terminal" data-link class="btn btn-dark !px-3" title="Abrir terminal" aria-label="Abrir terminal do worker ${esc(w)}">${svg(ICON.terminal)}</a>
+                            ${ehBanco ? '' : `<a href="/node/${esc(ip)}/worker/${esc(w)}/arquivos" data-link class="btn btn-dark !px-3" title="Arquivos da pasta home" aria-label="Arquivos do worker ${esc(w)}">${svg(ICON.folder)}</a>`}
                             <button type="button" data-delete="${esc(w)}" ${apagando ? 'disabled' : ''} title="Apagar worker" aria-label="Apagar worker ${esc(w)}" class="btn btn-danger !px-3">${svg(ICON.trash)}</button>
                         </div>
                     </article>`;
@@ -2309,6 +2345,339 @@ exec python3 bot.py`)}
                 term.dispose();
                 view.classList.remove('md:overflow-hidden');
                 view.classList.add('md:overflow-y-auto');
+            };
+        }
+
+        // =====================================================================
+        // VIEW: Arquivos da pasta home (/root) do worker
+        //   GET  /api/node/<ip>/worker/<alias>/arquivos?caminho=   -> listar
+        //   GET  .../arquivos/baixar?caminho=   (arquivo, ou pasta em .zip)
+        //   POST .../arquivos/enviar?caminho=   (corpo = o arquivo)
+        //   POST .../arquivos/pasta?caminho=  ·  .../arquivos/apagar?caminho=
+        //   ?p=<caminho> na URL guarda a pasta aberta (o voltar do navegador funciona)
+        // =====================================================================
+        function viewArquivos(ip, alias) {
+            setNav(ip);
+            setFooter(`<div class="flex items-center gap-2">${svg(ICON.folder, 'w-4 h-4')}Pasta home do worker</div>`);
+            const api = `/api/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}/arquivos`;
+            const base = `/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}/arquivos`;
+            const juntar = (...p) => p.filter(Boolean).join('/');
+            const q = (rel) => '?caminho=' + encodeURIComponent(rel);
+            let caminho = (new URLSearchParams(location.search).get('p') || '').split('/').filter(Boolean).join('/');
+            let itens = [], visiveis = [], vivo = true, enviando = false, xhrAtual = null, geracao = 0;
+            let ocultos = false;
+            try { ocultos = localStorage.getItem('fmOcultos') === '1'; } catch (_) { }
+
+            $('view').innerHTML = `
+            <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14 flex flex-col gap-5">
+                <header class="flex items-end justify-between gap-4 flex-wrap">
+                    <div>
+                        <h1 class="section-title text-[26px] tracking-tight flex items-center gap-2.5">Worker <span class="chip">${esc(alias)}</span></h1>
+                        <p class="mt-1 text-[13.5px] text-muted">Node ${esc(ip)} — arquivos da pasta <code class="text-slate-300">/root</code> (a home do terminal).</p>
+                        <div class="mt-3">${abasWorker(ip, alias, 'arquivos')}</div>
+                    </div>
+                    <a href="/node/${esc(ip)}" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao node</a>
+                </header>
+
+                <section id="fmArea" class="card card-static !p-0 overflow-hidden relative">
+                    <div class="flex items-center justify-between gap-3 flex-wrap px-4 py-3 border-b border-slate-400/15">
+                        <nav id="fmTrilha" class="flex items-center gap-1 flex-wrap min-w-0 text-[13px] font-mono" aria-label="Pasta atual"></nav>
+                        <div class="flex gap-2 flex-wrap items-center">
+                            <label class="flex items-center gap-1.5 text-[12px] text-muted cursor-pointer select-none mr-1">
+                                <input type="checkbox" id="fmOcultos" class="accent-[#e94560]" ${ocultos ? 'checked' : ''}>Ocultos
+                            </label>
+                            <button class="btn btn-ghost !px-3" id="fmAtualizar" title="Atualizar" aria-label="Atualizar">${svg(ICON.refresh)}</button>
+                            <button class="btn btn-ghost" id="fmNovaPasta">${svg(ICON.folderPlus)}Nova pasta</button>
+                            <button class="btn btn-dark" id="fmBtnArquivos">${svg(ICON.upload)}Enviar arquivos</button>
+                            <button class="btn btn-dark" id="fmBtnPasta">${svg(ICON.folder)}Enviar pasta</button>
+                            <button class="btn btn-ghost" id="fmBaixarAtual" title="Baixa a pasta aberta como .zip">${svg(ICON.download)}Baixar .zip</button>
+                        </div>
+                    </div>
+                    <div id="fmProgresso" class="hidden px-4 py-3 border-b border-slate-400/15 bg-slate-950/30">
+                        <div class="flex justify-between gap-3 text-[12.5px] mb-1.5">
+                            <span id="fmProgTexto" class="truncate min-w-0"></span>
+                            <span class="flex items-center gap-3 shrink-0"><span id="fmProgPct" class="font-bold"></span>
+                            <button type="button" id="fmCancelar" class="text-muted hover:text-bad text-[12px] underline">Cancelar</button></span>
+                        </div>
+                        <div class="h-1.5 rounded-full bg-slate-950/45 border border-slate-400/15 overflow-hidden">
+                            <div id="fmProgBarra" class="h-full rounded-full bg-accent transition-[width] duration-200" style="width:0%"></div>
+                        </div>
+                        <div id="fmProgErros" class="text-[12px] text-bad mt-2 hidden"></div>
+                    </div>
+                    <div id="fmLista" class="min-h-[240px]"></div>
+                    <div id="fmSoltar" class="hidden absolute inset-0 z-10 items-center justify-center bg-slate-950/75 border-2 border-dashed border-accent rounded-[inherit] pointer-events-none">
+                        <div class="text-center">${svg(ICON.upload, 'w-10 h-10 mx-auto text-accent')}
+                            <p class="mt-2 font-semibold text-white">Solte para enviar</p>
+                            <p class="text-[12.5px] text-muted font-mono" id="fmSoltarDestino"></p></div>
+                    </div>
+                </section>
+                <p class="text-[11.5px] text-muted">Arraste arquivos ou pastas para a lista para enviar. Pastas são baixadas como <code>.zip</code>. Links simbólicos que apontam para fora de <code>/root</code> aparecem, mas não são seguidos.</p>
+            </div>
+            <input type="file" id="fmInArquivos" multiple class="hidden">
+            <input type="file" id="fmInPasta" webkitdirectory multiple class="hidden">
+            <iframe id="fmBaixar" class="hidden" title="download"></iframe>`;
+
+            const lista = $('fmLista');
+            const caminhoTela = (rel) => '/root' + (rel ? '/' + rel : '');
+
+            function trilha() {
+                const partes = caminho ? caminho.split('/') : [];
+                const link = (rel, txt) => `<button type="button" data-ir="${esc(rel)}" class="px-1.5 py-0.5 rounded hover:bg-slate-400/10 hover:text-white text-muted">${esc(txt)}</button>`;
+                let html = link('', '~ /root');
+                partes.forEach((p, i) => {
+                    html += `<span class="text-slate-500">/</span>`;
+                    html += i === partes.length - 1
+                        ? `<span class="px-1.5 py-0.5 text-white truncate max-w-[220px]">${esc(p)}</span>`
+                        : link(partes.slice(0, i + 1).join('/'), p);
+                });
+                $('fmTrilha').innerHTML = html;
+                $('fmSoltarDestino').innerText = caminhoTela(caminho);
+            }
+
+            const quando = (t) => t ? new Date(t * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+            function desenhar() {
+                visiveis = itens.filter(i => ocultos || !i.nome.startsWith('.'));
+                const linha = (conteudo) => `<div class="flex items-center gap-3 px-4 py-2 border-b border-slate-400/10 hover:bg-slate-400/5 min-h-[46px]">${conteudo}</div>`;
+                let html = '';
+                if (caminho) {
+                    const pai = caminho.split('/').slice(0, -1).join('/');
+                    html += linha(`<button type="button" data-ir="${esc(pai)}" class="flex items-center gap-3 flex-1 text-left text-muted hover:text-white">${svg(ICON.back, 'w-[18px] h-[18px] shrink-0')}<span class="text-[13px]">Voltar para ${esc(caminhoTela(pai))}</span></button>`);
+                }
+                html += visiveis.map((it, i) => {
+                    const icone = it.tipo === 'pasta' ? svg(ICON.folder, 'w-[18px] h-[18px] shrink-0 text-accent2')
+                        : it.tipo === 'link' ? svg(ICON.link, 'w-[18px] h-[18px] shrink-0 text-muted')
+                            : svg(ICON.file, 'w-[18px] h-[18px] shrink-0 text-muted');
+                    const nome = `<span class="truncate">${esc(it.nome)}</span>${it.link ? `<span class="shrink-0 text-muted" title="Link simbólico">${svg(ICON.link, 'w-3.5 h-3.5')}</span>` : ''}`;
+                    const titulo = it.tipo === 'link' ? 'Link para fora de /root (não é seguido)' : it.nome;
+                    const alvo = it.tipo === 'pasta'
+                        ? `<button type="button" data-abrir="${i}" class="flex items-center gap-2 min-w-0 text-left text-[13.5px] font-medium text-slate-100 hover:text-accent" title="${esc(titulo)}">${nome}</button>`
+                        : `<span class="flex items-center gap-2 min-w-0 text-[13.5px] ${it.tipo === 'link' ? 'text-muted' : ''}" title="${esc(titulo)}">${nome}</span>`;
+                    const baixar = it.tipo === 'link' ? '' :
+                        `<button type="button" data-baixar="${i}" class="btn btn-ghost !px-2.5 !py-1.5" title="${it.tipo === 'pasta' ? 'Baixar pasta (.zip)' : 'Baixar'}" aria-label="Baixar ${esc(it.nome)}">${svg(ICON.download)}</button>`;
+                    return linha(`
+                        <span class="flex items-center gap-3 flex-1 min-w-0">${icone}${alvo}</span>
+                        <span class="hidden sm:block w-24 text-right text-[12.5px] text-muted shrink-0">${it.tipo === 'arquivo' ? fmtBytes(it.tamanho) : ''}</span>
+                        <span class="hidden md:block w-36 text-right text-[12.5px] text-muted shrink-0">${quando(it.modificado)}</span>
+                        <span class="flex gap-1.5 shrink-0">${baixar}
+                            <button type="button" data-apagar="${i}" class="btn btn-danger !px-2.5 !py-1.5" title="Apagar" aria-label="Apagar ${esc(it.nome)}">${svg(ICON.trash)}</button></span>`);
+                }).join('');
+                const escondidos = itens.length - visiveis.length;
+                if (!visiveis.length) {
+                    html += `<div class="px-4 py-12 text-center text-[13px] text-muted">${svg(ICON.folder, 'w-8 h-8 mx-auto mb-2 opacity-60')}
+                        Pasta vazia${escondidos ? ` (${escondidos} oculto(s) — marque “Ocultos”)` : ''}. Arraste arquivos para cá ou use “Enviar”.</div>`;
+                } else if (escondidos) {
+                    html += `<div class="px-4 py-2 text-[11.5px] text-muted">${escondidos} item(ns) oculto(s) — marque “Ocultos” para ver.</div>`;
+                }
+                lista.innerHTML = html;
+            }
+
+            async function carregar() {
+                const minha = ++geracao;
+                trilha();
+                lista.innerHTML = `<div class="px-4 py-12 text-center text-[13px] text-muted">Carregando…</div>`;
+                try {
+                    const res = await fetch(api + q(caminho));
+                    const data = await res.json().catch(() => ({}));
+                    if (!vivo || minha !== geracao) return;
+                    if (!res.ok || !data.ok) {
+                        lista.innerHTML = `<div class="px-4 py-12 text-center text-[13px] text-bad">${esc(data.erro || 'Falha ao listar a pasta.')}</div>`;
+                        if (res.status === 404 && caminho) lista.innerHTML += `<div class="text-center pb-8"><button type="button" data-ir="" class="btn btn-ghost">Ir para /root</button></div>`;
+                        return;
+                    }
+                    itens = data.itens || [];
+                    desenhar();
+                    if (data.truncado) toast('Pasta grande: mostrando só os primeiros itens.');
+                } catch (_) {
+                    if (vivo && minha === geracao) lista.innerHTML = `<div class="px-4 py-12 text-center text-[13px] text-bad">Falha ao consultar o host.</div>`;
+                }
+            }
+
+            function navegar(rel) {
+                caminho = rel;
+                history.pushState({}, '', base + (rel ? '?p=' + encodeURIComponent(rel) : ''));
+                carregar();
+            }
+
+            function baixar(rel) {
+                const f = $('fmBaixar');
+                f.onload = () => {
+                    // Download bem-sucedido não dispara onload; se carregou, é o JSON de erro.
+                    let msg = 'Falha ao baixar.';
+                    try { msg = JSON.parse(f.contentDocument.body.innerText).erro || msg; } catch (_) { }
+                    toast(msg);
+                };
+                f.src = api + '/baixar' + q(rel) + '&_=' + Date.now();
+                toast('Preparando o download…');
+            }
+
+            async function postar(rota, rel) {
+                const res = await fetch(api + '/' + rota + q(rel), { method: 'POST' });
+                return res.json().catch(() => ({ ok: false, erro: `Erro ${res.status}` }));
+            }
+
+            async function apagar(it) {
+                const rel = juntar(caminho, it.nome);
+                const oque = it.tipo === 'pasta' ? `a pasta "${it.nome}" e tudo o que há dentro dela` : `"${it.nome}"`;
+                if (!confirm(`Apagar ${oque}? Não dá para desfazer.`)) return;
+                const r = await postar('apagar', rel);
+                toast(r.ok ? 'Apagado.' : (r.erro || 'Falha ao apagar.'));
+                carregar();
+            }
+
+            async function novaPasta() {
+                const nome = (prompt(`Nome da nova pasta em ${caminhoTela(caminho)}:`) || '').trim();
+                if (!nome) return;
+                if (nome.includes('/') || nome === '.' || nome === '..') { toast('Nome inválido.'); return; }
+                const r = await postar('pasta', juntar(caminho, nome));
+                toast(r.ok ? 'Pasta criada.' : (r.erro || 'Falha ao criar a pasta.'));
+                carregar();
+            }
+
+            // ---- Envio: um arquivo por requisição, em sequência, com progresso ----
+            function enviarUm(arquivo, rel, aoProgresso) {
+                return new Promise((ok) => {
+                    const xhr = new XMLHttpRequest();
+                    xhrAtual = xhr;
+                    xhr.open('POST', api + '/enviar' + q(rel));
+                    xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                    xhr.upload.onprogress = (e) => aoProgresso(e.loaded);
+                    xhr.onload = () => {
+                        if (xhr.status === 401) irParaLogin();
+                        let d = {};
+                        try { d = JSON.parse(xhr.responseText); } catch (_) { }
+                        ok(xhr.status === 200 && d.ok ? null : (d.erro || `erro ${xhr.status}`));
+                    };
+                    xhr.onerror = () => ok('conexão perdida');
+                    xhr.onabort = () => ok('cancelado');
+                    xhr.send(arquivo);
+                });
+            }
+
+            const avisoSaida = (e) => { if (enviando) { e.preventDefault(); e.returnValue = ''; } };
+            window.addEventListener('beforeunload', avisoSaida);
+
+            async function enviar(lote) {
+                // lote: [{ file, rel }] e/ou [{ pasta: true, rel }] (rel relativo à pasta aberta)
+                if (!lote.length) return;
+                if (enviando) { toast('Aguarde o envio atual terminar.'); return; }
+                const destino = caminho;
+                const existentes = new Set(itens.map(i => i.nome));
+                const conflitos = [...new Set(lote.map(x => x.rel.split('/')[0]))].filter(n => existentes.has(n));
+                if (conflitos.length && !confirm(`Já existe(m) em ${caminhoTela(destino)}: ${conflitos.slice(0, 5).join(', ')}${conflitos.length > 5 ? '…' : ''}.\nOs arquivos com o mesmo nome serão substituídos. Continuar?`)) return;
+
+                const arquivos = lote.filter(x => x.file);
+                const total = arquivos.reduce((s, x) => s + x.file.size, 0) || 1;
+                let feito = 0, cancelado = false;
+                const erros = [];
+                enviando = true;
+                $('fmProgresso').classList.remove('hidden');
+                $('fmProgErros').classList.add('hidden');
+                $('fmCancelar').classList.remove('hidden');
+                $('fmCancelar').onclick = () => { cancelado = true; if (xhrAtual) xhrAtual.abort(); };
+                const pintar = (txt, bytes) => {
+                    const pct = Math.min(100, Math.round(bytes / total * 100));
+                    $('fmProgTexto').innerText = txt;
+                    $('fmProgPct').innerText = pct + '%';
+                    $('fmProgBarra').style.width = pct + '%';
+                };
+
+                for (const x of lote.filter(x => x.pasta)) {
+                    const r = await postar('pasta', juntar(destino, x.rel));
+                    if (!r.ok && !/já existe/i.test(r.erro || '')) erros.push(`${x.rel}: ${r.erro}`);
+                }
+                for (let i = 0; i < arquivos.length && vivo && !cancelado; i++) {
+                    const { file, rel } = arquivos[i];
+                    pintar(`Enviando ${i + 1}/${arquivos.length} — ${rel}`, feito);
+                    const erro = await enviarUm(file, juntar(destino, rel), (n) => pintar(`Enviando ${i + 1}/${arquivos.length} — ${rel}`, feito + n));
+                    if (erro && erro !== 'cancelado') erros.push(`${rel}: ${erro}`);
+                    feito += file.size;
+                }
+                enviando = false;
+                xhrAtual = null;
+                if (!vivo) return;
+                $('fmCancelar').classList.add('hidden');
+                if (cancelado) pintar('Envio cancelado.', feito);
+                else pintar(erros.length ? `Concluído com ${erros.length} falha(s).` : `${arquivos.length} arquivo(s) enviado(s).`, total);
+                if (erros.length) {
+                    $('fmProgErros').innerHTML = erros.slice(0, 8).map(esc).join('<br>') + (erros.length > 8 ? `<br>… e mais ${erros.length - 8}` : '');
+                    $('fmProgErros').classList.remove('hidden');
+                } else if (!cancelado) {
+                    setTimeout(() => { if (vivo && !enviando) $('fmProgresso').classList.add('hidden'); }, 2500);
+                }
+                if (destino === caminho) carregar();
+            }
+
+            const doInput = (input) => {
+                const lote = [...input.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name }));
+                input.value = '';
+                enviar(lote);
+            };
+            $('fmInArquivos').onchange = (e) => doInput(e.target);
+            $('fmInPasta').onchange = (e) => doInput(e.target);
+            $('fmBtnArquivos').onclick = () => $('fmInArquivos').click();
+            $('fmBtnPasta').onclick = () => $('fmInPasta').click();
+            $('fmNovaPasta').onclick = novaPasta;
+            $('fmAtualizar').onclick = carregar;
+            $('fmBaixarAtual').onclick = () => baixar(caminho);
+            $('fmOcultos').onchange = (e) => {
+                ocultos = e.target.checked;
+                try { localStorage.setItem('fmOcultos', ocultos ? '1' : '0'); } catch (_) { }
+                desenhar();
+            };
+
+            $('view').querySelector('section').addEventListener('click', (e) => {
+                const b = e.target.closest('button');
+                if (!b) return;
+                if (b.dataset.ir !== undefined) return navegar(b.dataset.ir);
+                if (b.dataset.abrir !== undefined) return navegar(juntar(caminho, visiveis[+b.dataset.abrir].nome));
+                if (b.dataset.baixar !== undefined) return baixar(juntar(caminho, visiveis[+b.dataset.baixar].nome));
+                if (b.dataset.apagar !== undefined) return apagar(visiveis[+b.dataset.apagar]);
+            });
+
+            // ---- Arrastar e soltar (arquivos e pastas inteiras) ----
+            const area = $('fmArea'), soltar = $('fmSoltar');
+            let dentro = 0;
+            const temArquivos = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+            const mostrar = (v) => { soltar.classList.toggle('hidden', !v); soltar.classList.toggle('flex', v); };
+            area.addEventListener('dragenter', (e) => { if (!temArquivos(e)) return; e.preventDefault(); dentro++; mostrar(true); });
+            area.addEventListener('dragover', (e) => { if (temArquivos(e)) e.preventDefault(); });
+            area.addEventListener('dragleave', () => { if (--dentro <= 0) { dentro = 0; mostrar(false); } });
+
+            const lerTodas = (leitor) => new Promise((ok, erro) => leitor.readEntries(ok, erro));
+            async function lerEntrada(entrada, prefixo, saida) {
+                if (entrada.isFile) {
+                    const f = await new Promise((ok, erro) => entrada.file(ok, erro));
+                    saida.push({ file: f, rel: prefixo + f.name });
+                } else if (entrada.isDirectory) {
+                    const leitor = entrada.createReader();
+                    const filhos = [];
+                    let parte;
+                    do { parte = await lerTodas(leitor); filhos.push(...parte); } while (parte.length);
+                    if (!filhos.length) saida.push({ pasta: true, rel: prefixo + entrada.name });
+                    for (const f of filhos) await lerEntrada(f, prefixo + entrada.name + '/', saida);
+                }
+            }
+            area.addEventListener('drop', async (e) => {
+                if (!temArquivos(e)) return;
+                e.preventDefault();
+                dentro = 0; mostrar(false);
+                const entradas = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+                const soltos = [...e.dataTransfer.files];
+                const lote = [];
+                try {
+                    if (entradas.length) for (const en of entradas) await lerEntrada(en, '', lote);
+                    else soltos.forEach(f => lote.push({ file: f, rel: f.name }));
+                } catch (_) { toast('Não foi possível ler os itens soltos.'); return; }
+                enviar(lote);
+            });
+
+            carregar();
+
+            cleanup = () => {
+                vivo = false;
+                if (xhrAtual) xhrAtual.abort();
+                window.removeEventListener('beforeunload', avisoSaida);
             };
         }
 

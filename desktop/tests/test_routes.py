@@ -1122,3 +1122,118 @@ def test_acoes_de_banco_chegam_ao_node(terminal, acao):
     dono.emit("servico", {"ip": "10.0.0.5", "alias": "w1", "acao": acao, "dados": {"nome": "app1"}, "req": 9})
     pedido = [e["args"][0] for e in node.get_received() if e["name"] == "servico_to_10.0.0.5"]
     assert len(pedido) == 1 and pedido[0]["acao"] == acao and pedido[0]["dados"] == {"nome": "app1"}
+
+
+# ---------- Arquivos do worker (repasse ao node) ----------
+
+@pytest.fixture
+def node_falso(client, monkeypatch):
+    """Servidor HTTP no lugar do node (porta 5051), que registra as chamadas."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlsplit
+
+    chamadas = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def _json(self, status, corpo):
+            dados = json.dumps(corpo).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(dados)))
+            self.end_headers()
+            self.wfile.write(dados)
+
+        def _registrar(self, metodo):
+            url = urlsplit(self.path)
+            corpo = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            chamadas.append((metodo, url.path, parse_qs(url.query), self.headers.get("X-Droid-Token"), corpo))
+            return url.path
+
+        def do_GET(self):
+            rota = self._registrar("GET")
+            if rota == "/arquivos/baixar":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("X-Droid-Nome", "minha%20pasta.zip")
+                self.end_headers()
+                self.wfile.write(b"PK-conteudo")
+            else:
+                self._json(200, {"ok": True, "itens": [{"nome": "a.txt"}]})
+
+        def do_POST(self):
+            rota = self._registrar("POST")
+            if rota == "/arquivos/apagar":
+                return self._json(403, {"ok": False, "erro": "A pasta home não pode ser apagada."})
+            self._json(200, {"ok": True})
+
+        def log_message(self, *a):
+            pass
+
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    r = _routes()
+    monkeypatch.setattr(r, "NODE_PORTA", srv.server_address[1])
+    r.cadastro["127.0.0.1"] = {"token": "ab" * 24}
+    client.post("/api/node_sync", json={"ip": "127.0.0.1", "workers": ["w1"]})
+    yield chamadas
+    srv.shutdown()
+
+
+def test_arquivos_lista_com_token_do_node(client, node_falso):
+    r = client.get("/api/node/127.0.0.1/worker/w1/arquivos?caminho=proj/src")
+    assert r.status_code == 200 and r.get_json()["itens"] == [{"nome": "a.txt"}]
+    metodo, rota, q, token, _ = node_falso[-1]
+    assert (metodo, rota, token) == ("GET", "/arquivos/listar", "ab" * 24)
+    assert q == {"alias": ["w1"], "caminho": ["proj/src"]}
+
+
+def test_arquivos_envia_o_corpo(client, node_falso):
+    r = client.post("/api/node/127.0.0.1/worker/w1/arquivos/enviar?caminho=d/x.bin",
+                    data=b"\x00\x01binario", content_type="application/octet-stream")
+    assert r.status_code == 200
+    metodo, rota, q, _, corpo = node_falso[-1]
+    assert (metodo, rota, q["caminho"], corpo) == ("POST", "/arquivos/enviar", ["d/x.bin"], b"\x00\x01binario")
+
+
+def test_arquivos_repasse_o_erro_do_node(client, node_falso):
+    r = client.post("/api/node/127.0.0.1/worker/w1/arquivos/apagar?caminho=")
+    assert r.status_code == 403 and "home" in r.get_json()["erro"]
+
+
+def test_arquivos_baixa_como_anexo(client, node_falso):
+    r = client.get("/api/node/127.0.0.1/worker/w1/arquivos/baixar?caminho=minha%20pasta")
+    assert r.status_code == 200 and r.data == b"PK-conteudo"
+    assert r.headers["Content-Type"] == "application/zip"
+    assert r.headers["Content-Disposition"] == "attachment; filename*=UTF-8''minha%20pasta.zip"
+
+
+def test_arquivos_node_ou_worker_desconhecido(client, node_falso):
+    assert client.get("/api/node/10.9.9.9/worker/w1/arquivos").status_code == 404
+    assert client.get("/api/node/127.0.0.1/worker/nope/arquivos").status_code == 404
+    _routes().cadastro.clear()
+    assert client.get("/api/node/127.0.0.1/worker/w1/arquivos").status_code == 409
+
+
+def test_arquivos_node_fora_do_ar(client, node_falso, monkeypatch):
+    monkeypatch.setattr(_routes(), "NODE_PORTA", 1)
+    r = client.get("/api/node/127.0.0.1/worker/w1/arquivos")
+    assert r.status_code == 502 and "não respondeu" in r.get_json()["erro"]
+
+
+def test_arquivos_post_de_outro_site_recusado(client, node_falso):
+    r = client.post("/api/node/127.0.0.1/worker/w1/arquivos/apagar?caminho=x",
+                    headers={"Origin": "http://malicioso.example"})
+    assert r.status_code == 403 and node_falso == []
+
+
+def test_spa_aba_arquivos(client):
+    assert client.get("/node/10.0.0.5/worker/w1/arquivos").status_code == 200
+
+
+def test_arquivos_recusa_worker_de_banco(client, node_falso):
+    client.post("/api/node_sync", json={"ip": "127.0.0.1", "workers": ["w1", "pg1"],
+                                        "servicos": {"pg1": {"tipo": "postgres", "estado": "RUNNING"}}})
+    r = client.get("/api/node/127.0.0.1/worker/pg1/arquivos")
+    assert r.status_code == 400 and "banco" in r.get_json()["erro"]
+    assert node_falso == []

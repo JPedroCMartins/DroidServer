@@ -17,6 +17,7 @@ from logging.handlers import RotatingFileHandler
 import requests
 import socketio
 
+import arquivos
 import banco
 import registro
 import servico
@@ -228,13 +229,24 @@ def iniciar_servidor_descoberta(descoberta, porta=None):
             self.end_headers()
             self.wfile.write(dados)
 
+        def _arquivos(self, metodo):
+            """Gerenciador de arquivos dos workers (ver arquivos.py)."""
+            if not self.path.startswith("/arquivos/"):
+                return False
+            arquivos.atender(self, metodo, descoberta.agente.config)
+            return True
+
         def do_GET(self):
+            if self._arquivos("GET"):
+                return
             if self.path.rstrip("/") == "/droidserver":
                 self._responder(*descoberta.info())
             else:
                 self._responder(404, {"erro": "não encontrado"})
 
         def do_POST(self):
+            if self._arquivos("POST"):
+                return
             try:
                 tamanho = min(int(self.headers.get("Content-Length", 0)), 4096)
                 dados = json.loads(self.rfile.read(tamanho) or b"{}")
