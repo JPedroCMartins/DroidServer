@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DroidServer — Entrar</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='img/droidserver-favicon.svg') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/poppins.css') }}">
     <style>
         /* Padrão visual do portfolio-page: fundo #1a1a2e, card #16213e, detalhe #0f3460, destaque #e94560. */
@@ -51,11 +52,7 @@
         @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 
         .marca { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 28px; }
-        .marca .logo {
-            width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
-            background: var(--highlight); color: #fff; font-weight: 700; font-size: 16px;
-            box-shadow: 0 0 20px rgba(233, 69, 96, .35);
-        }
+        .marca .logo { width: 52px; height: 52px; filter: drop-shadow(0 0 10px rgba(233, 69, 96, .35)); }
         .marca strong { display: block; font-size: 18px; font-weight: 700; }
         .marca span { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--text-secondary); }
 
@@ -116,7 +113,7 @@
 <body>
     <main>
         <div class="marca">
-            <div class="logo">DS</div>
+            <img class="logo" src="{{ url_for('static', filename='img/droidserver-icone.svg') }}" alt="">
             <div>
                 <strong>DroidServer</strong>
                 <span>Painel de orquestração</span>

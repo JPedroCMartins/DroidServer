@@ -732,7 +732,8 @@ def test_painel_nao_depende_de_internet(client):
     assert len(recursos) >= 6
     for caminho in recursos:
         resp = client.get(caminho)
-        assert resp.status_code == 200 and len(resp.data) > 500, caminho
+        # > 200 bytes: arquivo de verdade, não um stub vazio (o favicon SVG tem ~500)
+        assert resp.status_code == 200 and len(resp.data) > 200, caminho
         resp.close()
     css = client.get("/static/vendor/poppins.css")
     for fonte in re.findall(r"url\('([^']+)'\)", css.get_data(as_text=True)):
