@@ -23,6 +23,7 @@ O que já foi feito no DroidServer, em resumo. Os detalhes (decisões, telas pro
 | 18/11 | **Workers de banco, refinamento:** vários bancos por instância (usuário dono por banco, criar/apagar pelo painel), pacote preso com `apt-mark hold` e aviso de versão incompatível (major dos dados ≠ binário), comandos de migração (`pg_dump`/`pg_restore`/`pg_dumpall`) no card Conexão |
 | 16–18/11 | **Fase 4 — texto:** título único, resumo/abstract, conclusão, capturas do painel (8.8), gerador do `.docx` a partir do vault, resultados da E7 (PR #30), referências ⚠ conferidas na Crossref com DOIs (PR #31); orientador, e-mail e Quadro 2 conferidos nas fontes (Junkyard: Ubuntu Touch + Docker Swarm) |
 | 19/11 | **Artigo enxuto:** de 53 para 29 páginas — sem detalhes de implementação, com 2 capturas do painel e os experimentos resumidos em uma tabela e 2 figuras (versão longa no commit 17f9f75) |
+| 21/11 | **Aba Arquivos do Worker** (fora do escopo do TCC): gerenciador da pasta `/root` ao lado do Terminal — enviar arquivos e pastas (inclusive arrastando), baixar arquivo ou pasta em `.zip`, criar pasta e apagar; o Host repassa em blocos ao Node (porta 5051, só o Host pareado) e nada sai da home (`..` e links para fora são recusados). Testado com Node simulado; falta validar no moto e40 |
 
 ## Bugs corrigidos (numeração da revisão de 15/11)
 
