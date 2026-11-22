@@ -634,6 +634,7 @@ def ambiente_servico(app_instance, client):
         if c.is_connected():
             c.disconnect()
     _routes().assinantes_logs.clear()
+    _routes().assinantes_ao_vivo.clear()
     _routes().sockets_nodes.clear()
 
 
@@ -1290,3 +1291,51 @@ def test_sync_cancela_log_geral_que_ninguem_assiste(ambiente_servico, client):
     client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"],
                                         "logs_ativos": ["@supervisord", "@lixo"]})
     assert _eventos(node, "logs_to_10.0.0.5") == [{"alias": "@supervisord", "acao": "cancelar"}]
+
+
+# ---------- Uso ao vivo (aba Monitor) ----------
+
+def test_ao_vivo_so_para_quem_assina_e_cancelado_quando_todos_saem(ambiente_servico):
+    node, nav_a, nav_b = ambiente_servico
+    nav_a.emit("aovivo_assinar", {"ip": "10.0.0.5"})
+    assert _eventos(node, "aovivo_to_10.0.0.5") == [{"acao": "assinar"}]
+
+    node.emit("aovivo_saida", {"t": 100.5, "cpu": 12.3, "ram": 40.0, "agente_mb": 30.1, "supervisord_mb": None,
+                               "cpu_workers": {"w1": 5.0, "../x": 1}, "ram_workers": {"w1": 21.5},
+                               "ip": "10.0.0.99"})  # o IP vem do token, não do evento
+    recebido = _eventos(nav_a, "aovivo_saida")
+    assert recebido == [{"ip": "10.0.0.5", "t": 100.5, "cpu": 12.3, "ram": 40.0, "agente_mb": 30.1,
+                         "supervisord_mb": None, "cpu_workers": {"w1": 5.0}, "ram_workers": {"w1": 21.5}}]
+    assert _eventos(nav_b, "aovivo_saida") == []
+
+    nav_b.emit("aovivo_assinar", {"ip": "10.0.0.5"})
+    node.get_received()
+    nav_a.disconnect()                       # um sai: continua
+    assert _eventos(node, "aovivo_to_10.0.0.5") == []
+    nav_b.emit("aovivo_cancelar", {"ip": "10.0.0.5"})  # o último sai
+    assert _eventos(node, "aovivo_to_10.0.0.5") == [{"acao": "cancelar"}]
+    assert _routes().assinantes_ao_vivo == {}
+
+
+def test_navegador_nao_se_passa_por_node_no_ao_vivo(ambiente_servico):
+    _, nav_a, nav_b = ambiente_servico
+    nav_a.emit("aovivo_assinar", {"ip": "10.0.0.5"})
+    nav_b.emit("aovivo_saida", {"t": 1, "cpu": 99})
+    assert _eventos(nav_a, "aovivo_saida") == []
+
+
+def test_sync_renova_ou_cancela_o_ao_vivo(ambiente_servico, client):
+    node, nav_a, _ = ambiente_servico
+    # ninguém assistindo, mas o node mede: cancela
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"], "ao_vivo": True})
+    assert _eventos(node, "aovivo_to_10.0.0.5") == [{"acao": "cancelar"}]
+    # agente antigo (sem o campo) ou já parado: nada
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"]})
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"], "ao_vivo": False})
+    assert _eventos(node, "aovivo_to_10.0.0.5") == []
+
+    # alguém assistindo: cada sync renova a validade no node
+    nav_a.emit("aovivo_assinar", {"ip": "10.0.0.5"})
+    node.get_received()
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"], "ao_vivo": True})
+    assert _eventos(node, "aovivo_to_10.0.0.5") == [{"acao": "assinar"}]

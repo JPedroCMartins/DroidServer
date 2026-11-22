@@ -18,13 +18,14 @@ from logging.handlers import RotatingFileHandler
 import requests
 import socketio
 
+import aovivo
 import armazenamento
 import arquivos
 import banco
 import registro
 import servico
 import tunnel
-from sysinfo import ProcessCPUMonitor, SystemMonitor, _rss_kb, info_aparelho, memoria_grupos
+from sysinfo import ProcessCPUMonitor, SystemMonitor, _read_mem, _rss_kb, info_aparelho, memoria_grupos
 
 log = logging.getLogger("node")
 
@@ -740,6 +741,12 @@ class NodeAgent:
         # Logs do serviço de cada worker e os gerais do node (@agente,
         # @supervisord), enviados ao painel enquanto alguém assiste
         self.logs = servico.LogsAoVivo(self._enviar_logs, caminho_de=self._caminho_log)
+        # Uso a cada 1 s enquanto a aba Monitor está aberta (só o instantâneo,
+        # com um medidor de CPU próprio para não mexer no delta de 10 s)
+        self._pids_servicos = {}
+        self._cpu_ao_vivo = None
+        self.ao_vivo = aovivo.AoVivo(self._medir_ao_vivo, self._enviar_ao_vivo,
+                                     reiniciar=self._reiniciar_ao_vivo)
         # Métricas e disponibilidade gravadas no celular, com ou sem painel
         self.registro = registro.Registro()
         # Espaço em disco de cada worker (medição cara, em cache)
@@ -832,6 +839,13 @@ class NodeAgent:
                 threading.Thread(target=self._comando_servico, args=(dados or {},), daemon=True).start()
                 return
 
+            if evento == f"aovivo_to_{self.meu_ip}":
+                if (dados or {}).get("acao") == "cancelar":
+                    self.ao_vivo.cancelar()
+                else:
+                    self.ao_vivo.assinar()
+                return
+
             if evento == f"logs_to_{self.meu_ip}":
                 alias = (dados or {}).get("alias")
                 if (dados or {}).get("acao") == "cancelar":
@@ -853,6 +867,34 @@ class NodeAgent:
                                          'linhas': linhas, 'inicial': inicial})
         except Exception as e:
             log.debug("Falha ao enviar logs de '%s': %s", alias, e)
+
+    def _reiniciar_ao_vivo(self):
+        self._cpu_ao_vivo = ProcessCPUMonitor()
+
+    def _medir_ao_vivo(self):
+        """Instantâneo barato (só /proc): CPU e RAM do aparelho, do agente e dos workers.
+
+        Os pids dos serviços vêm do último ciclo de 10 s: rodar o
+        `supervisorctl` a cada segundo custaria mais do que a própria medição.
+        """
+        pids = dict(self._pids_servicos)
+        cpu = self._cpu_ao_vivo.sample(self._grupos_de_processos(pids))
+        total, disponivel = _read_mem()
+        pid_sup = next((registro.ppid(p) for p in pids.values()), None)
+        rss_sup = _rss_kb(pid_sup, "/proc") if pid_sup else 0
+        return {
+            "t": round(time.time(), 2),
+            "cpu": cpu["total"],
+            "ram": round(100.0 * max(total - disponivel, 0) / total, 1) if total else None,
+            "agente_mb": round((_rss_kb(os.getpid(), "/proc") or 0) / 1024, 1) or None,
+            "supervisord_mb": round(rss_sup / 1024, 1) if rss_sup else None,
+            "cpu_workers": cpu["grupos"],
+            "ram_workers": memoria_grupos({a: [p] for a, p in pids.items()}),
+        }
+
+    def _enviar_ao_vivo(self, amostra):
+        if self.sio.connected:
+            self.sio.emit('aovivo_saida', amostra)
 
     def _comando_servico(self, dados):
         """Executa um comando da aba Serviço e responde ao navegador que pediu."""
@@ -923,6 +965,7 @@ class NodeAgent:
         """Mede o Node: estado dos serviços, CPU e RAM. Não depende do painel."""
         status_sup = servico.status_supervisor()
         worker_pids = {a: s["pid"] for a, s in status_sup.items() if s["pid"]}
+        self._pids_servicos = worker_pids
         # Containers do proot-distro + workers de banco (PostgreSQL no Termux)
         workers = sorted(set(WorkerManager.get_installed_workers()) | set(banco.listar()))
         servicos = servico.estado_servicos(workers, status_sup)
@@ -999,6 +1042,8 @@ class NodeAgent:
             # logs que este agente está acompanhando: o host reconcilia com
             # quem está assistindo (ex.: depois de o agente reiniciar)
             "logs_ativos": sorted(self.logs.ativos()),
+            # idem para o uso ao vivo da aba Monitor
+            "ao_vivo": self.ao_vivo.ativo(),
             "cpu": medida["cpu"],
             "mem": medida["mem"],
             "cpu_termux": medida["cpu_termux"],

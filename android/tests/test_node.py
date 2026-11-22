@@ -1322,3 +1322,53 @@ def test_painel_pede_historico_e_recebe_o_do_registro(monkeypatch):
     hist = enviados[1]["historico"]
     assert hist[0]["cpu"] == 1.5 and hist[0]["ram"] == 40.0 and len(hist) == 2
     assert "historico" not in enviados[2]
+
+
+# ---------- Uso ao vivo (aba Monitor) ----------
+
+def test_eventos_ao_vivo_ligam_e_desligam_e_vao_no_sync(monkeypatch):
+    payload = {}
+
+    class RespostaFake:
+        status_code = 200
+
+        def json(self):
+            return {"tarefas": []}
+
+    monkeypatch.setattr("requests.post", lambda url, json=None, timeout=None: (payload.update(json), RespostaFake())[1])
+    monkeypatch.setattr(node.servico, "status_supervisor", lambda: {})
+    monkeypatch.setattr(WorkerManager, "get_installed_workers", staticmethod(lambda: []))
+    agente = NodeAgent()
+    chamadas = []
+    monkeypatch.setattr(agente.ao_vivo, "assinar", lambda: chamadas.append("assinar"))
+    monkeypatch.setattr(agente.ao_vivo, "cancelar", lambda: chamadas.append("cancelar"))
+    catch_all = agente.sio.handlers["/"]["*"]
+    catch_all(f"aovivo_to_{agente.meu_ip}", {"acao": "assinar"})
+    catch_all(f"aovivo_to_{agente.meu_ip}", {"acao": "cancelar"})
+    catch_all("aovivo_to_10.9.9.9", {"acao": "assinar"})  # outro node: ignora
+    assert chamadas == ["assinar", "cancelar"]
+
+    agente._poll_once()
+    assert payload["ao_vivo"] is False
+
+
+def test_medida_ao_vivo_usa_pids_do_ultimo_ciclo(monkeypatch):
+    monkeypatch.setattr(node.servico, "status_supervisor",
+                        lambda: {"w1": {"estado": "RUNNING", "pid": 200, "uptime": "0:01:00", "detalhe": ""}})
+    monkeypatch.setattr(WorkerManager, "get_installed_workers", staticmethod(lambda: ["w1"]))
+    agente = NodeAgent()
+    monkeypatch.setattr(agente.cpu_processos, "sample", lambda grupos=None: {"total": 1.0, "grupos": {}})
+    monkeypatch.setattr(node, "memoria_grupos", lambda g: {a: 10.0 for a in g})
+    agente._amostrar()  # ciclo de 10 s: descobre o pid do serviço
+
+    # depois disso o ao vivo não roda o supervisorctl
+    monkeypatch.setattr(node.servico, "status_supervisor", lambda: (_ for _ in ()).throw(AssertionError("caro")))
+    agente._reiniciar_ao_vivo()
+    grupos = {}
+    monkeypatch.setattr(agente._cpu_ao_vivo, "sample",
+                        lambda g=None: (grupos.update(g), {"total": 7.5, "grupos": {"w1": 5.0}})[1])
+    monkeypatch.setattr(node, "_read_mem", lambda: (1000, 250))
+    a = agente._medir_ao_vivo()
+    assert grupos == {"w1": [200]}
+    assert (a["cpu"], a["ram"], a["cpu_workers"], a["ram_workers"]) == (7.5, 75.0, {"w1": 5.0}, {"w1": 10.0})
+    assert isinstance(a["t"], float)
