@@ -131,3 +131,33 @@ def test_amostra_e_serializavel(tmp_path):
     r.gravar({"t": 1.0, "servicos": {"w": {"http_ok": True}}})
     linha = (tmp_path / "m.jsonl").read_text().strip()
     assert json.loads(linha)["servicos"]["w"]["http_ok"] is True
+
+
+def test_estatisticas_reduz_a_serie_e_resume_servicos():
+    amostras = []
+    for i in range(100):
+        sv = {"web": {"estado": "RUNNING" if i % 4 else "BACKOFF", "http_ok": i % 2 == 0, "cpu": 2.0, "ram_mb": 10.0},
+              "pg": {"estado": "RUNNING", "cpu": 1.0}}
+        amostras.append({"t": 1000.0 + i * 10, "cpu_termux": float(i), "ram_pct": 50.0,
+                         "rss_agente_kb": 20480, "rss_supervisord_kb": None, "servicos": sv})
+    est = registro.estatisticas(amostras, 1000.0, 2000.0, pontos=10)
+    assert len(est["serie"]) == 10
+    assert est["serie"][0]["cpu"] == 4.5 and est["serie"][0]["agente_mb"] == 20.0
+    assert est["serie"][0]["supervisord_mb"] is None
+    web = est["servicos"]["web"]
+    assert web["rodando_pct"] == 75.0 and web["http_ok_pct"] == 50.0 and web["cpu_media"] == 2.0
+    assert web["ultimo_estado"] == "RUNNING" and web["amostras"] == 100
+    assert est["servicos"]["pg"]["http_ok_pct"] is None  # banco não tem verificação HTTP
+    assert est["amostras_total"] == 100 and est["cobertura_pct"] == 100.0
+
+
+def test_estatisticas_janela_maior_que_o_registro():
+    amostras = [{"t": 9000.0 + i * 10, "cpu_termux": 1.0} for i in range(6)]
+    est = registro.estatisticas(amostras, 0.0, 9060.0, pontos=300)
+    assert est["primeira"] == 9000.0 and est["amostras_total"] == 6
+    assert est["cobertura_pct"] < 1 and est["servicos"] == {}
+
+
+def test_estatisticas_sem_amostras():
+    est = registro.estatisticas([], 0.0, 3600.0)
+    assert est["serie"] == [] and est["primeira"] is None and est["cobertura_pct"] == 0.0

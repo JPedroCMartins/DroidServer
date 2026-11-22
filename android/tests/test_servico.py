@@ -419,3 +419,25 @@ def test_distro_ausente_nao_fica_em_cache(termux):
     (raiz / "etc").mkdir()
     (raiz / "etc/os-release").write_text('PRETTY_NAME="Debian GNU/Linux 13"\n')
     assert servico.distro("w1") == "Debian GNU/Linux 13"
+
+
+def test_logs_ao_vivo_com_caminho_proprio(tmp_path):
+    geral = tmp_path / "node.log"
+    geral.write_text("a\nb\n")
+    recebidos = []
+    caminhos = {"@agente": str(geral)}
+    logs = servico.LogsAoVivo(lambda *a: recebidos.append(a), intervalo=0.05, caminho_de=caminhos.get)
+    logs.assinar("@agente")
+    logs.assinar("@outro")   # nome desconhecido: ignorado
+    logs.assinar(None)
+    assert recebidos == [("@agente", ["a", "b"], True)]
+    assert logs.ativos() == {"@agente"}
+    logs.cancelar("@agente")
+
+
+def test_logs_ao_vivo_padrao_recusa_alias_invalido():
+    recebidos = []
+    logs = servico.LogsAoVivo(lambda *a: recebidos.append(a))
+    logs.assinar("@agente")
+    logs.assinar("../x")
+    assert recebidos == [] and logs.ativos() == set()

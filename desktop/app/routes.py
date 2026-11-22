@@ -362,6 +362,7 @@ def _bloquear_outros_sites():
 @app.route('/node/<ip>/worker/<alias>/terminal')
 @app.route('/node/<ip>/worker/<alias>/arquivos')
 @app.route('/node/<ip>/tunnel')
+@app.route('/node/<ip>/monitor')
 def spa(ip=None, alias=None):
     return render_template('index.html', senha_exigida=_senha_exigida())
 
@@ -707,8 +708,13 @@ def _resposta_do_node(metodo, ip, alias, rota, dados=None, tamanho=None):
     token, erro = _alvo_arquivos(ip, alias)
     if erro:
         return erro
+    return _repassar_json(lambda: _abrir_no_node(metodo, ip, rota, alias, token, dados, tamanho), ip, rota)
+
+
+def _repassar_json(abrir, ip, rota):
+    """Abre a requisição ao node e devolve o JSON dele (ou um erro legível)."""
     try:
-        with _abrir_no_node(metodo, ip, rota, alias, token, dados, tamanho) as resp:
+        with abrir() as resp:
             return jsonify(json.loads(resp.read() or b"{}")), resp.status
     except urllib.error.HTTPError as e:
         try:
@@ -717,7 +723,7 @@ def _resposta_do_node(metodo, ip, alias, rota, dados=None, tamanho=None):
             corpo = {}
         return jsonify({"ok": False, "erro": corpo.get("erro") or f"O node respondeu {e.code}."}), e.code
     except (OSError, ValueError) as e:
-        logger.warning("Arquivos: falha ao falar com o node %s (%s): %s", ip, rota, e)
+        logger.warning("Falha ao falar com o node %s (%s): %s", ip, rota, e)
         return jsonify({"ok": False, "erro": "O node não respondeu. Ele está online?"}), 502
 
 
@@ -781,6 +787,36 @@ def api_arquivos_baixar(ip, alias):
 
     return Response(blocos(), headers=cabecalhos,
                     mimetype=resp.headers.get("Content-Type") or "application/octet-stream")
+
+
+# ---------------------------------------------------------------------------
+# Aba Monitor do node: estatísticas e armazenamento (repasse ao node, porta
+# NODE_PORTA, com o token do cadastro). Os logs gerais vêm pelo WebSocket,
+# com os nomes reservados de LOGS_SISTEMA.
+# ---------------------------------------------------------------------------
+MONITOR_TIMEOUT = 20  # ler 7 dias do registro no celular pode levar alguns segundos
+
+
+def _monitor_no_node(metodo, ip, rota, params=None):
+    if ip not in nodes_conectados and ip not in cadastro:
+        return jsonify({"ok": False, "erro": "Node não encontrado"}), 404
+    token = (cadastro.get(ip) or {}).get("token")
+    if not token:
+        return jsonify({"ok": False, "erro": "Este node não foi pareado pelo painel."}), 409
+    url = f"http://{ip}:{NODE_PORTA}{rota}" + (f"?{urlencode(params)}" if params else "")
+    req = urllib.request.Request(url, data=b"" if metodo == "POST" else None, method=metodo,
+                                 headers={"X-Droid-Token": token})
+    return _repassar_json(lambda: urllib.request.urlopen(req, timeout=MONITOR_TIMEOUT), ip, rota)
+
+
+@app.route('/api/node/<ip>/estatisticas', methods=['GET'])
+def api_node_estatisticas(ip):
+    return _monitor_no_node("GET", ip, "/estatisticas", {"janela": request.args.get("janela", "")})
+
+
+@app.route('/api/node/<ip>/armazenamento/recalcular', methods=['POST'])
+def api_node_recalcular_armazenamento(ip):
+    return _monitor_no_node("POST", ip, "/armazenamento/recalcular")
 
 
 @app.route('/api/node/<ip>/historico', methods=['GET'])
@@ -871,6 +907,13 @@ ACOES_SERVICO = {"iniciar", "parar", "reiniciar", "ler_script", "salvar_script",
                  "credenciais", "criar_banco", "apagar_banco"}
 # (ip, alias) -> sids dos navegadores com a aba de logs aberta
 assinantes_logs = {}
+# Logs gerais do node (aba Monitor): nomes reservados, impossíveis num alias
+LOGS_SISTEMA = {"@agente", "@supervisord"}
+
+
+def _log_valido(alias):
+    """Log de um worker (ou do tunnel) ou um dos logs gerais do node."""
+    return _alias_valido(alias) or alias in LOGS_SISTEMA
 
 
 def _sala_logs(ip, alias):
@@ -916,7 +959,7 @@ def handle_servico_resposta(data):
 def handle_logs_assinar(data):
     data = data if isinstance(data, dict) else {}
     ip, alias = data.get('ip'), data.get('alias')
-    if ip not in nodes_conectados or not _alias_valido(alias):
+    if ip not in nodes_conectados or not _log_valido(alias):
         return
     join_room(_sala_logs(ip, alias))
     assinantes_logs.setdefault((ip, alias), set()).add(request.sid)
@@ -931,13 +974,12 @@ def _reconciliar_logs(ip, ativos_no_node):
     """
     if not isinstance(ativos_no_node, list):
         return  # agente antigo, que não informa
-    no_node = {a for a in ativos_no_node if isinstance(a, str)}
+    no_node = {a for a in ativos_no_node if isinstance(a, str) and _log_valido(a)}
     assistidos = {alias for (ip_s, alias), sids in assinantes_logs.items() if ip_s == ip and sids}
     for alias in sorted(assistidos - no_node):
         _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'assinar'})
     for alias in sorted(no_node - assistidos):
-        if _alias_valido(alias):
-            _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
+        _emitir_ao_node(ip, f"logs_to_{ip}", {'alias': alias, 'acao': 'cancelar'})
 
 
 def _sair_dos_logs(sid, ip, alias):
@@ -963,7 +1005,7 @@ def handle_logs_cancelar(data):
 def handle_logs_saida(data):
     data = data if isinstance(data, dict) else {}
     ip, alias = _ip_do_node_que_enviou(), data.get('alias')
-    if not ip or not _alias_valido(alias):
+    if not ip or not _log_valido(alias):
         return
     socketio.emit('logs_saida', {'alias': alias, 'linhas': data.get('linhas') or [],
                                  'inicial': bool(data.get('inicial'))}, to=_sala_logs(ip, alias))

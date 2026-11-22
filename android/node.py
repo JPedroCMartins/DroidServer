@@ -12,17 +12,19 @@ import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 from logging.handlers import RotatingFileHandler
 
 import requests
 import socketio
 
+import armazenamento
 import arquivos
 import banco
 import registro
 import servico
 import tunnel
-from sysinfo import ProcessCPUMonitor, SystemMonitor, _rss_kb, memoria_grupos
+from sysinfo import ProcessCPUMonitor, SystemMonitor, _rss_kb, info_aparelho, memoria_grupos
 
 log = logging.getLogger("node")
 
@@ -58,6 +60,20 @@ REMOVE_TENTATIVAS = 5
 REMOVE_ESPERA = 2  # segundos entre tentativas
 # Remove as cores (códigos ANSI) das mensagens do proot-distro.
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+# Logs gerais do node, acompanhados pela aba Monitor do painel. O "@" não é
+# aceito em alias de worker, então estes nomes nunca colidem com um worker.
+LOG_AGENTE = "@agente"
+LOG_SUPERVISORD = "@supervisord"
+# Janela da aba Monitor: padrão de 1 h, de 5 min a 7 dias
+JANELA_PADRAO_S = 3600
+JANELA_MIN_S = 5 * 60
+JANELA_MAX_S = 7 * 24 * 3600
+
+
+def arquivo_log_agente():
+    """Arquivo de log do agente: ~/.config/droidserver/logs/node.log (ou DROID_LOG_FILE)."""
+    return os.getenv("DROID_LOG_FILE") or os.path.join(
+        os.path.expanduser("~"), ".config", "droidserver", "logs", "node.log")
 
 
 def _configurar_logging():
@@ -65,9 +81,7 @@ def _configurar_logging():
 
     Arquivo padrão: ~/.config/droidserver/logs/node.log (ou DROID_LOG_FILE).
     """
-    log_file = os.getenv("DROID_LOG_FILE") or os.path.join(
-        os.path.expanduser("~"), ".config", "droidserver", "logs", "node.log"
-    )
+    log_file = arquivo_log_agente()
     raiz = logging.getLogger("node")
     raiz.setLevel(logging.INFO)
 
@@ -159,6 +173,8 @@ class Descoberta:
       GET  /droidserver -> identificação do node
       POST /parear      -> {host_port, token}: o IP do host é o de quem pediu
       POST /desparear   -> {token}: só o host pareado pode desfazer
+      GET  /estatisticas?janela=<s>   -> aba Monitor (só o host pareado)
+      POST /armazenamento/recalcular  -> refaz a medição de disco (idem)
     Um node já pareado só aceita novo pareamento vindo do mesmo host, para
     que outra máquina da rede não "sequestre" o node, ou de quem provar ser
     o host pareado mandando o token atual (o PC do painel trocou de IP).
@@ -203,6 +219,40 @@ class Descoberta:
         log.info("[+] Pareado com o host %s:%s pelo painel.", ip_cliente, porta)
         return 200, {"ok": True, "ip": self.agente.meu_ip}
 
+    def estatisticas(self, janela=None, agora=None):
+        """Dados da aba Monitor: histórico do registro, aparelho e armazenamento."""
+        agente = self.agente
+        try:
+            janela = int(float(janela))
+        except (TypeError, ValueError):
+            janela = JANELA_PADRAO_S
+        janela = min(max(janela, JANELA_MIN_S), JANELA_MAX_S)
+        agora = agora or time.time()
+        resumo = registro.estatisticas(agente.registro.ler(desde=agora - janela), agora - janela, agora)
+        aliases = sorted(set(resumo["servicos"]) | set(agente.aliases_instalados()))
+        try:
+            falhas = servico.falhas_do_dia(aliases)
+        except Exception:
+            log.exception("[-] Falha ao ler as falhas do dia")
+            falhas = {}
+        return 200, {
+            **resumo,
+            "janela_s": janela,
+            "falhas": falhas,
+            "aparelho": {
+                **info_aparelho(),
+                "modelo": f"{_getprop('ro.product.manufacturer')} {_getprop('ro.product.model')}".strip()
+                or socket.gethostname(),
+                "android": _getprop("ro.build.version.release"),
+            },
+            "agente": {"uptime_s": round(time.time() - agente.iniciado_em), "pid": os.getpid()},
+            "armazenamento": {"disco": armazenamento.disco(), **agente.armazenamento.estado()},
+        }
+
+    def recalcular_armazenamento(self):
+        iniciou = self.agente.armazenamento.recalcular()
+        return 200, {"ok": True, "iniciou": iniciou}
+
     def desparear(self, ip_cliente, dados):
         cfg = self.agente.config
         if not cfg.pareado:
@@ -236,8 +286,23 @@ def iniciar_servidor_descoberta(descoberta, porta=None):
             arquivos.atender(self, metodo, descoberta.agente.config)
             return True
 
+        def _monitor(self, metodo):
+            """Aba Monitor do painel: só o host pareado (mesma regra dos arquivos)."""
+            url = urlsplit(self.path)
+            rota = url.path.rstrip("/")
+            if (metodo, rota) not in {("GET", "/estatisticas"), ("POST", "/armazenamento/recalcular")}:
+                return False
+            if not arquivos.autorizado(self, descoberta.agente.config):
+                self._responder(403, {"ok": False, "erro": "Só o host pareado vê as estatísticas."})
+            elif rota == "/estatisticas":
+                janela = (parse_qs(url.query).get("janela") or [None])[0]
+                self._responder(*descoberta.estatisticas(janela))
+            else:
+                self._responder(*descoberta.recalcular_armazenamento())
+            return True
+
         def do_GET(self):
-            if self._arquivos("GET"):
+            if self._arquivos("GET") or self._monitor("GET"):
                 return
             if self.path.rstrip("/") == "/droidserver":
                 self._responder(*descoberta.info())
@@ -245,7 +310,7 @@ def iniciar_servidor_descoberta(descoberta, porta=None):
                 self._responder(404, {"erro": "não encontrado"})
 
         def do_POST(self):
-            if self._arquivos("POST"):
+            if self._arquivos("POST") or self._monitor("POST"):
                 return
             try:
                 tamanho = min(int(self.headers.get("Content-Length", 0)), 4096)
@@ -671,10 +736,14 @@ class NodeAgent:
         self.monitor = SystemMonitor()
         # CPU dos processos do Termux (total e por worker): funciona sem root
         self.cpu_processos = ProcessCPUMonitor()
-        # Logs do serviço de cada worker, enviados ao painel enquanto alguém assiste
-        self.logs = servico.LogsAoVivo(self._enviar_logs)
+        self.iniciado_em = time.time()
+        # Logs do serviço de cada worker e os gerais do node (@agente,
+        # @supervisord), enviados ao painel enquanto alguém assiste
+        self.logs = servico.LogsAoVivo(self._enviar_logs, caminho_de=self._caminho_log)
         # Métricas e disponibilidade gravadas no celular, com ou sem painel
         self.registro = registro.Registro()
+        # Espaço em disco de cada worker (medição cara, em cache)
+        self.armazenamento = armazenamento.Medidor(self.aliases_instalados, self._pastas_droidserver)
         # Painel alcançável no último sync (None = ainda não tentou); só as
         # mudanças vão para o log, para não escrever um aviso a cada 10 s
         self._painel_ok = None
@@ -695,6 +764,24 @@ class NodeAgent:
         self._worker_tarefas.start()
 
         self._registrar_eventos_websocket()
+
+    @staticmethod
+    def aliases_instalados():
+        return sorted(set(WorkerManager.get_installed_workers()) | set(banco.listar()))
+
+    def _pastas_droidserver(self):
+        """Pastas do próprio agente: config/pareamento, registro de métricas e log."""
+        return [os.path.dirname(PAREAMENTO_ARQUIVO), os.path.dirname(self.registro.arquivo),
+                os.path.dirname(arquivo_log_agente())]
+
+    @staticmethod
+    def _caminho_log(alias):
+        """Arquivo de log por nome: os gerais do node ou o do serviço de um worker."""
+        if alias == LOG_AGENTE:
+            return arquivo_log_agente()
+        if alias == LOG_SUPERVISORD:
+            return servico.supervisord_log()
+        return servico.arquivo_log(alias) if servico.alias_valido(alias) else None
 
     def _get_local_ip(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -1003,6 +1090,8 @@ class NodeAgent:
                     ok, msg = WorkerManager.criar(alias, imagem, isolado)
             except Exception as e:
                 ok, msg = False, f"Erro inesperado ao criar '{alias}': {e}"
+            if ok:
+                self.armazenamento.recalcular()  # o worker novo entra na tabela de disco
             self._registrar_resultado(acao, alias, ok, msg)
 
         elif acao == "deletar_worker":
@@ -1019,6 +1108,8 @@ class NodeAgent:
                     ok, msg = WorkerManager.deletar(alias)
             except Exception as e:
                 ok, msg = False, f"Erro inesperado ao deletar '{alias}': {e}"
+            if ok:
+                self.armazenamento.esquecer(alias)
             self._registrar_resultado(acao, alias, ok, msg)
 
         elif acao == "configurar_tunnel":
