@@ -756,25 +756,31 @@ class LogsAoVivo:
     `enviar(alias, linhas, inicial)` é chamado com as linhas novas. Ao assinar,
     envia as últimas 200 linhas (inicial=True); depois, só o que for
     acrescentado. Detecta a rotação do arquivo (tamanho diminuiu).
+
+    `caminho_de(nome)` diz qual arquivo acompanhar (None = nome recusado); o
+    padrão é o log do serviço do worker. O agente também usa nomes reservados
+    para os logs gerais do node (ex.: "@agente", "@supervisord").
     """
 
-    def __init__(self, enviar, intervalo=LOG_INTERVALO):
+    def __init__(self, enviar, intervalo=LOG_INTERVALO, caminho_de=None):
         self.enviar = enviar
         self.intervalo = intervalo
+        self.caminho_de = caminho_de or (lambda alias: arquivo_log(alias) if alias_valido(alias) else None)
         self._ativos = {}  # alias -> threading.Event (parar)
         self._lock = threading.Lock()
 
     def assinar(self, alias):
-        if not alias_valido(alias):
+        caminho = self.caminho_de(alias) if isinstance(alias, str) else None
+        if not caminho:
             return
-        linhas, posicao = ultimas_linhas(arquivo_log(alias))
+        linhas, posicao = ultimas_linhas(caminho)
         self.enviar(alias, linhas, True)
         with self._lock:
             if alias in self._ativos:
                 return
             parar = threading.Event()
             self._ativos[alias] = parar
-        threading.Thread(target=self._acompanhar, args=(alias, posicao, parar), daemon=True).start()
+        threading.Thread(target=self._acompanhar, args=(alias, caminho, posicao, parar), daemon=True).start()
 
     def cancelar(self, alias):
         with self._lock:
@@ -786,8 +792,7 @@ class LogsAoVivo:
         with self._lock:
             return set(self._ativos)
 
-    def _acompanhar(self, alias, posicao, parar):
-        caminho = arquivo_log(alias)
+    def _acompanhar(self, alias, caminho, posicao, parar):
         resto = b""
         while not parar.wait(self.intervalo):
             try:

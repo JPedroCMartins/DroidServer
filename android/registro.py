@@ -120,3 +120,73 @@ def ppid(pid, proc_dir="/proc"):
             return int(f.read().rsplit(")", 1)[1].split()[1])
     except (OSError, ValueError, IndexError):
         return None
+
+
+def _media(valores):
+    nums = [v for v in valores if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return round(sum(nums) / len(nums), 1) if nums else None
+
+
+def estatisticas(amostras, desde, ate, pontos=300):
+    """Resumo de uma janela do registro para a aba Monitor do painel.
+
+    - `serie`: até `pontos` pontos (média por intervalo) de CPU do DroidServer,
+      RAM do aparelho e memória do agente e do supervisord;
+    - `servicos`: por serviço, % das amostras em RUNNING, % das verificações
+      HTTP com sucesso (só serviços web), CPU/RAM médias e o último estado.
+    A disponibilidade conta só as amostras gravadas: com o agente parado não há
+    amostra, e `cobertura_pct` mostra quanto da janela o registro cobre.
+    """
+    amostras = sorted((a for a in amostras if desde <= a.get("t", -1) <= ate), key=lambda a: a["t"])
+    passo = max((ate - desde) / max(pontos, 1), 1e-9)
+    baldes = {}
+    for a in amostras:
+        baldes.setdefault(min(int((a["t"] - desde) / passo), pontos - 1), []).append(a)
+    serie = []
+    for _, grupo in sorted(baldes.items()):
+        serie.append({
+            "t": round(sum(a["t"] for a in grupo) / len(grupo), 1),
+            "cpu": _media(a.get("cpu_termux") for a in grupo),
+            "ram": _media(a.get("ram_pct") for a in grupo),
+            "agente_mb": _media((a.get("rss_agente_kb") or 0) / 1024 or None for a in grupo),
+            "supervisord_mb": _media((a.get("rss_supervisord_kb") or 0) / 1024 or None for a in grupo),
+        })
+
+    servicos = {}
+    for a in amostras:
+        for alias, sv in (a.get("servicos") or {}).items():
+            if not isinstance(sv, dict):
+                continue
+            s = servicos.setdefault(alias, {"n": 0, "rodando": 0, "http_n": 0, "http_ok": 0,
+                                            "cpu": [], "ram_mb": [], "ultimo_estado": None, "ultimo_t": None})
+            s["n"] += 1
+            s["rodando"] += sv.get("estado") == "RUNNING"
+            if "http_ok" in sv:
+                s["http_n"] += 1
+                s["http_ok"] += bool(sv.get("http_ok"))
+            s["cpu"].append(sv.get("cpu"))
+            s["ram_mb"].append(sv.get("ram_mb"))
+            s["ultimo_estado"], s["ultimo_t"] = sv.get("estado"), a["t"]
+    resumo = {}
+    for alias, s in sorted(servicos.items()):
+        resumo[alias] = {
+            "amostras": s["n"],
+            "rodando_pct": round(100.0 * s["rodando"] / s["n"], 1),
+            "http_ok_pct": round(100.0 * s["http_ok"] / s["http_n"], 1) if s["http_n"] else None,
+            "cpu_media": _media(s["cpu"]),
+            "ram_mb_media": _media(s["ram_mb"]),
+            "ultimo_estado": s["ultimo_estado"],
+            "ultimo_t": s["ultimo_t"],
+        }
+
+    # Cada amostra cobre ~10 s (intervalo do agente)
+    cobertura = min(100.0, 100.0 * len(amostras) * 10 / (ate - desde)) if ate > desde else 0.0
+    return {
+        "desde": desde,
+        "ate": ate,
+        "primeira": amostras[0]["t"] if amostras else None,
+        "amostras_total": len(amostras),
+        "cobertura_pct": round(cobertura, 1),
+        "serie": serie,
+        "servicos": resumo,
+    }

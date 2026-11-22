@@ -307,6 +307,17 @@
                 ${aba('servico', base, ICON.gear, 'Serviço')}${aba('terminal', base + '/terminal', ICON.terminal, 'Terminal')}${aba('arquivos', base + '/arquivos', ICON.folder, 'Arquivos', `data-aba-arquivos="${esc(ip + '|' + alias)}"`)}</nav>`;
         }
 
+        // Abas da página do node
+        function abasNode(ip, ativa) {
+            const aba = (id, href, icone, texto) => `
+                <a href="${href}" data-link class="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold transition
+                    ${ativa === id ? 'bg-accent/20 text-white shadow-[inset_0_-2px_0_#e94560]' : 'text-muted hover:text-slate-200 hover:bg-slate-400/10'}">
+                    ${svg(icone, 'w-4 h-4')}${texto}</a>`;
+            const base = `/node/${encodeURIComponent(ip)}`;
+            return `<nav class="flex gap-1 p-1 rounded-xl bg-surface border border-slate-400/15 w-fit">
+                ${aba('geral', base, ICON.server, 'Visão geral')}${aba('monitor', base + '/monitor', ICON.pulse, 'Monitor')}</nav>`;
+        }
+
         function topbar(title, subtitle, actions = '') {
             return `
             <header class="flex items-end justify-between gap-4 flex-wrap mb-7">
@@ -367,38 +378,52 @@
             </article>`;
         }
 
-        function desenharGrafico(ip, amostras) {
-            const area = document.querySelector(`#${idDoIp(ip)} [data-area]`);
+        // Gráfico de linhas em SVG. Sem opções, é o card "Uso em tempo real" do
+        // dashboard (últimos 10 min, % do aparelho); a aba Monitor passa outra
+        // área, janela, séries e unidade (ex.: MB, com teto automático).
+        function desenharGrafico(ip, amostras, { area = null, series = SERIES, janela = JANELA_S, unidade = '%', teto = 100, rotulo = '−10 min' } = {}) {
+            area = area || document.querySelector(`#${idDoIp(ip)} [data-area]`);
             if (!area) return;
             const pts = (amostras || []).filter(a => a && typeof a.t === 'number');
             if (pts.length < 2) {
-                area.innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted text-center px-4">Aguardando amostras — o node envia uma a cada 10 s.</div>';
+                area.innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted text-center px-4">Aguardando amostras — o node grava uma a cada 10 s.</div>';
                 return;
             }
             const W = 320, H = 150, L = 34, R = 58, T = 8, B = 20;
-            const tMax = pts[pts.length - 1].t, tMin = tMax - JANELA_S;
+            const tMax = pts[pts.length - 1].t, tMin = tMax - janela;
             const vis = pts.filter(a => a.t >= tMin);
-            const x = (t) => L + (t - tMin) / JANELA_S * (W - L - R);
-            const y = (v) => T + (1 - Math.max(0, Math.min(100, v)) / 100) * (H - T - B);
+            if (teto == null) {  // teto automático: maior valor arredondado para cima
+                const maior = Math.max(1, ...vis.flatMap(a => series.map(s => a[s.chave] ?? 0)));
+                const passo = 10 ** Math.floor(Math.log10(maior));
+                teto = Math.ceil(maior / passo) * passo;
+            }
+            const fmt = (v) => v == null ? '—' : `${v}${unidade === '%' ? '%' : ' ' + unidade}`;
+            const fmtT = (t) => janela > 86400 ? new Date(t * 1000).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                : new Date(t * 1000).toLocaleTimeString('pt-BR');
+            const x = (t) => L + (t - tMin) / janela * (W - L - R);
+            const y = (v) => T + (1 - Math.max(0, Math.min(teto, v)) / teto) * (H - T - B);
 
-            // Linha de cada série; um valor nulo quebra a linha em vez de cair a zero
+            // Linha de cada série; um valor nulo (ou um buraco no registro) quebra a linha
+            const buraco = Math.max(janela / 60, 30);
             const caminho = (chave) => {
-                let d = '', caneta = false;
+                let d = '', caneta = false, tAnt = null;
                 for (const a of vis) {
                     const v = a[chave];
-                    if (v == null) { caneta = false; continue; }
+                    if (v == null || (tAnt != null && a.t - tAnt > buraco)) caneta = false;
+                    tAnt = a.t;
+                    if (v == null) continue;
                     d += `${caneta ? 'L' : 'M'}${x(a.t).toFixed(1)},${y(v).toFixed(1)}`;
                     caneta = true;
                 }
                 return d;
             };
-            const grade = [0, 50, 100].map(v => `
+            const grade = [0, teto / 2, teto].map(v => `
                 <line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="rgba(148,163,184,.14)" stroke-width="1"/>
-                <text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="#a7a9be">${v}%</text>`).join('');
+                <text x="${L - 6}" y="${y(v) + 3.5}" text-anchor="end" font-size="10" fill="#a7a9be">${+v.toFixed(1)}${unidade === '%' ? '%' : ''}</text>`).join('');
 
             // Rótulo direto do valor atual de cada série, afastados se colidirem
             const ultimo = vis[vis.length - 1];
-            const rotulos = SERIES.filter(s => ultimo[s.chave] != null)
+            const rotulos = series.filter(s => ultimo[s.chave] != null)
                 .map(s => ({ ...s, v: ultimo[s.chave], yy: y(ultimo[s.chave]) }))
                 .sort((a, b) => a.yy - b.yy);
             for (let i = 1; i < rotulos.length; i++) {
@@ -406,15 +431,15 @@
             }
             const marcas = rotulos.map(s => `
                 <circle cx="${x(ultimo.t)}" cy="${y(s.v)}" r="4" fill="${s.cor}" stroke="#16213e" stroke-width="2"/>
-                <text x="${x(ultimo.t) + 8}" y="${s.yy + 3.5}" font-size="11" font-weight="700" fill="#f0f0f0">${s.v}%</text>`).join('');
+                <text x="${x(ultimo.t) + 8}" y="${s.yy + 3.5}" font-size="11" font-weight="700" fill="#f0f0f0">${fmt(s.v)}</text>`).join('');
 
-            const resumo = SERIES.map(s => `${s.nome} ${ultimo[s.chave] ?? 'indisponível'}${ultimo[s.chave] != null ? '%' : ''}`).join(', ');
+            const resumo = series.map(s => `${s.nome} ${ultimo[s.chave] != null ? fmt(ultimo[s.chave]) : 'indisponível'}`).join(', ');
             area.innerHTML = `
-                <svg viewBox="0 0 ${W} ${H}" class="w-full h-[150px] overflow-visible" role="img" aria-label="Últimos 10 minutos: ${esc(resumo)}">
+                <svg viewBox="0 0 ${W} ${H}" class="w-full h-[150px] overflow-visible" role="img" aria-label="${esc(rotulo)} até agora: ${esc(resumo)}">
                     ${grade}
-                    <text x="${L}" y="${H - 4}" font-size="10" fill="#a7a9be">−10 min</text>
+                    <text x="${L}" y="${H - 4}" font-size="10" fill="#a7a9be">${esc(rotulo)}</text>
                     <text x="${W - R}" y="${H - 4}" font-size="10" fill="#a7a9be" text-anchor="end">agora</text>
-                    ${SERIES.map(s => `<path d="${caminho(s.chave)}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
+                    ${series.map(s => `<path d="${caminho(s.chave)}" fill="none" stroke="${s.cor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
                     ${marcas}
                     <line data-mira x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="#a7a9be" stroke-width="1" stroke-dasharray="3 3" visibility="hidden"/>
                     <rect data-alvo x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
@@ -423,8 +448,8 @@
                 <details class="mt-1 text-[11.5px] text-muted">
                     <summary class="cursor-pointer select-none">Ver como tabela</summary>
                     <table class="mt-2 w-full text-left">
-                        <thead><tr><th class="font-semibold">Hora</th>${SERIES.map(s => `<th class="font-semibold">${s.nome}</th>`).join('')}</tr></thead>
-                        <tbody>${vis.slice(-6).reverse().map(a => `<tr><td>${new Date(a.t * 1000).toLocaleTimeString('pt-BR')}</td>${SERIES.map(s => `<td>${a[s.chave] ?? '—'}${a[s.chave] != null ? '%' : ''}</td>`).join('')}</tr>`).join('')}</tbody>
+                        <thead><tr><th class="font-semibold">Hora</th>${series.map(s => `<th class="font-semibold">${s.nome}</th>`).join('')}</tr></thead>
+                        <tbody>${vis.slice(-6).reverse().map(a => `<tr><td>${fmtT(a.t)}</td>${series.map(s => `<td>${fmt(a[s.chave])}</td>`).join('')}</tr>`).join('')}</tbody>
                     </table>
                 </details>`;
 
@@ -434,13 +459,13 @@
             const mover = (ev) => {
                 const r = svgEl.getBoundingClientRect();
                 const px = (ev.clientX - r.left) / r.width * W;
-                const t = tMin + (px - L) / (W - L - R) * JANELA_S;
+                const t = tMin + (px - L) / (W - L - R) * janela;
                 let a = vis[0];
                 for (const p of vis) if (Math.abs(p.t - t) < Math.abs(a.t - t)) a = p;
                 const ax = x(a.t);
                 mira.setAttribute('x1', ax); mira.setAttribute('x2', ax); mira.setAttribute('visibility', 'visible');
-                dica.innerHTML = `<div class="text-muted mb-0.5">${new Date(a.t * 1000).toLocaleTimeString('pt-BR')}</div>` +
-                    SERIES.map(s => `<div class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${s.cor}"></span><span class="text-slate-200">${s.nome}: <strong>${a[s.chave] ?? '—'}${a[s.chave] != null ? '%' : ''}</strong></span></div>`).join('');
+                dica.innerHTML = `<div class="text-muted mb-0.5">${fmtT(a.t)}</div>` +
+                    series.map(s => `<div class="flex items-center gap-1.5"><span class="inline-block w-2 h-2 rounded-full" style="background:${s.cor}"></span><span class="text-slate-200">${s.nome}: <strong>${fmt(a[s.chave])}</strong></span></div>`).join('');
                 dica.classList.remove('hidden');
                 const left = ax / W * r.width;
                 dica.style.left = Math.min(Math.max(left - dica.offsetWidth / 2, 0), r.width - dica.offsetWidth) + 'px';
@@ -459,6 +484,90 @@
                     desenharGrafico(ip, amostras);
                 } catch (e) { /* falha momentânea de rede */ }
             }
+        }
+
+        // =====================================================================
+        // Logs ao vivo (abas Serviço, Tunnel e Monitor)
+        //   emit logs_assinar / logs_cancelar  -> on logs_saida {alias, linhas, inicial}
+        // htmlLogs() desenha o card; painelLogs() liga os botões e a assinatura.
+        // =====================================================================
+        function htmlLogs(titulo, { altura = 'h-[340px]', extra = '' } = {}) {
+            return `
+                <section class="card card-static p-5 flex flex-col gap-3">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <h2 class="text-[15px] font-bold">${titulo}</h2>
+                            <span class="flex items-center gap-1.5 text-[11.5px] text-muted"><span class="w-2 h-2 rounded-full bg-ok animate-pulseDot" id="logsDot"></span><span id="logsEstado">ao vivo</span></span>
+                            ${extra}
+                        </div>
+                        <div class="flex gap-2">
+                            <button class="btn btn-ghost" id="btnPausar">${svg(ICON.pause)}Pausar</button>
+                            <button class="btn btn-ghost" id="btnLimparLogs">${svg(ICON.eraser)}Limpar</button>
+                            <button class="btn btn-ghost" id="btnBaixarLogs">${svg(ICON.download)}Baixar</button>
+                        </div>
+                    </div>
+                    <pre id="logs" class="${altura} overflow-auto px-4 py-3 rounded-xl bg-term border border-slate-400/15 font-mono text-[12.5px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all" aria-live="polite">Carregando logs…</pre>
+                </section>`;
+        }
+
+        // vazio: texto quando não há linhas; arquivo(alias): nome do .log baixado;
+        // aoReconectar: chamado (além de reassinar) quando o socket volta.
+        function painelLogs(ip, alias, { vazio, arquivo = (a) => a, aoReconectar = () => { } } = {}) {
+            const MAX_LINHAS = 2000;
+            const pre = $('logs');
+            let linhas = [], pausado = false, pendentes = [];
+            function desenhar() {
+                const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+                pre.textContent = linhas.length ? linhas.join('\n') : vazio;
+                if (noFim) pre.scrollTop = pre.scrollHeight;
+            }
+            const onLogs = (d) => {
+                if (!d || d.alias !== alias) return;
+                if (d.inicial) { linhas = d.linhas.slice(); pendentes = []; }
+                else if (pausado) { pendentes.push(...d.linhas); return; }
+                else linhas.push(...d.linhas);
+                if (linhas.length > MAX_LINHAS) linhas = linhas.slice(-MAX_LINHAS);
+                desenhar();
+                if (d.inicial) pre.scrollTop = pre.scrollHeight;
+            };
+            const assinar = () => socket.emit('logs_assinar', { ip, alias });
+            const onConnect = () => { assinar(); aoReconectar(); };
+            socket.on('logs_saida', onLogs);
+            socket.on('connect', onConnect);
+            assinar();
+
+            $('btnPausar').addEventListener('click', () => {
+                pausado = !pausado;
+                $('btnPausar').innerHTML = pausado ? `${svg(ICON.play)}Retomar` : `${svg(ICON.pause)}Pausar`;
+                $('logsEstado').textContent = pausado ? 'pausado' : 'ao vivo';
+                $('logsDot').className = 'w-2 h-2 rounded-full ' + (pausado ? 'bg-warn' : 'bg-ok animate-pulseDot');
+                if (!pausado && pendentes.length) { linhas.push(...pendentes); pendentes = []; desenhar(); }
+            });
+            $('btnLimparLogs').addEventListener('click', () => { linhas = []; pendentes = []; desenhar(); });
+            $('btnBaixarLogs').addEventListener('click', () => {
+                const blob = new Blob([linhas.join('\n') + '\n'], { type: 'text/plain' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${arquivo(alias)}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            });
+
+            return {
+                // Troca o log acompanhado (aba Monitor: agente <-> supervisord)
+                trocar(novo) {
+                    if (novo === alias) return;
+                    socket.emit('logs_cancelar', { ip, alias });
+                    alias = novo; linhas = []; pendentes = [];
+                    pre.textContent = 'Carregando logs…';
+                    assinar();
+                },
+                parar() {
+                    socket.emit('logs_cancelar', { ip, alias });
+                    socket.off('logs_saida', onLogs);
+                    socket.off('connect', onConnect);
+                },
+            };
         }
 
         // =====================================================================
@@ -511,6 +620,9 @@
             }
             if ((m = path.match(/^\/node\/([^/]+)\/tunnel$/))) {
                 return viewTunnel(decodeURIComponent(m[1]));
+            }
+            if ((m = path.match(/^\/node\/([^/]+)\/monitor$/))) {
+                return viewMonitor(decodeURIComponent(m[1]));
             }
             if ((m = path.match(/^\/node\/([^/]+)\/worker\/([^/]+)$/))) {
                 return viewServico(decodeURIComponent(m[1]), decodeURIComponent(m[2]));
@@ -811,6 +923,7 @@
                     <div>
                         <h1 class="section-title text-[26px] tracking-tight">Node <span class="text-accent2">${esc(ip)}</span></h1>
                         <p class="mt-1.5 text-[13.5px] text-muted" id="heroSub">Carregando...</p>
+                        <div class="mt-3">${abasNode(ip, 'geral')}</div>
                     </div>
                     <a href="/" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao Dashboard</a>
                 </header>
@@ -1252,7 +1365,6 @@ exec python3 bot.py`)}
         function viewServico(ip, alias) {
             setNav(ip);
             setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Logs ao vivo</div>`);
-            const MAX_LINHAS = 2000;
 
             $('view').innerHTML = `
             <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14 flex flex-col gap-6">
@@ -1362,20 +1474,7 @@ exec python3 bot.py`)}
                     <p class="text-[11.5px] text-muted">Primeiro plano, <code>exec</code> no último comando e <code># droidserver: porta=N</code> para o painel saber o endereço. Instale programas pelo <a class="underline" href="/node/${esc(ip)}/worker/${esc(alias)}/terminal" data-link>Terminal</a>. Dúvidas? Clique em <strong>?</strong>.</p>
                 </section>
 
-                <section class="card card-static p-5 flex flex-col gap-3">
-                    <div class="flex items-center justify-between gap-3 flex-wrap">
-                        <div class="flex items-center gap-2.5">
-                            <h2 class="text-[15px] font-bold">Logs</h2>
-                            <span class="flex items-center gap-1.5 text-[11.5px] text-muted"><span class="w-2 h-2 rounded-full bg-ok animate-pulseDot" id="logsDot"></span><span id="logsEstado">ao vivo</span></span>
-                        </div>
-                        <div class="flex gap-2">
-                            <button class="btn btn-ghost" id="btnPausar">${svg(ICON.pause)}Pausar</button>
-                            <button class="btn btn-ghost" id="btnLimparLogs">${svg(ICON.eraser)}Limpar</button>
-                            <button class="btn btn-ghost" id="btnBaixarLogs">${svg(ICON.download)}Baixar</button>
-                        </div>
-                    </div>
-                    <pre id="logs" class="h-[340px] overflow-auto px-4 py-3 rounded-xl bg-term border border-slate-400/15 font-mono text-[12.5px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all" aria-live="polite">Carregando logs…</pre>
-                </section>
+                ${htmlLogs('Logs')}
             </div>
             <div id="ajudaFundo" class="fixed inset-0 z-40 bg-black/50 hidden"></div>
             <aside id="ajudaPainel" role="dialog" aria-modal="true" aria-labelledby="ajudaTitulo" tabindex="-1"
@@ -1749,43 +1848,9 @@ exec python3 bot.py`)}
             });
 
             // ---- Logs ao vivo ----
-            const pre = $('logs');
-            let linhas = [], pausado = false, pendentesLog = [];
-            function desenharLogs() {
-                const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
-                pre.textContent = linhas.length ? linhas.join('\n') : 'Sem saída ainda. O que o serviço imprimir aparece aqui.';
-                if (noFim) pre.scrollTop = pre.scrollHeight;
-            }
-            const onLogs = (d) => {
-                if (!d || d.alias !== alias) return;
-                if (d.inicial) { linhas = d.linhas.slice(); pendentesLog = []; }
-                else if (pausado) { pendentesLog.push(...d.linhas); return; }
-                else linhas.push(...d.linhas);
-                if (linhas.length > MAX_LINHAS) linhas = linhas.slice(-MAX_LINHAS);
-                desenharLogs();
-                if (d.inicial) pre.scrollTop = pre.scrollHeight;
-            };
-            socket.on('logs_saida', onLogs);
-            const assinar = () => socket.emit('logs_assinar', { ip, alias });
-            const onConnect = () => { assinar(); carregarEstado(); };
-            socket.on('connect', onConnect);
-            assinar();
-
-            $('btnPausar').addEventListener('click', () => {
-                pausado = !pausado;
-                $('btnPausar').innerHTML = pausado ? `${svg(ICON.play)}Retomar` : `${svg(ICON.pause)}Pausar`;
-                $('logsEstado').textContent = pausado ? 'pausado' : 'ao vivo';
-                $('logsDot').className = 'w-2 h-2 rounded-full ' + (pausado ? 'bg-warn' : 'bg-ok animate-pulseDot');
-                if (!pausado && pendentesLog.length) { linhas.push(...pendentesLog); pendentesLog = []; desenharLogs(); }
-            });
-            $('btnLimparLogs').addEventListener('click', () => { linhas = []; pendentesLog = []; desenharLogs(); });
-            $('btnBaixarLogs').addEventListener('click', () => {
-                const blob = new Blob([linhas.join('\n') + '\n'], { type: 'text/plain' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `${alias}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
-                a.click();
-                URL.revokeObjectURL(a.href);
+            const logs = painelLogs(ip, alias, {
+                vazio: 'Sem saída ainda. O que o serviço imprimir aparece aqui.',
+                aoReconectar: () => carregarEstado(),
             });
 
             // ---- Ciclo de vida da view ----
@@ -1796,11 +1861,9 @@ exec python3 bot.py`)}
             const timer = setInterval(carregarEstado, 10000);
             cleanup = () => {
                 clearInterval(timer);
-                socket.emit('logs_cancelar', { ip, alias });
-                socket.off('logs_saida', onLogs);
+                logs.parar();
                 socket.off('servico_resposta', onResposta);
                 socket.off('node_updated', onUpd);
-                socket.off('connect', onConnect);
                 document.removeEventListener('keydown', onTeclaAjuda);
                 pendentes.forEach(fn => fn({ ok: false, msg: 'cancelado' }));
             };
@@ -1863,7 +1926,7 @@ exec python3 bot.py`)}
         function viewTunnel(ip) {
             setNav(ip);
             setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Logs ao vivo</div>`);
-            const alias = TUNNEL, MAX_LINHAS = 2000;
+            const alias = TUNNEL;
             const vigia = tunnelVigia(ip);
 
             $('view').innerHTML = `
@@ -1914,20 +1977,7 @@ exec python3 bot.py`)}
                     </form>
                 </section>
 
-                <section class="card card-static p-5 flex flex-col gap-3">
-                    <div class="flex items-center justify-between gap-3 flex-wrap">
-                        <div class="flex items-center gap-2.5">
-                            <h2 class="text-[15px] font-bold">Logs do cloudflared</h2>
-                            <span class="flex items-center gap-1.5 text-[11.5px] text-muted"><span class="w-2 h-2 rounded-full bg-ok animate-pulseDot" id="logsDot"></span><span id="logsEstado">ao vivo</span></span>
-                        </div>
-                        <div class="flex gap-2">
-                            <button class="btn btn-ghost" id="btnPausar">${svg(ICON.pause)}Pausar</button>
-                            <button class="btn btn-ghost" id="btnLimparLogs">${svg(ICON.eraser)}Limpar</button>
-                            <button class="btn btn-ghost" id="btnBaixarLogs">${svg(ICON.download)}Baixar</button>
-                        </div>
-                    </div>
-                    <pre id="logs" class="h-[420px] overflow-auto px-4 py-3 rounded-xl bg-term border border-slate-400/15 font-mono text-[12.5px] leading-relaxed text-slate-300 whitespace-pre-wrap break-all" aria-live="polite">Carregando logs…</pre>
-                </section>
+                ${htmlLogs('Logs do cloudflared', { altura: 'h-[420px]' })}
             </div>`;
 
             // ---- Comandos (mesmo canal da aba Serviço) ----
@@ -2027,43 +2077,10 @@ exec python3 bot.py`)}
             });
 
             // ---- Logs ao vivo ----
-            const pre = $('logs');
-            let linhas = [], pausado = false, pendentesLog = [];
-            function desenharLogs() {
-                const noFim = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
-                pre.textContent = linhas.length ? linhas.join('\n') : 'Sem saída ainda. O que o cloudflared imprimir aparece aqui.';
-                if (noFim) pre.scrollTop = pre.scrollHeight;
-            }
-            const onLogs = (d) => {
-                if (!d || d.alias !== alias) return;
-                if (d.inicial) { linhas = d.linhas.slice(); pendentesLog = []; }
-                else if (pausado) { pendentesLog.push(...d.linhas); return; }
-                else linhas.push(...d.linhas);
-                if (linhas.length > MAX_LINHAS) linhas = linhas.slice(-MAX_LINHAS);
-                desenharLogs();
-                if (d.inicial) pre.scrollTop = pre.scrollHeight;
-            };
-            socket.on('logs_saida', onLogs);
-            const assinar = () => socket.emit('logs_assinar', { ip, alias });
-            const onConnect = () => { assinar(); carregarEstado(); };
-            socket.on('connect', onConnect);
-            assinar();
-
-            $('btnPausar').addEventListener('click', () => {
-                pausado = !pausado;
-                $('btnPausar').innerHTML = pausado ? `${svg(ICON.play)}Retomar` : `${svg(ICON.pause)}Pausar`;
-                $('logsEstado').textContent = pausado ? 'pausado' : 'ao vivo';
-                $('logsDot').className = 'w-2 h-2 rounded-full ' + (pausado ? 'bg-warn' : 'bg-ok animate-pulseDot');
-                if (!pausado && pendentesLog.length) { linhas.push(...pendentesLog); pendentesLog = []; desenharLogs(); }
-            });
-            $('btnLimparLogs').addEventListener('click', () => { linhas = []; pendentesLog = []; desenharLogs(); });
-            $('btnBaixarLogs').addEventListener('click', () => {
-                const blob = new Blob([linhas.join('\n') + '\n'], { type: 'text/plain' });
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `tunnel-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.log`;
-                a.click();
-                URL.revokeObjectURL(a.href);
+            const logs = painelLogs(ip, alias, {
+                vazio: 'Sem saída ainda. O que o cloudflared imprimir aparece aqui.',
+                arquivo: () => 'tunnel',
+                aoReconectar: () => carregarEstado(),
             });
 
             carregarEstado();
@@ -2072,12 +2089,301 @@ exec python3 bot.py`)}
             const timer = setInterval(carregarEstado, 10000);
             cleanup = () => {
                 clearInterval(timer);
-                socket.emit('logs_cancelar', { ip, alias });
-                socket.off('logs_saida', onLogs);
+                logs.parar();
                 socket.off('servico_resposta', onResposta);
                 socket.off('node_updated', onUpd);
-                socket.off('connect', onConnect);
                 pendentes.forEach(fn => fn({ ok: false, msg: 'cancelado' }));
+            };
+        }
+
+        // =====================================================================
+        // VIEW: Monitor do node  (/node/<ip>/monitor)
+        //   GET  /api/node/<ip>/estatisticas?janela=<s>  -> registro do celular
+        //   POST /api/node/<ip>/armazenamento/recalcular
+        //   GET  /api/node/<ip>                          -> CPU/RAM atuais por worker
+        //   logs gerais: logs_assinar com "@agente" ou "@supervisord"
+        // =====================================================================
+        const JANELAS = [[3600, '1 h'], [6 * 3600, '6 h'], [86400, '24 h'], [7 * 86400, '7 d']];
+        const SERIES_MEM = [
+            { chave: 'agente_mb', nome: 'Agente', cor: '#4ea8de' },
+            { chave: 'supervisord_mb', nome: 'Supervisord', cor: '#fbbf24' },
+        ];
+        const LOGS_NODE = [['@agente', 'Agente (node.log)'], ['@supervisord', 'Supervisord']];
+        let janelaMonitor = 3600, logMonitor = '@agente';  // lembrados entre visitas
+
+        function fmtDuracao(s) {
+            if (s == null) return '—';
+            const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+            return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+        }
+
+        function viewMonitor(ip) {
+            setNav(ip);
+            setFooter(`<div class="flex items-center gap-2"><span class="dot dot-online !w-[9px] !h-[9px]"></span>Estatísticas do registro do celular</div>`);
+            const segmento = (attr, valor, texto, ativo) => `<button type="button" ${attr}="${esc(valor)}" aria-pressed="${ativo}"
+                class="px-3 py-1.5 rounded-lg text-[12px] font-semibold transition ${ativo ? 'bg-accent/20 text-white shadow-[inset_0_-2px_0_#e94560]' : 'text-muted hover:text-slate-200 hover:bg-slate-400/10'}">${texto}</button>`;
+            const grupo = (attr, opcoes, atual, rotulo) => `<div role="group" aria-label="${rotulo}" class="flex gap-1 p-1 rounded-xl bg-slate-950/45 border border-slate-400/15">
+                ${opcoes.map(([v, t]) => segmento(attr, v, t, v === atual)).join('')}</div>`;
+            const legenda = (series) => `<div class="flex gap-4 flex-wrap">${series.map(s => `
+                <span class="flex items-center gap-1.5 text-[11.5px] text-muted"><span class="inline-block w-3 h-[3px] rounded-full" style="background:${s.cor}"></span>${s.nome}</span>`).join('')}</div>`;
+
+            $('view').innerHTML = `
+            <div class="max-w-[1400px] px-5 md:px-10 pt-6 md:pt-9 pb-14 flex flex-col gap-6">
+                <header class="flex items-end justify-between gap-4 flex-wrap">
+                    <div>
+                        <h1 class="section-title text-[26px] tracking-tight">Node <span class="text-accent2">${esc(ip)}</span></h1>
+                        <p class="mt-1.5 text-[13.5px] text-muted" id="monSub">Carregando…</p>
+                        <div class="mt-3">${abasNode(ip, 'monitor')}</div>
+                    </div>
+                    <a href="/" data-link class="btn btn-ghost">${svg(ICON.back)}Voltar ao Dashboard</a>
+                </header>
+
+                <div id="monAviso" class="hidden px-3.5 py-3 rounded-xl border border-accent2/30 bg-accent2/10 text-[13px]"></div>
+
+                <section class="card card-static p-5 flex flex-col gap-4" aria-labelledby="monTitUso">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                            <h2 class="text-[15px] font-bold" id="monTitUso">Uso do node</h2>
+                            <p class="text-[11.5px] text-muted mt-0.5" id="monCobertura">—</p>
+                        </div>
+                        <div id="monJanelas">${grupo('data-janela', JANELAS, janelaMonitor, 'Período')}</div>
+                    </div>
+                    <div class="grid gap-5 lg:grid-cols-2">
+                        <div class="flex flex-col gap-2">
+                            <div class="flex items-center justify-between gap-2"><span class="label-xs">CPU e RAM · % do aparelho</span>${legenda(SERIES)}</div>
+                            <div class="relative" id="monGrafCpu"><div class="h-[150px] grid place-items-center text-[12px] text-muted">Carregando…</div></div>
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <div class="flex items-center justify-between gap-2"><span class="label-xs">Memória do DroidServer · MB</span>${legenda(SERIES_MEM)}</div>
+                            <div class="relative" id="monGrafMem"><div class="h-[150px] grid place-items-center text-[12px] text-muted">Carregando…</div></div>
+                        </div>
+                    </div>
+                    <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-4 border-t border-slate-400/15" id="monAparelho"></dl>
+                </section>
+
+                <section class="card card-static p-5 flex flex-col gap-3" aria-labelledby="monTitServ">
+                    <div>
+                        <h2 class="text-[15px] font-bold" id="monTitServ">Serviços no período</h2>
+                        <p class="text-[11.5px] text-muted mt-0.5">“Rodando” conta as amostras em que o Supervisor dizia RUNNING; “HTTP ok” só vale para serviços web com porta declarada.</p>
+                    </div>
+                    <div class="overflow-x-auto" id="monServicos"><p class="text-[12.5px] text-muted">Carregando…</p></div>
+                </section>
+
+                <section class="card card-static p-5 flex flex-col gap-4" aria-labelledby="monTitArm">
+                    <div class="flex items-center justify-between gap-3 flex-wrap">
+                        <div>
+                            <h2 class="text-[15px] font-bold" id="monTitArm">Armazenamento</h2>
+                            <p class="text-[11.5px] text-muted mt-0.5" id="monMedido">—</p>
+                        </div>
+                        <button type="button" class="btn btn-ghost" id="btnRecalcular">${svg(ICON.refresh)}Recalcular</button>
+                    </div>
+                    <div id="monDisco"></div>
+                    <div class="overflow-x-auto" id="monArmaz"></div>
+                </section>
+
+                ${htmlLogs('Logs do node', { altura: 'h-[420px]', extra: `<div id="monLogs">${grupo('data-log', LOGS_NODE, logMonitor, 'Qual log')}</div>` })}
+            </div>`;
+
+            let node = null, est = null, carregando = null, timerMedindo = null;
+
+            // ---- Estado atual do node (CPU/RAM por worker, online/offline) ----
+            async function carregarNode() {
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}`);
+                    if (res.status === 404) { $('monSub').textContent = 'Node não encontrado no host.'; return; }
+                    if (!res.ok) return;
+                    node = await res.json();
+                    $('monSub').textContent = (isOnline(node) ? 'Online' : 'Offline') + ' · último contato ' + (node.last_seen || '—') + (node.modelo ? ` · ${node.modelo}` : '');
+                    desenharServicos(); desenharArmazenamento();
+                } catch (_) { }
+            }
+
+            // ---- Estatísticas do registro (no celular) ----
+            async function carregarStats() {
+                const janela = janelaMonitor;
+                const pedido = fetch(`/api/node/${encodeURIComponent(ip)}/estatisticas?janela=${janela}`)
+                    .then(async r => ({ r, d: await r.json().catch(() => ({})) }));
+                carregando = pedido;
+                let r, d;
+                try { ({ r, d } = await pedido); } catch (_) { r = null; d = {}; }
+                if (carregando !== pedido || janela !== janelaMonitor) return;  // outra janela foi pedida
+                if (!r || !r.ok) {
+                    await semEstatisticas(d.erro || 'O node não respondeu.');
+                    return;
+                }
+                $('monAviso').classList.add('hidden');
+                est = d;
+                desenharUso(); desenharServicos(); desenharArmazenamento();
+                clearTimeout(timerMedindo);
+                if (est.armazenamento && est.armazenamento.medindo) timerMedindo = setTimeout(carregarStats, 3000);
+            }
+
+            // Node offline (ou sem pareamento): mostra o que o painel guardou
+            async function semEstatisticas(erro) {
+                $('monAviso').classList.remove('hidden');
+                $('monAviso').innerHTML = `<strong>Sem estatísticas do celular agora:</strong> ${esc(erro)} O gráfico abaixo mostra o que o painel guardou (até 30 min); o resto volta quando o node responder.`;
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}/historico`);
+                    const amostras = res.ok ? (await res.json()).amostras : [];
+                    desenharGrafico(ip, amostras, { area: $('monGrafCpu'), janela: 1800, rotulo: '−30 min' });
+                } catch (_) { }
+                $('monGrafMem').innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted">Indisponível com o node fora do ar.</div>';
+                $('monCobertura').textContent = 'Histórico do painel';
+            }
+
+            function desenharUso() {
+                const rot = '−' + (JANELAS.find(([v]) => v === est.janela_s)?.[1] || fmtDuracao(est.janela_s));
+                desenharGrafico(ip, est.serie, { area: $('monGrafCpu'), janela: est.janela_s, rotulo: rot });
+                desenharGrafico(ip, est.serie, { area: $('monGrafMem'), janela: est.janela_s, rotulo: rot, series: SERIES_MEM, unidade: 'MB', teto: null });
+                const desde = est.primeira ? new Date(est.primeira * 1000).toLocaleString('pt-BR') : null;
+                $('monCobertura').textContent = est.amostras_total
+                    ? `${est.amostras_total} amostras · registro cobre ${est.cobertura_pct}% do período${est.cobertura_pct < 95 && desde ? ` (desde ${desde})` : ''}`
+                    : 'Nenhuma amostra gravada neste período.';
+                const a = est.aparelho || {}, ag = est.agente || {};
+                const item = (rotulo, valor) => `<div><dt class="label-xs">${rotulo}</dt><dd class="text-[13px] font-semibold mt-1 truncate" title="${esc(valor)}">${esc(valor)}</dd></div>`;
+                $('monAparelho').innerHTML = item('Aparelho', a.modelo || '—') + item('Android', a.android || '—')
+                    + item('Núcleos', a.nucleos ?? '—') + item('Ligado há', fmtDuracao(a.uptime_s))
+                    + item('Agente rodando há', fmtDuracao(ag.uptime_s)) + item('PID do agente', ag.pid ?? '—');
+            }
+
+            function desenharServicos() {
+                if (!est && !node) return;
+                const sv = (est && est.servicos) || {}, falhas = (est && est.falhas) || {};
+                const nomes = [...new Set([...Object.keys(sv), ...((node && node.workers) || [])])].sort();
+                if (!nomes.length) { $('monServicos').innerHTML = '<p class="text-[12.5px] text-muted">Nenhum worker neste node.</p>'; return; }
+                const barra = (pct) => pct == null ? '<span class="text-muted">—</span>' : `
+                    <div class="flex items-center gap-2 min-w-[130px]"><div class="flex-1 h-1.5 rounded-full bg-slate-950/45 border border-slate-400/15 overflow-hidden">
+                    <div class="h-full rounded-full ${pct >= 99 ? 'bg-ok' : pct >= 90 ? 'bg-warn' : 'bg-bad'}" style="width:${pct}%"></div></div><span class="text-[12px] font-semibold w-12 text-right">${pct}%</span></div>`;
+                const linhas = nomes.map(alias => {
+                    const s = sv[alias] || {}, f = falhas[alias] || {};
+                    const atual = estadoServico((node && node.servicos || {})[alias], (node && node.worker_status || {})[alias] || s.ultimo_estado);
+                    const ult = f.ultima_falha;
+                    return `<tr class="border-t border-slate-400/10">
+                        <td class="py-2.5 pr-4"><a class="font-semibold hover:text-accent2" data-link href="/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(alias)}">${esc(alias)}</a></td>
+                        <td class="py-2.5 pr-4"><span class="pill ${TOM_PILL[atual.tone]}">${esc(atual.label)}</span></td>
+                        <td class="py-2.5 pr-4">${barra(s.rodando_pct ?? null)}</td>
+                        <td class="py-2.5 pr-4">${s.http_ok_pct != null ? fmtPct(s.http_ok_pct) : '<span class="text-muted">—</span>'}</td>
+                        <td class="py-2.5 pr-4 ${f.falhas_hoje ? 'text-bad font-semibold' : 'text-muted'}" title="${ult ? esc('Última às ' + (ult.quando || '?') + ': ' + (ult.motivo || '')) : ''}">${f.falhas_hoje ?? '—'}</td>
+                        <td class="py-2.5 pr-4">${fmtPct(s.cpu_media ?? null)}</td>
+                        <td class="py-2.5">${s.ram_mb_media != null ? s.ram_mb_media + ' MB' : '—'}</td>
+                    </tr>`;
+                }).join('');
+                $('monServicos').innerHTML = `<table class="w-full text-left text-[13px]">
+                    <thead><tr class="text-[11px] uppercase tracking-wider text-muted">
+                        <th class="pb-2 pr-4 font-semibold">Worker</th><th class="pb-2 pr-4 font-semibold">Agora</th><th class="pb-2 pr-4 font-semibold">Rodando no período</th>
+                        <th class="pb-2 pr-4 font-semibold">HTTP ok</th><th class="pb-2 pr-4 font-semibold">Falhas hoje</th><th class="pb-2 pr-4 font-semibold">CPU média</th><th class="pb-2 font-semibold">RAM média</th>
+                    </tr></thead><tbody>${linhas}</tbody></table>`;
+            }
+
+            function desenharArmazenamento() {
+                if (!est || !est.armazenamento) {
+                    $('monDisco').innerHTML = '';
+                    $('monArmaz').innerHTML = `<p class="text-[12.5px] text-muted">${est ? 'Este agente não informa o armazenamento — atualize o node.' : 'Carregando…'}</p>`;
+                    return;
+                }
+                const arm = est.armazenamento, d = arm.disco;
+                const workers = arm.workers || {};
+                const ds = arm.workers_total != null ? arm.workers_total + (arm.droidserver || 0) : null;
+                if (d && d.total) {
+                    const pDs = ds != null ? Math.min(100, ds / d.total * 100) : 0;
+                    const pOut = Math.max(0, d.usado / d.total * 100 - pDs);
+                    const seg = (cor, nome, valor, pct) => `<span class="flex items-center gap-1.5"><span class="inline-block w-2.5 h-2.5 rounded-sm ${cor}"></span>${nome}: <strong class="text-slate-200">${fmtBytes(valor)}</strong>${pct != null ? ` (${pct.toFixed(1)}%)` : ''}</span>`;
+                    $('monDisco').innerHTML = `
+                        <div class="flex justify-between items-center mb-1.5"><span class="label-xs tracking-[.09em]">Armazenamento interno do aparelho</span>
+                            <span class="text-xs font-bold">${fmtBytes(d.usado)} de ${fmtBytes(d.total)} usados</span></div>
+                        <div class="flex h-2.5 rounded-full bg-slate-950/45 border border-slate-400/15 overflow-hidden" role="img"
+                             aria-label="DroidServer ${fmtBytes(ds)}, outros ${fmtBytes(d.usado - (ds || 0))}, livre ${fmtBytes(d.livre)}">
+                            <div class="h-full bg-accent" style="width:${pDs}%"></div><div class="h-full bg-slate-400/40" style="width:${pOut}%"></div>
+                        </div>
+                        <div class="flex gap-4 flex-wrap mt-2 text-[11.5px] text-muted">
+                            ${seg('bg-accent', 'DroidServer + workers', ds, ds != null ? ds / d.total * 100 : null)}
+                            ${seg('bg-slate-400/40', 'Outros apps e sistema', Math.max(0, d.usado - (ds || 0)), null)}
+                            ${seg('bg-slate-950 border border-slate-400/30', 'Livre', d.livre, 100 - d.percent)}
+                        </div>`;
+                } else $('monDisco').innerHTML = '';
+
+                const nomes = [...new Set([...Object.keys(workers), ...((node && node.workers) || [])])];
+                const total = (a) => (workers[a] || {}).total ?? -1;
+                nomes.sort((a, b) => total(b) - total(a) || a.localeCompare(b));
+                const maior = Math.max(1, ...nomes.map(total), arm.droidserver || 0);
+                const cpuW = (node && node.cpu_workers) || {}, svs = (node && node.servicos) || {};
+                const pendente = arm.medindo ? '<span class="text-muted">medindo…</span>' : '<span class="text-muted">—</span>';
+                const linha = (nome, tipo, w, cpu, ram, link) => `<tr class="border-t border-slate-400/10">
+                    <td class="py-2.5 pr-4">${link ? `<a class="font-semibold hover:text-accent2" data-link href="${link}">${esc(nome)}</a>` : `<span class="font-semibold">${esc(nome)}</span>`}
+                        ${tipo ? `<span class="chip !px-2 !py-0.5 ml-1.5">${tipo}</span>` : ''}</td>
+                    <td class="py-2.5 pr-4">${w && w.dados != null ? fmtBytes(w.dados) : pendente}</td>
+                    <td class="py-2.5 pr-4">${w && w.logs != null ? fmtBytes(w.logs) : pendente}</td>
+                    <td class="py-2.5 pr-4"><div class="flex items-center gap-2 min-w-[150px]">
+                        <div class="flex-1 h-1.5 rounded-full bg-slate-950/45 border border-slate-400/15 overflow-hidden"><div class="h-full rounded-full bg-accent" style="width:${w ? Math.max(1, w.total / maior * 100) : 0}%"></div></div>
+                        <span class="text-[12px] font-semibold w-[72px] text-right">${w ? fmtBytes(w.total) : '—'}</span></div></td>
+                    <td class="py-2.5 pr-4">${fmtPct(cpu ?? null)}</td>
+                    <td class="py-2.5">${ram != null ? ram + ' MB' : '—'}</td>
+                </tr>`;
+                const linhas = nomes.map(a => {
+                    const w = workers[a];
+                    const tipo = w ? (w.tipo === 'postgres' ? 'PostgreSQL' : 'Linux') : ((svs[a] || {}).tipo === 'postgres' ? 'PostgreSQL' : '');
+                    return linha(a, tipo, w, cpuW[a], (svs[a] || {}).ram_mb, `/node/${encodeURIComponent(ip)}/worker/${encodeURIComponent(a)}`);
+                }).join('') + (arm.droidserver != null
+                    ? linha('DroidServer', 'agente', { dados: arm.droidserver, logs: null, total: arm.droidserver }, null, null, null).replace(pendente, '<span class="text-muted">—</span>')
+                    : '');
+                $('monArmaz').innerHTML = `<table class="w-full text-left text-[13px]">
+                    <thead><tr class="text-[11px] uppercase tracking-wider text-muted">
+                        <th class="pb-2 pr-4 font-semibold">Worker</th><th class="pb-2 pr-4 font-semibold" title="rootfs do container ou pasta de dados do PostgreSQL">Disco</th>
+                        <th class="pb-2 pr-4 font-semibold">Logs</th><th class="pb-2 pr-4 font-semibold">Total</th>
+                        <th class="pb-2 pr-4 font-semibold">CPU agora</th><th class="pb-2 font-semibold">RAM agora</th>
+                    </tr></thead><tbody>${linhas}</tbody></table>`;
+
+                const quando = arm.medido_em ? `medido há ${fmtDuracao(Math.max(0, Date.now() / 1000 - arm.medido_em))}${arm.duracao_s != null ? ` (levou ${arm.duracao_s} s)` : ''}` : 'ainda não medido';
+                $('monMedido').textContent = arm.medindo ? 'Medindo o espaço dos workers…' : `Espaço por worker ${quando}; o node refaz a medição a cada 10 min.`;
+                $('btnRecalcular').disabled = !!arm.medindo;
+            }
+
+            // ---- Controles ----
+            $('monJanelas').addEventListener('click', (e) => {
+                const b = e.target.closest('[data-janela]');
+                if (!b || +b.dataset.janela === janelaMonitor) return;
+                janelaMonitor = +b.dataset.janela;
+                $('monJanelas').innerHTML = grupo('data-janela', JANELAS, janelaMonitor, 'Período');
+                $('monGrafCpu').innerHTML = $('monGrafMem').innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted">Carregando…</div>';
+                carregarStats();
+            });
+            $('btnRecalcular').addEventListener('click', async () => {
+                $('btnRecalcular').disabled = true;
+                try {
+                    const res = await fetch(`/api/node/${encodeURIComponent(ip)}/armazenamento/recalcular`, { method: 'POST' });
+                    if (!res.ok) { toast((await res.json().catch(() => ({}))).erro || 'Falha ao pedir a medição.'); $('btnRecalcular').disabled = false; return; }
+                    $('monMedido').textContent = 'Medindo o espaço dos workers…';
+                    setTimeout(carregarStats, 1500);
+                } catch (_) { $('btnRecalcular').disabled = false; }
+            });
+
+            const logs = painelLogs(ip, logMonitor, {
+                vazio: 'Sem linhas ainda neste log.',
+                arquivo: (a) => `node-${ip}-${a.slice(1)}`,
+            });
+            $('monLogs').addEventListener('click', (e) => {
+                const b = e.target.closest('[data-log]');
+                if (!b || b.dataset.log === logMonitor) return;
+                logMonitor = b.dataset.log;
+                $('monLogs').innerHTML = grupo('data-log', LOGS_NODE, logMonitor, 'Qual log');
+                logs.trocar(logMonitor);
+            });
+
+            // ---- Ciclo de vida da view ----
+            carregarNode(); carregarStats();
+            let ultimoNode = 0;
+            const onUpd = (data) => {
+                if (!data || data.ip !== ip || Date.now() - ultimoNode < 5000) return;
+                ultimoNode = Date.now();
+                carregarNode();
+            };
+            socket.on('node_updated', onUpd);
+            const timer = setInterval(carregarStats, 30000);
+            cleanup = () => {
+                clearInterval(timer);
+                clearTimeout(timerMedindo);
+                logs.parar();
+                socket.off('node_updated', onUpd);
             };
         }
 

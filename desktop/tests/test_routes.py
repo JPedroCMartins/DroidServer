@@ -1237,3 +1237,55 @@ def test_arquivos_recusa_worker_de_banco(client, node_falso):
     r = client.get("/api/node/127.0.0.1/worker/pg1/arquivos")
     assert r.status_code == 400 and "banco" in r.get_json()["erro"]
     assert node_falso == []
+
+
+# ---------- Aba Monitor do node ----------
+
+def test_spa_aba_monitor(client):
+    assert client.get("/node/10.0.0.5/monitor").status_code == 200
+
+
+def test_estatisticas_repasse_com_token_e_janela(client, node_falso):
+    r = client.get("/api/node/127.0.0.1/estatisticas?janela=86400")
+    assert r.status_code == 200 and r.get_json()["ok"] is True
+    metodo, rota, q, token, _ = node_falso[-1]
+    assert (metodo, rota, q, token) == ("GET", "/estatisticas", {"janela": ["86400"]}, "ab" * 24)
+
+
+def test_recalcular_armazenamento_repasse(client, node_falso):
+    r = client.post("/api/node/127.0.0.1/armazenamento/recalcular")
+    assert r.status_code == 200
+    assert node_falso[-1][:2] == ("POST", "/armazenamento/recalcular")
+
+
+def test_estatisticas_node_desconhecido_sem_token_ou_fora_do_ar(client, node_falso, monkeypatch):
+    assert client.get("/api/node/10.9.9.9/estatisticas").status_code == 404
+    monkeypatch.setattr(_routes(), "NODE_PORTA", 1)
+    r = client.get("/api/node/127.0.0.1/estatisticas")
+    assert r.status_code == 502 and "não respondeu" in r.get_json()["erro"]
+    _routes().cadastro.clear()
+    assert client.get("/api/node/127.0.0.1/estatisticas").status_code == 409
+
+
+def test_recalcular_de_outro_site_recusado(client, node_falso):
+    r = client.post("/api/node/127.0.0.1/armazenamento/recalcular", headers={"Origin": "http://malicioso.example"})
+    assert r.status_code == 403 and node_falso == []
+
+
+def test_logs_gerais_do_node(ambiente_servico):
+    node, nav_a, _ = ambiente_servico
+    nav_a.emit("logs_assinar", {"ip": "10.0.0.5", "alias": "@agente"})
+    nav_a.emit("logs_assinar", {"ip": "10.0.0.5", "alias": "@qualquer"})
+    assert _eventos(node, "logs_to_10.0.0.5") == [{"alias": "@agente", "acao": "assinar"}]
+    node.emit("logs_saida", {"alias": "@agente", "linhas": ["iniciado"], "inicial": True})
+    node.emit("logs_saida", {"alias": "@qualquer", "linhas": ["x"]})
+    assert _eventos(nav_a, "logs_saida") == [{"alias": "@agente", "linhas": ["iniciado"], "inicial": True}]
+    nav_a.emit("logs_cancelar", {"ip": "10.0.0.5", "alias": "@agente"})
+    assert _eventos(node, "logs_to_10.0.0.5") == [{"alias": "@agente", "acao": "cancelar"}]
+
+
+def test_sync_cancela_log_geral_que_ninguem_assiste(ambiente_servico, client):
+    node, _, _ = ambiente_servico
+    client.post("/api/node_sync", json={"ip": "10.0.0.5", "workers": ["w1"],
+                                        "logs_ativos": ["@supervisord", "@lixo"]})
+    assert _eventos(node, "logs_to_10.0.0.5") == [{"alias": "@supervisord", "acao": "cancelar"}]

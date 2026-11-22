@@ -277,3 +277,14 @@ class ProcessCPUMonitor:
 
         self._prev, self._prev_ts = atual, agora
         return resultado
+
+
+def info_aparelho(proc_dir=None):
+    """Uptime do aparelho e número de núcleos (o modelo vem do getprop, no node)."""
+    uptime = None
+    try:
+        with open(os.path.join(proc_dir or PROC_DIR, "uptime")) as f:
+            uptime = round(float(f.read().split()[0]))
+    except (OSError, ValueError, IndexError):
+        pass
+    return {"uptime_s": uptime, "nucleos": os.cpu_count()}
