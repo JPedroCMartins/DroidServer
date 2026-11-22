@@ -382,12 +382,12 @@
         // Gráfico de linhas em SVG. Sem opções, é o card "Uso em tempo real" do
         // dashboard (últimos 10 min, % do aparelho); a aba Monitor passa outra
         // área, janela, séries e unidade (ex.: MB, com teto automático).
-        function desenharGrafico(ip, amostras, { area = null, series = SERIES, janela = JANELA_S, unidade = '%', teto = 100, rotulo = '−10 min' } = {}) {
+        function desenharGrafico(ip, amostras, { area = null, series = SERIES, janela = JANELA_S, unidade = '%', teto = 100, rotulo = '−10 min', vazio = 'Aguardando amostras — o node grava uma a cada 10 s.' } = {}) {
             area = area || document.querySelector(`#${idDoIp(ip)} [data-area]`);
             if (!area) return;
             const pts = (amostras || []).filter(a => a && typeof a.t === 'number');
             if (pts.length < 2) {
-                area.innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted text-center px-4">Aguardando amostras — o node grava uma a cada 10 s.</div>';
+                area.innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted text-center px-4">' + esc(vazio) + '</div>';
                 return;
             }
             const W = 320, H = 150, L = 34, R = 58, T = 8, B = 20;
@@ -2104,13 +2104,15 @@ exec python3 bot.py`)}
         //   GET  /api/node/<ip>                          -> CPU/RAM atuais por worker
         //   logs gerais: logs_assinar com "@agente" ou "@supervisord"
         // =====================================================================
-        const JANELAS = [[3600, '1 h'], [6 * 3600, '6 h'], [86400, '24 h'], [7 * 86400, '7 d']];
+        // "Ao vivo": últimos 2 min, 1 amostra/s enviada pelo node enquanto a aba está aberta
+        const AO_VIVO = 120, AO_VIVO_BUFFER_S = 300;
+        const JANELAS = [[AO_VIVO, 'Ao vivo'], [3600, '1 h'], [6 * 3600, '6 h'], [86400, '24 h'], [7 * 86400, '7 d']];
         const SERIES_MEM = [
             { chave: 'agente_mb', nome: 'Agente', cor: '#4ea8de' },
             { chave: 'supervisord_mb', nome: 'Supervisord', cor: '#fbbf24' },
         ];
         const LOGS_NODE = [['@agente', 'Agente (node.log)'], ['@supervisord', 'Supervisord']];
-        let janelaMonitor = 3600, logMonitor = '@agente';  // lembrados entre visitas
+        let janelaMonitor = AO_VIVO, logMonitor = '@agente';  // lembrados entre visitas
 
         function fmtDuracao(s) {
             if (s == null) return '—';
@@ -2186,6 +2188,8 @@ exec python3 bot.py`)}
             </div>`;
 
             let node = null, est = null, carregando = null, timerMedindo = null;
+            const vivo = [];          // amostras de 1 s recebidas desde que a aba abriu
+            let timerSemVivo = null;  // avisa se as amostras ao vivo pararem de chegar
 
             // ---- Estado atual do node (CPU/RAM por worker, online/offline) ----
             async function carregarNode() {
@@ -2202,7 +2206,7 @@ exec python3 bot.py`)}
             // ---- Estatísticas do registro (no celular) ----
             async function carregarStats() {
                 const janela = janelaMonitor;
-                const pedido = fetch(`/api/node/${encodeURIComponent(ip)}/estatisticas?janela=${janela}`)
+                const pedido = fetch(`/api/node/${encodeURIComponent(ip)}/estatisticas?janela=${janela === AO_VIVO ? 3600 : janela}`)
                     .then(async r => ({ r, d: await r.json().catch(() => ({})) }));
                 carregando = pedido;
                 let r, d;
@@ -2226,6 +2230,7 @@ exec python3 bot.py`)}
                 try {
                     const res = await fetch(`/api/node/${encodeURIComponent(ip)}/historico`);
                     const amostras = res.ok ? (await res.json()).amostras : [];
+                    if (janelaMonitor === AO_VIVO) return;  // o ao vivo tem o próprio aviso
                     desenharGrafico(ip, amostras, { area: $('monGrafCpu'), janela: 1800, rotulo: '−30 min' });
                 } catch (_) { }
                 $('monGrafMem').innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted">Indisponível com o node fora do ar.</div>';
@@ -2233,6 +2238,8 @@ exec python3 bot.py`)}
             }
 
             function desenharUso() {
+                if (janelaMonitor === AO_VIVO) desenharVivo();
+                else {
                 const rot = '−' + (JANELAS.find(([v]) => v === est.janela_s)?.[1] || fmtDuracao(est.janela_s));
                 desenharGrafico(ip, est.serie, { area: $('monGrafCpu'), janela: est.janela_s, rotulo: rot });
                 desenharGrafico(ip, est.serie, { area: $('monGrafMem'), janela: est.janela_s, rotulo: rot, series: SERIES_MEM, unidade: 'MB', teto: null });
@@ -2240,12 +2247,46 @@ exec python3 bot.py`)}
                 $('monCobertura').textContent = est.amostras_total
                     ? `${est.amostras_total} amostras · registro cobre ${est.cobertura_pct}% do período${est.cobertura_pct < 95 && desde ? ` (desde ${desde})` : ''}`
                     : 'Nenhuma amostra gravada neste período.';
+                }
                 const a = est.aparelho || {}, ag = est.agente || {};
                 const item = (rotulo, valor) => `<div><dt class="label-xs">${rotulo}</dt><dd class="text-[13px] font-semibold mt-1 truncate" title="${esc(valor)}">${esc(valor)}</dd></div>`;
                 $('monAparelho').innerHTML = item('Aparelho', a.modelo || '—') + item('Android', a.android || '—')
                     + item('Núcleos', a.nucleos ?? '—') + item('Ligado há', fmtDuracao(a.uptime_s))
                     + item('Agente rodando há', fmtDuracao(ag.uptime_s)) + item('PID do agente', ag.pid ?? '—');
             }
+
+            // ---- Ao vivo: 1 amostra/s do node enquanto esta aba está aberta ----
+            const SEM_VIVO = 'Aguardando o node — as amostras ao vivo chegam a cada 1 s.';
+            function desenharVivo() {
+                const opc = { janela: AO_VIVO, rotulo: '−2 min', vazio: SEM_VIVO };
+                desenharGrafico(ip, vivo, { ...opc, area: $('monGrafCpu') });
+                desenharGrafico(ip, vivo, { ...opc, area: $('monGrafMem'), series: SERIES_MEM, unidade: 'MB', teto: null });
+                const ult = vivo[vivo.length - 1];
+                $('monCobertura').textContent = ult
+                    ? `Ao vivo · 1 amostra por segundo · última às ${new Date(ult.t * 1000).toLocaleTimeString('pt-BR')} · tabelas: última 1 h`
+                    : 'Ao vivo · aguardando o node…';
+            }
+            function semVivo() {
+                if (janelaMonitor === AO_VIVO) $('monCobertura').textContent =
+                    'Ao vivo · sem amostras há alguns segundos (node desconectado do WebSocket ou agente desatualizado).';
+            }
+            const onVivo = (a) => {
+                if (!a || a.ip !== ip || typeof a.t !== 'number') return;
+                vivo.push(a);
+                while (vivo.length && vivo[0].t < a.t - AO_VIVO_BUFFER_S) vivo.shift();
+                clearTimeout(timerSemVivo);
+                timerSemVivo = setTimeout(semVivo, 5000);
+                // "CPU agora" / "RAM agora" da tabela de armazenamento seguem o ao vivo
+                if (node) {
+                    node.cpu_workers = { ...(node.cpu_workers || {}), ...(a.cpu_workers || {}) };
+                    for (const [w, mb] of Object.entries(a.ram_workers || {})) {
+                        if (node.servicos && node.servicos[w]) node.servicos[w].ram_mb = mb;
+                    }
+                    desenharArmazenamento();
+                }
+                if (janelaMonitor === AO_VIVO) { $('monAviso').classList.add('hidden'); desenharVivo(); }
+            };
+            const assinarVivo = () => socket.emit('aovivo_assinar', { ip });
 
             function desenharServicos() {
                 if (!est && !node) return;
@@ -2346,6 +2387,7 @@ exec python3 bot.py`)}
                 janelaMonitor = +b.dataset.janela;
                 $('monJanelas').innerHTML = grupo('data-janela', JANELAS, janelaMonitor, 'Período');
                 $('monGrafCpu').innerHTML = $('monGrafMem').innerHTML = '<div class="h-[150px] grid place-items-center text-[12px] text-muted">Carregando…</div>';
+                if (janelaMonitor === AO_VIVO) desenharVivo();
                 carregarStats();
             });
             $('btnRecalcular').addEventListener('click', async () => {
@@ -2374,13 +2416,27 @@ exec python3 bot.py`)}
             carregarNode(); carregarStats();
             let ultimoNode = 0;
             const onUpd = (data) => {
-                if (!data || data.ip !== ip || Date.now() - ultimoNode < 5000) return;
+                if (!data || data.ip !== ip) return;
+                // A assinatura se perde se a aba abriu antes de o node aparecer no
+                // host (ou se ele reconectou): sem amostra recente, assina de novo
+                const ult = vivo[vivo.length - 1];
+                if (!ult || Date.now() / 1000 - ult.t > 5) assinarVivo();
+                if (Date.now() - ultimoNode < 5000) return;
                 ultimoNode = Date.now();
                 carregarNode();
             };
             socket.on('node_updated', onUpd);
+            socket.on('aovivo_saida', onVivo);
+            socket.on('connect', assinarVivo);  // reconectou: a sala foi perdida
+            assinarVivo();
+            if (janelaMonitor === AO_VIVO) desenharVivo();
+            timerSemVivo = setTimeout(semVivo, 8000);
             const timer = setInterval(carregarStats, 30000);
             cleanup = () => {
+                socket.emit('aovivo_cancelar', { ip });
+                socket.off('aovivo_saida', onVivo);
+                socket.off('connect', assinarVivo);
+                clearTimeout(timerSemVivo);
                 clearInterval(timer);
                 clearTimeout(timerMedindo);
                 logs.parar();

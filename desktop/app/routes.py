@@ -880,6 +880,7 @@ def node_sync():
         _carregar_historico(ip_node, dados.get("historico"))
     _registrar_amostra(ip_node, dados)
     _reconciliar_logs(ip_node, dados.get("logs_ativos"))
+    _renovar_ao_vivo(ip_node, dados.get("ao_vivo"))
 
     # Notifica os painéis abertos para atualizarem sem precisar recarregar a página
     socketio.emit('node_updated', {'ip': ip_node})
@@ -1011,6 +1012,75 @@ def handle_logs_saida(data):
                                  'inicial': bool(data.get('inicial'))}, to=_sala_logs(ip, alias))
 
 
+# ---------------------------------------------------------------------------
+# Uso ao vivo (aba Monitor): CPU/RAM a cada 1 s enquanto alguém assiste
+#   navegador --aovivo_assinar--> host (entra na sala) --aovivo_to_<ip>--> node
+#   node --aovivo_saida (1/s)--> host --aovivo_saida--> só a sala aovivo:<ip>
+# A assinatura no node vence sozinha em 30 s; cada sync a renova enquanto
+# houver navegador na sala, e cancela se o node mede sem ninguém assistir.
+# ---------------------------------------------------------------------------
+# ip -> sids dos navegadores com a aba Monitor aberta
+assinantes_ao_vivo = {}
+
+
+def _sala_ao_vivo(ip):
+    return f"aovivo:{ip}"
+
+
+@socketio.on('aovivo_assinar')
+def handle_aovivo_assinar(data):
+    data = data if isinstance(data, dict) else {}
+    ip = data.get('ip')
+    if ip not in nodes_conectados:
+        return
+    join_room(_sala_ao_vivo(ip))
+    assinantes_ao_vivo.setdefault(ip, set()).add(request.sid)
+    _emitir_ao_node(ip, f"aovivo_to_{ip}", {'acao': 'assinar'})
+
+
+def _sair_do_ao_vivo(sid, ip):
+    sids = assinantes_ao_vivo.get(ip)
+    if not sids or sid not in sids:
+        return
+    sids.discard(sid)
+    leave_room(_sala_ao_vivo(ip), sid=sid)
+    if not sids:
+        assinantes_ao_vivo.pop(ip, None)
+        _emitir_ao_node(ip, f"aovivo_to_{ip}", {'acao': 'cancelar'})
+
+
+@socketio.on('aovivo_cancelar')
+def handle_aovivo_cancelar(data):
+    data = data if isinstance(data, dict) else {}
+    _sair_do_ao_vivo(request.sid, data.get('ip'))
+
+
+def _renovar_ao_vivo(ip, ativo_no_node):
+    if assinantes_ao_vivo.get(ip):
+        _emitir_ao_node(ip, f"aovivo_to_{ip}", {'acao': 'assinar'})
+    elif ativo_no_node is True:
+        _emitir_ao_node(ip, f"aovivo_to_{ip}", {'acao': 'cancelar'})
+
+
+def _num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+@socketio.on('aovivo_saida')
+def handle_aovivo_saida(data):
+    data = data if isinstance(data, dict) else {}
+    ip = _ip_do_node_que_enviou()
+    if not ip:
+        return
+    def por_worker(chave):
+        valores = data.get(chave)
+        return {a: _num(v) for a, v in valores.items() if _alias_valido(a)} if isinstance(valores, dict) else {}
+
+    amostra = {k: _num(data.get(k)) for k in ('t', 'cpu', 'ram', 'agente_mb', 'supervisord_mb')}
+    amostra.update(ip=ip, cpu_workers=por_worker('cpu_workers'), ram_workers=por_worker('ram_workers'))
+    socketio.emit('aovivo_saida', amostra, to=_sala_ao_vivo(ip))
+
+
 def _emitir_ao_node(ip, evento, dados):
     """Envia um evento só para o(s) socket(s) do node. Devolve quantos receberam."""
     sids = [sid for sid, ip_node in list(sockets_nodes.items()) if ip_node == ip]
@@ -1039,6 +1109,8 @@ def handle_disconnect(*_):
         logger.info("[-] WebSocket do node %s encerrado.", ip_node)
     for ip, alias in [chave for chave, sids in assinantes_logs.items() if request.sid in sids]:
         _sair_dos_logs(request.sid, ip, alias)
+    for ip in [ip for ip, sids in assinantes_ao_vivo.items() if request.sid in sids]:
+        _sair_do_ao_vivo(request.sid, ip)
 
 
 @socketio.on('connect')
