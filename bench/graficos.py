@@ -220,12 +220,12 @@ def fig_e7():
     ms = [num(l["http_ms"]) for l in linhas]
     fig, ax = plt.subplots(figsize=(8, 3.2))
     ax.plot([h for h, m in zip(horas, ms) if m], [m for m in ms if m], color=SERIE[0], linewidth=1,
-            label="Tempo de resposta HTTP")
+            label=t("Tempo de resposta HTTP", "Tempo de resposta do site"))
     falhas = [h for h, l in zip(horas, linhas) if l["http_ok"] != "True"]
     if falhas:
         topo = max(m for m in ms if m) if any(ms) else 1
         ax.scatter(falhas, [topo] * len(falhas), marker="v", s=40, color=CRITICO, zorder=4,
-                   label=f"Sem resposta ({len(falhas)})")
+                   label=t(f"Sem resposta ({len(falhas)})", f"Sem registro ({len(falhas)} de {len(linhas)})"))
     pids = [(h, l["servico_pid"]) for h, l in zip(horas, linhas) if l["servico_pid"]]
     reinicios = [b[0] for a, b in zip(pids, pids[1:]) if a[1] != b[1]]
     for h in reinicios:
@@ -233,15 +233,18 @@ def fig_e7():
     ok = sum(1 for l in linhas if l["http_ok"] == "True")
     ax.set_yscale("log")
     ax.set_xlabel("Horas desde o início")
-    ax.set_ylabel("ms (escala log)")
-    ax.set_title(f"E7 — Disponibilidade: {100 * ok / len(linhas):.2f}% em {horas[-1]:.1f} h "
-                 f"({len(reinicios)} reinício(s) do serviço)")
+    ax.set_ylabel(t("ms (escala log)", "Milissegundos (escala log)"))
+    pct = f"{100 * ok / len(linhas):.2f}".replace(".", ",") if APRESENTACAO else f"{100 * ok / len(linhas):.2f}"
+    ax.set_title(t(f"E7 — Disponibilidade: {pct}% em {horas[-1]:.1f} h "
+                   f"({len(reinicios)} reinício(s) do serviço)",
+                   f"Site no ar {pct}% do tempo em {round(horas[-1])} h, sem reinícios"
+                   if not reinicios else f"Site no ar {pct}% do tempo em {round(horas[-1])} h"))
     ax.legend(loc="upper left", fontsize=8)
     salvar(fig, "e7_disponibilidade")
 
 
 if __name__ == "__main__":
     print(f"Figuras em {SAIDA}:")
-    figuras = (fig_e4, fig_e1) if APRESENTACAO else (fig_e4, fig_e1, fig_e3, fig_e8, fig_e7)
+    figuras = (fig_e4, fig_e1, fig_e7) if APRESENTACAO else (fig_e4, fig_e1, fig_e3, fig_e8, fig_e7)
     for f in figuras:
         f()
