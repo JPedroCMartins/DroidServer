@@ -742,22 +742,25 @@
             <p class="pequeno" style="margin-top:10px">O teste também revelou uma falha na conexão do terminal, que foi corrigida (linha "versão antiga" no gráfico).</p>
         </section>
 
-        <!-- 15. Resultado: 24 h. Resultado pendente: troque só o bloco #e7-resultado -->
+        <!-- 15. Resultado: 24 h (E7, 16/11 23:21 → 17/11 23:21, moto e40) -->
         <section class="slide" data-titulo="24 horas">
             <div class="sobre">Resultado 3</div>
-            <h2 class="titulo">O serviço continua no ar sozinho?</h2>
-            <div class="grade2 meio" style="grid-template-columns: 1fr 400px; align-items:center">
-                <ul class="lista">
-                    <li><svg class="ico"><use href="#i-phone"/></svg><span>Moto e40 na tomada, <b>tela apagada</b>, com um site de teste rodando no ambiente Linux.</span></li>
-                    <li><svg class="ico"><use href="#i-clock"/></svg><span>O próprio celular testa o site <b>a cada 10 segundos</b> e anota o resultado, sem depender do PC.</span></li>
-                    <li><svg class="ico"><use href="#i-activity"/></svg><span>Até agora: <b>99,94%</b> no ar em 4,4 h, sem reinícios. O serviço ficou 6 h ligado mesmo com o PC desligado.</span></li>
-                </ul>
-                <div class="card" id="e7-resultado" style="text-align:center">
-                    <span class="pilula alerta">Resultado pendente</span>
-                    <div class="numero" style="margin-top:12px">— %</div>
-                    <div class="legenda">do tempo no ar em 24 h · meta: 99% ou mais</div>
+            <h2 class="titulo">O serviço ficou 24 horas no ar sozinho</h2>
+            <div class="grade2 meio" style="grid-template-columns: 340px 1fr; align-items:center">
+                <div style="display:grid;gap:18px">
+                    <div class="card" id="e7-resultado">
+                        <div class="numero ok">99,94%</div>
+                        <div class="legenda">do tempo no ar em 24 h (8.638 de 8.643 testes, um a cada 10 s)</div>
+                    </div>
+                    <div class="card">
+                        <div class="numero">0</div>
+                        <div class="legenda">reinícios: o Android não encerrou o serviço, com a tela apagada</div>
+                    </div>
+                    <div><span class="pilula ok"><svg class="ico"><use href="#i-check"/></svg>Meta: 99% ou mais</span></div>
                 </div>
+                <div class="figura"><img src="{{ url_for('static', filename='apresentacao/e7_disponibilidade.png') }}" alt="Gráfico do tempo de resposta do site ao longo de 24 horas, com 5 testes sem registro"></div>
             </div>
+            <p class="pequeno" style="margin-top:10px">O próprio celular fez os testes, então o PC pôde ficar desligado por cerca de 5 h sem afetar nada. As 5 falhas são pausas curtas no registro, contadas como fora do ar por segurança.</p>
         </section>
 
         <!-- 16. Considerações finais -->
