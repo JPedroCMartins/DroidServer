@@ -1,9 +1,14 @@
-// Gera o artigo para a Revista Tópicos (.docx, ABNT NBR 6022) a partir do vault:
+// Gera as duas versões do artigo (.docx, ABNT) a partir do mesmo vault:
 //
 //   cd docs/gerador-docx && npm install && npm run gerar
 //
-// Saída: docs/DroidServer_artigo_topicos.docx — com autoria e nota de minicurrículo,
-// título e resumo em português e inglês, sem capa nem folha de rosto.
+// Saídas, com o mesmo texto:
+//   docs/DroidServer_TCC_artigo.docx      — versão base do TCC: capa e folha de rosto
+//                                           (NBR 14724) seguidas do artigo
+//   docs/DroidServer_artigo_topicos.docx  — versão para a Revista Tópicos (NBR 6022):
+//                                           começa direto no artigo, sem capa
+// Nas duas, o artigo abre com título e resumo em português e inglês e autoria com
+// nota de minicurrículo.
 // Os diagramas Mermaid são renderizados (Chrome do sistema) e guardados em
 // docs/obsidian-valt/figuras/diagramas/ — só são refeitos quando o código muda.
 // Lacunas ([RESULTADO], [PENDENTE: ...], [DEFINIR: ...]) e referências a conferir (⚠)
@@ -24,7 +29,10 @@ import {
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const VAULT = path.resolve(AQUI, "../obsidian-valt");
-const SAIDA = path.resolve(AQUI, "../DroidServer_artigo_topicos.docx");
+const VERSOES = [
+  { nome: "base (TCC)", saida: path.resolve(AQUI, "../DroidServer_TCC_artigo.docx"), comCapa: true },
+  { nome: "Revista Tópicos", saida: path.resolve(AQUI, "../DroidServer_artigo_topicos.docx"), comCapa: false },
+];
 const DIAGRAMAS = path.join(VAULT, "figuras", "diagramas");
 const CHROME = process.env.CHROME || "/usr/bin/google-chrome";
 const EQUACOES_DIR = path.join(VAULT, "figuras", "equacoes");
@@ -36,6 +44,14 @@ const EQUACAO_NATIVA = process.env.EQUACOES === "word";
 // Títulos e autoria (o que estiver entre colchetes de PENDENTE/DEFINIR sai destacado)
 // ---------------------------------------------------------------------------
 const META = {
+  // Capa e folha de rosto (só na versão base do TCC)
+  instituicao: "CENTRO UNIVERSITÁRIO DO NORTE — UNINORTE",
+  curso: "ENGENHARIA DA COMPUTAÇÃO",
+  natureza: "Artigo científico apresentado ao curso de Engenharia da Computação do Centro Universitário do " +
+    "Norte — Uninorte, como requisito parcial para obtenção do título de Bacharel em Engenharia da Computação.",
+  orientador: "Euler de Azevedo Costa",
+  local: "MANAUS – AM",
+  ano: "2026",
   titulo: "DroidServer: gerenciamento de ambientes Linux do tipo VPS em smartphones Android reaproveitados sem acesso root",
   tituloEn: "DroidServer: managing VPS-like Linux environments on repurposed Android smartphones without root access",
   // Um autor por linha, cada um com a sua nota de rodapé (minicurrículo, NBR 6022).
@@ -494,9 +510,36 @@ function converterArquivo(nome, ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Capa e folha de rosto (NBR 14724) — só na versão base do TCC
+// ---------------------------------------------------------------------------
+const centro = (texto, extra = {}) => new Paragraph({
+  alignment: AlignmentType.CENTER, spacing: { line: 360, before: 0, after: 0 },
+  children: trechos(texto, { bold: true, ...extra }),
+});
+const vazio = (n) => Array.from({ length: n }, () => new Paragraph({ spacing: { line: 360 }, children: [] }));
+const autorCapa = META.autores[0].nome.toUpperCase();
+
+const capa = () => [
+  centro(META.instituicao), centro(META.curso), ...vazio(5),
+  centro(autorCapa), ...vazio(7),
+  centro(META.titulo.toUpperCase()), ...vazio(11),
+  centro(META.local), centro(META.ano),
+];
+
+const folhaRosto = () => [
+  centro(autorCapa), ...vazio(8),
+  centro(META.titulo.toUpperCase()), ...vazio(4),
+  new Paragraph({ style: "Natureza", children: trechos(META.natureza, {}) }),
+  new Paragraph({ style: "Natureza", spacing: { before: 240 }, children: [
+    new TextRun({ text: "Orientador: " }), ...trechos(META.orientador, {})] }),
+  ...vazio(7),
+  centro(META.local), centro(META.ano),
+];
+
+// ---------------------------------------------------------------------------
 // Abertura do artigo: títulos em português e inglês (fonte 14) e autoria
 // ---------------------------------------------------------------------------
-const aberturaArtigo = [
+const aberturaArtigo = () => [
   new Paragraph({ style: "TituloArtigo", children: trechos(META.titulo, {}) }),
   new Paragraph({ style: "TituloOutraLingua", children: trechos(META.tituloEn, {}) }),
   ...META.autores.map((a, i) =>
@@ -588,9 +631,25 @@ const numeracao = {
 // ---------------------------------------------------------------------------
 const margens = { top: 3 * CM, left: 3 * CM, bottom: 2 * CM, right: 2 * CM };
 
-async function gerar() {
-  const ctx = { secao: "texto" };
-  const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, ctx));
+const numeroPagina = () => new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
+  children: [new TextRun({ children: [PageNumber.CURRENT], size: PT(10) })] })] });
+const semCabecalho = () => ({ default: new Header({ children: [] }) });
+
+async function gerar({ saida, comCapa }) {
+  const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, { secao: "texto" }));
+  const artigo = {
+    properties: { page: { margin: margens, pageNumbers: { start: comCapa ? 2 : 1 } } },
+    headers: { default: numeroPagina() },
+    footers: { default: new Footer({ children: [] }) },
+    children: [...aberturaArtigo(), ...corpo],
+  };
+  // Na versão base, a contagem começa na folha de rosto (a capa não conta) e o número
+  // só aparece a partir do artigo.
+  const sections = comCapa ? [
+    { properties: { page: { margin: margens } }, headers: semCabecalho(), children: capa() },
+    { properties: { page: { margin: margens, pageNumbers: { start: 1 } } }, headers: semCabecalho(), children: folhaRosto() },
+    artigo,
+  ] : [artigo];
   const doc = new Document({
     compatabilityModeVersion: 15,   // Word 2013+: abre sem "Modo de Compatibilidade"
     creator: META.autores[0].nome,
@@ -601,13 +660,7 @@ async function gerar() {
     numbering: numeracao,
     footnotes: Object.fromEntries(META.autores.map((a, i) => [i + 1, { children: [new Paragraph({
       style: "Fonte", alignment: AlignmentType.LEFT, children: trechos(a.nota, {}) })] }])),
-    sections: [{
-      properties: { page: { margin: margens, pageNumbers: { start: 1 } } },
-      headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
-        children: [new TextRun({ children: [PageNumber.CURRENT], size: PT(10) })] })] }) },
-      footers: { default: new Footer({ children: [] }) },
-      children: [...aberturaArtigo, ...corpo],
-    }],
+    sections,
   });
 
   // O LibreOffice só importa o somatório (m:nary) com um <m:sup/> explícito, mesmo
@@ -617,9 +670,8 @@ async function gerar() {
   zip.file("word/document.xml", xml.replace(/<\/m:sub><m:e>/g, "</m:sub><m:sup/><m:e>"));
   // A biblioteca grava <w:highlightCs>, que não existe no esquema OOXML: o Word pode
   // acusar "conteúdo ilegível" e editores menos tolerantes podem recusar o arquivo.
-  for (const parte of ["word/document.xml", "word/footnotes.xml", "word/styles.xml", "word/header1.xml"]) {
-    const f = zip.file(parte);
-    if (f) zip.file(parte, (await f.async("string")).replace(/<w:highlightCs\b[^>]*\/>/g, ""));
+  for (const parte of Object.keys(zip.files).filter((n) => /^word\/[^/]+\.xml$/.test(n))) {
+    zip.file(parte, (await zip.file(parte).async("string")).replace(/<w:highlightCs\b[^>]*\/>/g, ""));
   }
   // Sem entradas de pasta no ZIP (alguns leitores de .docx recusam o arquivo com elas).
   // Copia só os arquivos para um pacote novo: no JSZip, remover a pasta apagaria o conteúdo.
@@ -630,9 +682,11 @@ async function gerar() {
   for (const caminho of arquivos) {
     limpo.file(caminho, await zip.file(caminho).async("uint8array"), { createFolders: false });
   }
-  fs.writeFileSync(SAIDA, await limpo.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
-  console.log(`Gerado: ${path.relative(process.cwd(), SAIDA)}`);
+  fs.writeFileSync(saida, await limpo.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  console.log(`Gerado: ${path.relative(process.cwd(), saida)}`);
 }
 
-await gerar();
+// As duas versões saem do mesmo vault; cada uma converte o texto de novo para
+// não compartilhar objetos (imagens, notas) entre documentos.
+for (const versao of VERSOES) await gerar(versao);
 console.log("Renumeração de figuras/quadros/tabelas:", renumeracao);

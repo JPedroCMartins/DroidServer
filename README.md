@@ -229,7 +229,8 @@ DroidServer/
 └── docs/
     ├── obsidian-valt/        # Texto do TCC (Obsidian) — fonte única
     ├── gerador-docx/         # Gera o .docx ABNT a partir do vault
-    ├── DroidServer_artigo_topicos.docx  # artigo para a Revista Tópicos
+    ├── DroidServer_TCC_artigo.docx      # artigo base do TCC (com capa e folha de rosto)
+    ├── DroidServer_artigo_topicos.docx  # mesmo artigo, no formato da Revista Tópicos
     ├── HISTORICO.md          # O que já foi feito
     └── PROXIMOS-PASSOS.md    # O que falta fazer
 ```
