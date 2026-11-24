@@ -5,10 +5,14 @@
 // Saídas, com o mesmo texto:
 //   docs/DroidServer_TCC_artigo.docx      — versão base do TCC: capa e folha de rosto
 //                                           (NBR 14724) seguidas do artigo
-//   docs/DroidServer_artigo_topicos.docx  — versão para a Revista Tópicos (NBR 6022):
-//                                           começa direto no artigo, sem capa
+//   docs/DroidServer_artigo_topicos.docx  — versão para a Revista Tópicos (NBR 6022), no
+//                                           modelo da revista (modelo_artigo.docx): logo no
+//                                           cabeçalho da 1ª página, sem capa, seções
+//                                           reagrupadas em Introdução, Fundamentação teórica,
+//                                           Metodologia, Resultados e discussão e Conclusão
 // Nas duas, o artigo abre com título e resumo em português e inglês e autoria com
-// nota de minicurrículo.
+// nota de minicurrículo. O texto é o mesmo; só mudam a numeração das seções e os
+// trechos do vault marcados com %% tcc %% ... %% /tcc %% ou %% topicos %% ... %% /topicos %%.
 // Os diagramas Mermaid são renderizados (Chrome do sistema) e guardados em
 // docs/obsidian-valt/figuras/diagramas/ — só são refeitos quando o código muda.
 // Lacunas ([RESULTADO], [PENDENTE: ...], [DEFINIR: ...]) e referências a conferir (⚠)
@@ -30,9 +34,10 @@ import {
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const VAULT = path.resolve(AQUI, "../obsidian-valt");
 const VERSOES = [
-  { nome: "base (TCC)", saida: path.resolve(AQUI, "../DroidServer_TCC_artigo.docx"), comCapa: true },
-  { nome: "Revista Tópicos", saida: path.resolve(AQUI, "../DroidServer_artigo_topicos.docx"), comCapa: false },
+  { nome: "base (TCC)", saida: path.resolve(AQUI, "../DroidServer_TCC_artigo.docx"), perfil: "tcc" },
+  { nome: "Revista Tópicos", saida: path.resolve(AQUI, "../DroidServer_artigo_topicos.docx"), perfil: "topicos" },
 ];
+const CABECALHO_TOPICOS = path.join(AQUI, "cabecalho-topicos.png");   // logo do modelo da revista
 const DIAGRAMAS = path.join(VAULT, "figuras", "diagramas");
 const CHROME = process.env.CHROME || "/usr/bin/google-chrome";
 const EQUACOES_DIR = path.join(VAULT, "figuras", "equacoes");
@@ -99,8 +104,46 @@ function escaparTil(md) {
   }).join("\n");
 }
 
-function lerMd(nome) {
-  return escaparTil(fs.readFileSync(path.join(VAULT, nome), "utf8"))
+// Revista Tópicos: o modelo da revista tem cinco seções. Os capítulos do vault são
+// reagrupados (o nível dos títulos desce um degrau) e as remissões "seção N" seguem.
+const TOPICOS = {
+  secoes: { 3: "2.7", 4: "3", 5: "4.1", 6: "4.2", 7: "4.3", 8: "5" },
+  rebaixar: ["03-trabalhos-relacionados.md", "05-prototipacao.md", "06-avaliacao-experimental.md", "07-discussao.md"],
+  antes: { "05-prototipacao.md": "# 4. Resultados e Discussão" },
+  renomear: { "02-referencial-teorico.md": "Fundamentação Teórica" },   // abrange os trabalhos relacionados
+};
+const secaoTopicos = (num) => {
+  const [cap, ...resto] = num.split(".");
+  const novo = TOPICOS.secoes[cap];
+  return novo ? [novo, ...resto].join(".") : num;
+};
+
+function ajustarTopicos(md, nome) {
+  const rebaixar = TOPICOS.rebaixar.includes(nome);
+  return md.split("\n").map((linha) => {
+    const h = linha.match(/^(#{1,5}) (\d+(?:\.\d+)*)(\.?) (.*)$/);
+    if (h) {
+      const nomeSecao = h[1].length === 1 && TOPICOS.renomear[nome] ? TOPICOS.renomear[nome] : h[4];
+      return `${rebaixar ? "#" : ""}${h[1]} ${secaoTopicos(h[2])}${h[1].length === 1 && !rebaixar ? "." : ""} ${nomeSecao}`;
+    }
+    return linha.replace(/\b(seç(?:ão|ões)) (\d+(?:\.\d+)*)/g, (_, s, n) => `${s} ${secaoTopicos(n)}`);
+  }).join("\n");
+}
+
+// Trechos só de uma versão: %% tcc %% ... %% /tcc %% e %% topicos %% ... %% /topicos %%
+// (comentários do Obsidian). Os trechos da Tópicos já vêm com a numeração nova.
+function versionar(md, nome, perfil) {
+  const outro = perfil === "topicos" ? "tcc" : "topicos";
+  md = md.replace(new RegExp(`%% ${outro} %%[\\s\\S]*?%% /${outro} %%\\n?`, "g"), "");
+  if (perfil !== "topicos") return md.replace(/^%% \/?tcc %%\n?/gm, "");
+  const partes = md.split(/(%% topicos %%[\s\S]*?%% \/topicos %%)/);
+  md = partes.map((p) => (p.startsWith("%% topicos %%") ? p : ajustarTopicos(p, nome))).join("")
+    .replace(/^%% \/?(tcc|topicos) %%\n?/gm, "");
+  return TOPICOS.antes[nome] ? `${TOPICOS.antes[nome]}\n\n${md}` : md;
+}
+
+function lerMd(nome, perfil = "tcc") {
+  return escaparTil(versionar(fs.readFileSync(path.join(VAULT, nome), "utf8"), nome, perfil))
     .replace(/!\[\[([^\]|]+)(\|[^\]]*)?\]\]/g, (_, alvo) => `![](${alvo.trim()})`)       // embed
     .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")                                        // [[a|b]]
     .replace(/\[\[([^\]]+)\]\]/g, (_, a) => a.replace(/\.md$/, "").replace(/^\d+-/, "")); // [[a]]
@@ -261,14 +304,16 @@ function separarLegenda(raw) {
   };
 }
 
+// Legendas vêm cruas do Markdown: itálico e negrito (ex.: *et al.*) passam pelo lexer.
+const emLinhaMd = (texto) => emLinha(marked.Lexer.lexInline(texto));
 const legendaAcima = (l) => new Paragraph({
   style: "Legenda", keepNext: true,
-  children: [new TextRun({ text: `${l.rotulo} — `, bold: true }), ...trechos(l.titulo, {})],
+  children: [new TextRun({ text: `${l.rotulo} — `, bold: true }), ...emLinhaMd(l.titulo)],
 });
 const legendaAbaixo = (l) => [
-  ...(l.nota ? [new Paragraph({ style: "Fonte", children: trechos(`Nota: ${l.nota}`, {}) })] : []),
+  ...(l.nota ? [new Paragraph({ style: "Fonte", children: emLinhaMd(`Nota: ${l.nota}`) })] : []),
   ...(l.lembrete ? [new Paragraph({ style: "Fonte", children: trechos(`[Revisar: ${l.lembrete}]`, { highlight: "yellow" }) })] : []),
-  new Paragraph({ style: "Fonte", children: [new TextRun({ text: "Fonte: " }), ...trechos(l.fonte, {})] }),
+  new Paragraph({ style: "Fonte", children: [new TextRun({ text: "Fonte: " }), ...emLinhaMd(l.fonte)] }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -277,25 +322,36 @@ const legendaAbaixo = (l) => [
 let instanciaLista = 0;
 const NAO_NUMERADAS = ["resumo", "abstract", "contribuição dos autores", "declaração de uso de inteligência artificial", "referências", "glossário"];
 
+// Número do título: "1 Introdução" / "1.1 Contexto" (ABNT, versão do TCC) ou
+// "1. INTRODUÇÃO" / "1.1. Contexto" (modelo da Revista Tópicos).
+function numerarTitulo(t, topicos) {
+  return { ...t, tokens: t.tokens.map((x, i) => (i === 0 && x.type === "text"
+    ? { ...x, tokens: undefined, text: x.text.replace(/^(\d+(?:\.\d+)*)\.?\s+/, topicos ? "$1. " : "$1 ") } : x)) };
+}
+
 function titulo(t, ctx) {
   const bruto = textoPuro(t.tokens).trim();
+  const topicos = ctx.perfil === "topicos";
   if (t.depth === 1) {
     const chave = bruto.toLowerCase().replace(/^\d+\.\s*/, "");
     if (NAO_NUMERADAS.includes(chave)) {
       ctx.secao = chave;
+      if (topicos) {   // modelo: RESUMO/ABSTRACT/REFERÊNCIAS BIBLIOGRÁFICAS à esquerda, 14, sem quebra de página
+        const texto = chave === "referências" ? "REFERÊNCIAS BIBLIOGRÁFICAS" : chave.toUpperCase();
+        return [new Paragraph({ style: ["resumo", "abstract"].includes(chave) ? "TituloResumo" : "TituloSemNumero",
+          children: [new TextRun({ text: texto })] })];
+      }
       return [new Paragraph({ style: "TituloSemNumero", pageBreakBefore: chave === "referências" || chave === "glossário",
         children: [new TextRun({ text: chave.toUpperCase() })] })];
     }
     ctx.secao = "texto";
-    const sem = { ...t, tokens: t.tokens.map((x, i) => (i === 0 && x.type === "text"
-      ? { ...x, tokens: undefined, text: x.text.replace(/^(\d+)\.\s+/, "$1 ") } : x)) };
-    return [new Paragraph({ heading: HeadingLevel.HEADING_1, children: emLinha(sem.tokens) })];
+    return [new Paragraph({ heading: HeadingLevel.HEADING_1, children: emLinha(numerarTitulo(t, topicos).tokens) })];
   }
   if (ctx.secao === "referências" || ctx.secao === "glossário") {
     return [new Paragraph({ heading: HeadingLevel.HEADING_3, children: emLinha(t.tokens) })];
   }
   return [new Paragraph({ heading: t.depth === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
-    children: emLinha(t.tokens) })];
+    children: emLinha(numerarTitulo(t, topicos).tokens) })];
 }
 
 function estiloParagrafo(ctx) {
@@ -482,7 +538,7 @@ function elementoComLegenda(t) {
 }
 
 function converterArquivo(nome, ctx) {
-  const tokens = marked.lexer(lerMd(nome));
+  const tokens = marked.lexer(lerMd(nome, ctx.perfil));
   const saida = [];
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
@@ -539,18 +595,32 @@ const folhaRosto = () => [
 // ---------------------------------------------------------------------------
 // Abertura do artigo: títulos em português e inglês (fonte 14) e autoria
 // ---------------------------------------------------------------------------
-const aberturaArtigo = () => [
-  new Paragraph({ style: "TituloArtigo", children: trechos(META.titulo, {}) }),
-  new Paragraph({ style: "TituloOutraLingua", children: trechos(META.tituloEn, {}) }),
+// Modelo da Tópicos: "TÍTULO PRINCIPAL: subtítulo", título em caixa alta (14) e
+// subtítulo em 12, os dois em negrito; o título em inglês segue o mesmo formato.
+const tituloTopicos = (texto) => {
+  const i = texto.indexOf(":");
+  const principal = i >= 0 ? texto.slice(0, i + 1) : texto;
+  return new Paragraph({ style: "TituloArtigo", children: [
+    new TextRun({ text: principal.toUpperCase() + (i >= 0 ? " " : "") }),
+    ...(i >= 0 ? trechos(texto.slice(i + 1).trim(), { size: PT(12) }) : []),
+  ] });
+};
+
+const aberturaArtigo = (perfil) => [
+  ...(perfil === "topicos"
+    ? [tituloTopicos(META.titulo), tituloTopicos(META.tituloEn)]
+    : [new Paragraph({ style: "TituloArtigo", children: trechos(META.titulo, {}) }),
+      new Paragraph({ style: "TituloOutraLingua", children: trechos(META.tituloEn, {}) })]),
   ...META.autores.map((a, i) =>
-    new Paragraph({ style: "Autoria", children: [new TextRun({ text: a.nome }), new FootnoteReferenceRun(i + 1)] })),
+    new Paragraph({ style: "Autoria", spacing: i < META.autores.length - 1 ? { after: 0 } : undefined,
+      children: [new TextRun({ text: a.nome }), new FootnoteReferenceRun(i + 1)] })),
 ];
 
 // ---------------------------------------------------------------------------
 // Estilos (ABNT): Times 12, entrelinha 1,5, recuo de 1,25 cm, títulos numerados
 // ---------------------------------------------------------------------------
 const simples = { line: 240, before: 0, after: 0 };
-const estilos = {
+const estilosTcc = {
   default: {
     document: { run: { font: FONTE, size: PT(12) }, paragraph: { spacing: { line: 360 } } },
     heading1: { run: { font: FONTE, size: PT(12), bold: true, allCaps: true, color: "000000" },
@@ -610,6 +680,52 @@ const estilos = {
   ],
 };
 
+// Modelo da Revista Tópicos (modelo_artigo.docx): títulos de seção 14 em negrito e
+// caixa alta, subtítulos 12 em negrito, ambos alinhados à esquerda com entrelinha
+// dupla e 12 pt antes; resumo e abstract em espaço simples, sem recuo; nota de
+// rodapé em 10, justificada. (Subtítulos com entrelinha 1,5 para não abrir um vão
+// duplo logo abaixo do título de seção.) Corpo, legendas, citações e referências como na ABNT.
+const ajustesTopicos = {
+  heading1: { run: { font: FONTE, size: PT(14), bold: true, allCaps: true, color: "000000" },
+    paragraph: { spacing: { line: 480, before: 240, after: 0 }, keepNext: true, keepLines: true } },
+  heading2: { run: { font: FONTE, size: PT(12), bold: true, color: "000000" },
+    paragraph: { spacing: { line: 360, before: 240, after: 120 }, keepNext: true, keepLines: true } },
+  heading3: { run: { font: FONTE, size: PT(12), bold: true, italics: true, color: "000000" },
+    paragraph: { spacing: { line: 360, before: 120, after: 60 }, keepNext: true, keepLines: true } },
+  estilos: {
+    TituloSemNumero: { run: { font: FONTE, size: PT(14), bold: true },
+      paragraph: { alignment: AlignmentType.LEFT, keepNext: true, spacing: { line: 480, before: 240, after: 0 } } },
+    TituloResumo: { run: { font: FONTE, size: PT(14), bold: true },
+      paragraph: { alignment: AlignmentType.LEFT, keepNext: true, spacing: { ...simples, before: 240 } } },
+    TituloArtigo: { run: { font: FONTE, size: PT(14), bold: true },
+      paragraph: { alignment: AlignmentType.CENTER, keepNext: true, spacing: { ...simples, after: 240 } } },
+    Autoria: { run: { font: FONTE, size: PT(12) },
+      paragraph: { alignment: AlignmentType.RIGHT, spacing: { ...simples, before: 240, after: 120 } } },
+    Resumo: { run: { font: FONTE, size: PT(12) },
+      paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: simples } },
+    PalavrasChave: { run: { font: FONTE, size: PT(12) },
+      paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: { ...simples, after: 240 } } },
+    NotaRodape: { run: { font: FONTE, size: PT(10) },
+      paragraph: { alignment: AlignmentType.JUSTIFIED, spacing: simples } },
+  },
+};
+
+function estilos(perfil) {
+  const base = { ...estilosTcc, paragraphStyles: [...estilosTcc.paragraphStyles,
+    { id: "NotaRodape", name: "Nota de rodapé (autoria)", basedOn: "Normal",
+      run: { font: FONTE, size: PT(10) }, paragraph: { alignment: AlignmentType.LEFT, spacing: simples } },
+    { id: "TituloResumo", name: "Título do resumo", basedOn: "Normal",
+      run: { font: FONTE, size: PT(12), bold: true },
+      paragraph: { alignment: AlignmentType.CENTER, keepNext: true, spacing: { line: 360, before: 240, after: 240 } } }] };
+  if (perfil !== "topicos") return base;
+  return {
+    default: { ...base.default, heading1: ajustesTopicos.heading1, heading2: ajustesTopicos.heading2,
+      heading3: ajustesTopicos.heading3 },
+    paragraphStyles: base.paragraphStyles.map((e) => (ajustesTopicos.estilos[e.id]
+      ? { ...e, ...ajustesTopicos.estilos[e.id] } : e)),
+  };
+}
+
 const numeracao = {
   config: [
     { reference: "marcadores", levels: ["•", "◦", "▪"].map((txt, n) => ({
@@ -635,13 +751,27 @@ const numeroPagina = () => new Header({ children: [new Paragraph({ alignment: Al
   children: [new TextRun({ children: [PageNumber.CURRENT], size: PT(10) })] })] });
 const semCabecalho = () => ({ default: new Header({ children: [] }) });
 
-async function gerar({ saida, comCapa }) {
-  const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, { secao: "texto" }));
+// Modelo da Tópicos: logo da revista no cabeçalho da primeira página e nenhum
+// cabeçalho nas demais.
+function cabecalhoTopicos() {
+  const logo = fs.readFileSync(CABECALHO_TOPICOS);
+  return {
+    first: new Header({ children: [new Paragraph({ alignment: AlignmentType.CENTER, spacing: simples,
+      children: [new ImageRun({ type: "png", data: logo, transformation: { width: 442, height: 173 },
+        altText: { name: "Revista Tópicos", title: "Revista Tópicos", description: "Logo da Revista Tópicos" } })] })] }),
+    default: new Header({ children: [] }),
+  };
+}
+
+async function gerar({ saida, perfil }) {
+  const comCapa = perfil === "tcc";
+  const topicos = perfil === "topicos";
+  const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, { secao: "texto", perfil }));
   const artigo = {
-    properties: { page: { margin: margens, pageNumbers: { start: comCapa ? 2 : 1 } } },
-    headers: { default: numeroPagina() },
+    properties: { page: { margin: margens, pageNumbers: { start: comCapa ? 2 : 1 } }, titlePage: topicos },
+    headers: topicos ? cabecalhoTopicos() : { default: numeroPagina() },
     footers: { default: new Footer({ children: [] }) },
-    children: [...aberturaArtigo(), ...corpo],
+    children: [...aberturaArtigo(perfil), ...corpo],
   };
   // Na versão base, a contagem começa na folha de rosto (a capa não conta) e o número
   // só aparece a partir do artigo.
@@ -656,10 +786,10 @@ async function gerar({ saida, comCapa }) {
     lastModifiedBy: META.autores[0].nome,
     title: META.titulo,
     description: "",
-    styles: estilos,
+    styles: estilos(perfil),
     numbering: numeracao,
     footnotes: Object.fromEntries(META.autores.map((a, i) => [i + 1, { children: [new Paragraph({
-      style: "Fonte", alignment: AlignmentType.LEFT, children: trechos(a.nota, {}) })] }])),
+      style: "NotaRodape", children: trechos(` ${a.nota}`, {}) })] }])),
     sections,
   });
 

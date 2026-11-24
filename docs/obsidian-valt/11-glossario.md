@@ -4,7 +4,7 @@
 |---|---|
 | **Bionic** | Biblioteca C do Android, usada no lugar da glibc. |
 | **cgroups** | Recurso do *kernel* Linux que limita e contabiliza o uso de CPU, memória e E/S por grupo de processos. |
-| **Cloudlet** | Pequeno *data center* próximo ao usuário, acessível com baixa latência (SATYANARAYANAN et al., 2009). |
+| **Cloudlet** | Pequeno *data center* próximo ao usuário, acessível com baixa latência (Satyanarayanan *et al.*, 2009). |
 | **Control plane** | Plano de controle; parte do sistema que decide e coordena (no DroidServer, o Host). |
 | **Doze** | Modo de economia de energia do Android que adia rede e CPU de aplicativos quando o aparelho está ocioso. |
 | **E-waste** | Lixo eletrônico; resíduos de equipamentos eletroeletrônicos. |

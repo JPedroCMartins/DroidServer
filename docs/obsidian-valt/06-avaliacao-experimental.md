@@ -24,7 +24,7 @@ O Quadro 3 resume o que foi medido, em qual aparelho e rede, com quantas repeti�
 
 *Quadro 3 — Protocolo dos experimentos.*
 
-Para tempos com poucas repetições (E1), relatam-se a mediana e o intervalo entre mínimo e máximo; para o atraso de entrega (E5, n = 20), a média com intervalo de confiança de 95% (*t* de Student); para latências e vazão, de distribuição assimétrica, a mediana e os percentis (JAIN, 1991). Os critérios de aceitação estão na Tabela 1. Dois experimentos previstos não foram feitos. A medição de temperatura e energia (E9) não foi possível: nos dois aparelhos, a leitura de `/sys/class/thermal` e `/sys/class/power_supply` é negada sem *root*. O tempo de detecção de falha (E6) não foi medido à parte.
+Para tempos com poucas repetições (E1), relatam-se a mediana e o intervalo entre mínimo e máximo; para o atraso de entrega (E5, n = 20), a média com intervalo de confiança de 95% (*t* de Student); para latências e vazão, de distribuição assimétrica, a mediana e os percentis (Jain, 1991). Os critérios de aceitação estão na Tabela 1. Dois experimentos previstos não foram feitos. A medição de temperatura e energia (E9) não foi possível: nos dois aparelhos, a leitura de `/sys/class/thermal` e `/sys/class/power_supply` é negada sem *root*. O tempo de detecção de falha (E6) não foi medido à parte.
 
 ## 6.3 Resultados
 

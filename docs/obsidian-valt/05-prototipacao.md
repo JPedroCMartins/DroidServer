@@ -1,3 +1,9 @@
+%% topicos %%
+
+Esta seção apresenta o protótipo construído (seção 4.1), o protocolo e os resultados da avaliação experimental (seção 4.2) e a discussão desses resultados (seção 4.3).
+
+%% /topicos %%
+
 # 5. Prototipação e Implementação
 
 ## 5.1 Visão geral
