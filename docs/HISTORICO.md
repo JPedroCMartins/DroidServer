@@ -24,6 +24,7 @@ O que já foi feito no DroidServer, em resumo. Os detalhes (decisões, telas pro
 | 16–18/11 | **Fase 4 — texto:** título único, resumo/abstract, conclusão, capturas do painel (8.8), gerador do `.docx` a partir do vault, resultados da E7 (PR #30), referências ⚠ conferidas na Crossref com DOIs (PR #31); orientador, e-mail e Quadro 2 conferidos nas fontes (Junkyard: Ubuntu Touch + Docker Swarm) |
 | 19/11 | **Artigo enxuto:** de 53 para 29 páginas — sem detalhes de implementação, com 2 capturas do painel e os experimentos resumidos em uma tabela e 2 figuras (versão longa no commit 17f9f75) |
 | 21/11 | **Aba Arquivos do Worker** (fora do escopo do TCC): gerenciador da pasta `/root` ao lado do Terminal — enviar arquivos e pastas (inclusive arrastando), baixar arquivo ou pasta em `.zip`, criar pasta e apagar; o Host repassa em blocos ao Node (porta 5051, só o Host pareado) e nada sai da home (`..` e links para fora são recusados). Testado com Node simulado; falta validar no moto e40 |
+| 24/11 | **Parecer do orientador (apto com ajustes) aplicado ao artigo:** revista escolhida: Tópicos (`DroidServer_artigo_topicos.docx`, título e resumo em PT e EN, com autoria); sem capa e folha de rosto; "gerenciamento de frota" no lugar de "orquestração de clusters"; capítulos 2–4 dentro da Introdução e nova seção de Discussão; aparelho, rede, repetições e *commit* de cada experimento; H1 confirmada parcialmente (latência só em 5 GHz); E7 descrita como disponibilidade do processo, com ameaças à validade; senha opcional e modelo de ameaça (LAN confiável); funções posteriores (Tunnel, PostgreSQL, Arquivos, Monitor) fora do escopo; contagem de testes por *commit*; declaração de uso de IA; DOIs; UserLAnd, Andronix e proot-distro referenciados; número de Belkhir e Elmeligi retirado (não conferido no original); Figura 6 com lacunas e vírgula decimal |
 
 ## Bugs corrigidos (numeração da revisão de 15/11)
 
@@ -76,7 +77,7 @@ Também resolvidos na revisão do texto: título único; terminologia Host/Node/
 - Cada Node é identificado pelo token do pareamento, não pelo IP; IP fixo no roteador é desnecessário.
 - O serviço de um Worker é sempre o `/app/run.sh`; a porta é declarada no cabeçalho (`# droidserver: porta=8080`), porque sem *root* o Android nega `/proc/net/tcp`.
 - Reiniciar ao editar não é automático ("Salvar e reiniciar").
-- Aba Serviço na abordagem A (ajuda + visão geral); o assistente que gera o `run.sh` (B), a configuração sem shell (C), repositório Git e variáveis de ambiente ficaram para trabalhos futuros (CI/CD, seção 10.3 do vault).
+- Aba Serviço na abordagem A (ajuda + visão geral); o assistente que gera o `run.sh` (B), a configuração sem shell (C), repositório Git e variáveis de ambiente ficaram para trabalhos futuros.
 - Testes, deploys e experimentos só no moto e40; o POCO é o celular pessoal.
 - PostgreSQL roda fora do proot (pacote do Termux): no proot, o `initdb` trava na emulação de memória compartilhada System V (`--sysvipc`).
 - Versão do PostgreSQL não é escolhível (o Termux só empacota uma); o pacote fica preso (`apt-mark hold`) e a troca de major é manual, via dump/restore. Migração de dados fica nos comandos documentados, sem backup automático pelo painel.

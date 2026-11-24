@@ -1,12 +1,13 @@
-// Gera o TCC em formato de artigo (.docx, ABNT NBR 6022/14724) a partir do vault.
+// Gera o artigo para a Revista Tópicos (.docx, ABNT NBR 6022) a partir do vault:
 //
 //   cd docs/gerador-docx && npm install && npm run gerar
 //
-// Saída: docs/DroidServer_TCC_artigo.docx
+// Saída: docs/DroidServer_artigo_topicos.docx — com autoria e nota de minicurrículo,
+// título e resumo em português e inglês, sem capa nem folha de rosto.
 // Os diagramas Mermaid são renderizados (Chrome do sistema) e guardados em
 // docs/obsidian-valt/figuras/diagramas/ — só são refeitos quando o código muda.
-// Lacunas ([RESULTADO]), referências a conferir (⚠) e dados a preencher
-// ([Nome do(a) orientador(a)], [e-mail]) saem destacados em amarelo.
+// Lacunas ([RESULTADO], [PENDENTE: ...], [DEFINIR: ...]) e referências a conferir (⚠)
+// saem destacados em amarelo.
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -23,7 +24,7 @@ import {
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const VAULT = path.resolve(AQUI, "../obsidian-valt");
-const SAIDA = path.resolve(AQUI, "../DroidServer_TCC_artigo.docx");
+const SAIDA = path.resolve(AQUI, "../DroidServer_artigo_topicos.docx");
 const DIAGRAMAS = path.join(VAULT, "figuras", "diagramas");
 const CHROME = process.env.CHROME || "/usr/bin/google-chrome";
 const EQUACOES_DIR = path.join(VAULT, "figuras", "equacoes");
@@ -32,28 +33,22 @@ const EQUACOES_DIR = path.join(VAULT, "figuras", "equacoes");
 const EQUACAO_NATIVA = process.env.EQUACOES === "word";
 
 // ---------------------------------------------------------------------------
-// Dados da capa / folha de rosto (o que estiver entre colchetes sai destacado)
+// Títulos e autoria (o que estiver entre colchetes de PENDENTE/DEFINIR sai destacado)
 // ---------------------------------------------------------------------------
 const META = {
-  instituicao: "CENTRO UNIVERSITÁRIO DO NORTE — UNINORTE",
-  curso: "ENGENHARIA DA COMPUTAÇÃO",
-  autor: "JOÃO PEDRO CORREIA MARTINS",
+  titulo: "DroidServer: gerenciamento de ambientes Linux do tipo VPS em smartphones Android reaproveitados sem acesso root",
+  tituloEn: "DroidServer: managing VPS-like Linux environments on repurposed Android smartphones without root access",
   autorNome: "João Pedro Correia Martins",
-  titulo: "DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados",
-  natureza: "Artigo científico apresentado ao curso de Engenharia da Computação do Centro Universitário do " +
-    "Norte — Uninorte, como requisito parcial para obtenção do título de Bacharel em Engenharia da Computação.",
-  orientador: "Euler de Azevedo Costa",
-  local: "MANAUS – AM",
-  ano: "2026",
-  notaAutor: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte. E-mail: jpedro7682@gmail.com.",
+  autoria: "[DEFINIR com o orientador: coautoria, ORCID e contribuições (CRediT)]",
+  notaAutor: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte, Manaus, AM. " +
+    "E-mail: jpedro7682@gmail.com. Endereço postal: Avenida Monsenhor Amancio de Miranda, casa 453, Manaus – AM, CEP 69017-015.",
 };
 
 // Ordem do artigo (NBR 6022): resumo/abstract, texto, referências, glossário
 const ARQUIVOS = [
-  "00-resumo.md", "01-introducao.md", "02-problema-de-pesquisa.md", "03-objetivos.md", "04-justificativa.md",
-  "05-referencial-teorico.md", "06-trabalhos-relacionados.md", "07-metodologia.md", "08-prototipacao.md",
-  "09-avaliacao-experimental.md", "10-limitacoes-e-trabalhos-futuros.md", "11-conclusao.md", "12-referencias.md",
-  "13-glossario.md",
+  "00-resumo.md", "01-introducao.md", "02-referencial-teorico.md", "03-trabalhos-relacionados.md",
+  "04-metodologia.md", "05-prototipacao.md", "06-avaliacao-experimental.md", "07-discussao.md",
+  "08-conclusao.md", "09-declaracao-ia.md", "10-referencias.md", "11-glossario.md",
 ];
 
 // ---------------------------------------------------------------------------
@@ -66,7 +61,7 @@ const ALTURA_IMG_PX = 720;             // ~19 cm
 const FONTE = "Times New Roman";
 const MONO = "Courier New";
 const PT = (n) => n * 2;               // docx usa meio-ponto
-const DESTAQUE = /(\[RESULTAD[OE][^\]]*\]|\[RESULT[^\]]*\]|⚠|\[Nome do\(a\)[^\]]*\]|\[e-mail\])/;
+const DESTAQUE = /(\[RESULTAD[OE][^\]]*\]|\[RESULT[^\]]*\]|⚠|\[PENDENTE[^\]]*\]|\[DEFINIR[^\]]*\])/;
 
 // ---------------------------------------------------------------------------
 // Pré-processamento do Markdown do Obsidian
@@ -258,7 +253,7 @@ const legendaAbaixo = (l) => [
 // Blocos
 // ---------------------------------------------------------------------------
 let instanciaLista = 0;
-const NAO_NUMERADAS = ["resumo", "abstract", "referências", "glossário"];
+const NAO_NUMERADAS = ["resumo", "abstract", "declaração de uso de inteligência artificial", "referências", "glossário"];
 
 function titulo(t, ctx) {
   const bruto = textoPuro(t.tokens).trim();
@@ -282,7 +277,7 @@ function titulo(t, ctx) {
 }
 
 function estiloParagrafo(ctx) {
-  if (ctx.secao === "resumo" || ctx.secao === "abstract") return "Resumo";
+  if (["resumo", "abstract"].includes(ctx.secao)) return "Resumo";
   if (ctx.secao === "referências") return "Referencia";
   return "Corpo";
 }
@@ -439,7 +434,7 @@ function bloco(t, ctx) {
     case "paragraph": {
       const raw = t.raw.trim();
       if (raw.startsWith("$$") && raw.endsWith("$$")) return [equacao(raw.slice(2, -2).trim())];
-      if (raw.startsWith("**Palavras-chave:**") || raw.startsWith("**Keywords:**")) {
+      if (/^\*\*(Palavras-chave|Keywords|Palabras clave):\*\*/.test(raw)) {
         return [new Paragraph({ style: "PalavrasChave", children: emLinha(t.tokens) })];
       }
       return [new Paragraph({ style: estiloParagrafo(ctx), children: emLinha(t.tokens) })];
@@ -493,35 +488,13 @@ function converterArquivo(nome, ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// Capa e folha de rosto (NBR 14724)
+// Abertura do artigo: títulos em português e inglês (fonte 14) e autoria
 // ---------------------------------------------------------------------------
-const centro = (texto, extra = {}) => new Paragraph({
-  alignment: AlignmentType.CENTER, spacing: { line: 360, before: 0, after: 0 },
-  children: trechos(texto, { bold: true, ...extra }),
-});
-const vazio = (n) => Array.from({ length: n }, () => new Paragraph({ spacing: { line: 360 }, children: [] }));
-
-const capa = [
-  centro(META.instituicao), centro(META.curso), ...vazio(5),
-  centro(META.autor), ...vazio(7),
-  centro(META.titulo.toUpperCase()), ...vazio(13),
-  centro(META.local), centro(META.ano),
-  new Paragraph({ children: [new PageBreak()] }),
-];
-
-const folhaRosto = [
-  centro(META.autor), ...vazio(8),
-  centro(META.titulo.toUpperCase()), ...vazio(4),
-  new Paragraph({ style: "Natureza", children: trechos(META.natureza, {}) }),
-  new Paragraph({ style: "Natureza", spacing: { before: 240 }, children: [
-    new TextRun({ text: "Orientador(a): " }), ...trechos(META.orientador, {})] }),
-  ...vazio(9),
-  centro(META.local), centro(META.ano),
-];
-
 const aberturaArtigo = [
-  new Paragraph({ style: "TituloArtigo", children: trechos(META.titulo.toUpperCase(), { bold: true }) }),
+  new Paragraph({ style: "TituloArtigo", children: trechos(META.titulo, {}) }),
+  new Paragraph({ style: "TituloOutraLingua", children: trechos(META.tituloEn, {}) }),
   new Paragraph({ style: "Autoria", children: [new TextRun({ text: META.autorNome }), new FootnoteReferenceRun(1)] }),
+  new Paragraph({ style: "Autoria", children: trechos(META.autoria, {}) }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -547,8 +520,11 @@ const estilos = {
       run: { font: FONTE, size: PT(12), bold: true },
       paragraph: { alignment: AlignmentType.CENTER, keepNext: true, spacing: { line: 360, before: 240, after: 240 } } },
     { id: "TituloArtigo", name: "Título do artigo", basedOn: "Normal",
-      run: { font: FONTE, size: PT(12), bold: true },
-      paragraph: { alignment: AlignmentType.CENTER, spacing: { line: 360, before: 0, after: 360 } } },
+      run: { font: FONTE, size: PT(14), bold: true },
+      paragraph: { alignment: AlignmentType.CENTER, keepNext: true, spacing: { line: 276, before: 0, after: 240 } } },
+    { id: "TituloOutraLingua", name: "Título em outra língua", basedOn: "Normal",
+      run: { font: FONTE, size: PT(14), bold: true, italics: true },
+      paragraph: { alignment: AlignmentType.CENTER, keepNext: true, spacing: { line: 276, before: 0, after: 240 } } },
     { id: "Autoria", name: "Autoria", basedOn: "Normal",
       run: { font: FONTE, size: PT(12) },
       paragraph: { alignment: AlignmentType.RIGHT, spacing: { line: 360, before: 0, after: 360 } } },
@@ -604,53 +580,53 @@ const numeracao = {
 // ---------------------------------------------------------------------------
 // Montagem
 // ---------------------------------------------------------------------------
-const ctx = { secao: "texto" };
-const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, ctx));
-
 const margens = { top: 3 * CM, left: 3 * CM, bottom: 2 * CM, right: 2 * CM };
-const doc = new Document({
-  compatabilityModeVersion: 15,   // Word 2013+: abre sem "Modo de Compatibilidade"
-  creator: META.autorNome,
-  title: META.titulo,
-  description: "Gerado a partir do vault do Obsidian (docs/obsidian-valt) por docs/gerador-docx/gerar.mjs",
-  styles: estilos,
-  numbering: numeracao,
-  footnotes: { 1: { children: [new Paragraph({ style: "Fonte", alignment: AlignmentType.LEFT,
-    children: trechos(META.notaAutor, {}) })] } },
-  sections: [
-    { properties: { page: { margin: margens } }, children: capa },
-    // A contagem começa na folha de rosto; o número aparece a partir do texto (NBR 14724)
-    { properties: { page: { margin: margens, pageNumbers: { start: 1 } } }, children: folhaRosto },
-    {
-      properties: { page: { margin: margens, pageNumbers: { start: 2 } } },
+
+async function gerar() {
+  const ctx = { secao: "texto" };
+  const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, ctx));
+  const doc = new Document({
+    compatabilityModeVersion: 15,   // Word 2013+: abre sem "Modo de Compatibilidade"
+    creator: META.autorNome,
+    lastModifiedBy: META.autorNome,
+    title: META.titulo,
+    description: "",
+    styles: estilos,
+    numbering: numeracao,
+    footnotes: { 1: { children: [new Paragraph({ style: "Fonte", alignment: AlignmentType.LEFT,
+      children: trechos(META.notaAutor, {}) })] } },
+    sections: [{
+      properties: { page: { margin: margens, pageNumbers: { start: 1 } } },
       headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
         children: [new TextRun({ children: [PageNumber.CURRENT], size: PT(10) })] })] }) },
       footers: { default: new Footer({ children: [] }) },
       children: [...aberturaArtigo, ...corpo],
-    },
-  ],
-});
+    }],
+  });
 
-// O LibreOffice só importa o somatório (m:nary) com um <m:sup/> explícito, mesmo
-// com o limite superior oculto; o Word aceita das duas formas.
-const zip = await JSZip.loadAsync(await Packer.toBuffer(doc));
-const xml = await zip.file("word/document.xml").async("string");
-zip.file("word/document.xml", xml.replace(/<\/m:sub><m:e>/g, "</m:sub><m:sup/><m:e>"));
-// A biblioteca grava <w:highlightCs>, que não existe no esquema OOXML: o Word pode
-// acusar "conteúdo ilegível" e editores menos tolerantes podem recusar o arquivo.
-for (const parte of ["word/document.xml", "word/footnotes.xml", "word/styles.xml", "word/header1.xml"]) {
-  const f = zip.file(parte);
-  if (f) zip.file(parte, (await f.async("string")).replace(/<w:highlightCs\b[^>]*\/>/g, ""));
+  // O LibreOffice só importa o somatório (m:nary) com um <m:sup/> explícito, mesmo
+  // com o limite superior oculto; o Word aceita das duas formas.
+  const zip = await JSZip.loadAsync(await Packer.toBuffer(doc));
+  const xml = await zip.file("word/document.xml").async("string");
+  zip.file("word/document.xml", xml.replace(/<\/m:sub><m:e>/g, "</m:sub><m:sup/><m:e>"));
+  // A biblioteca grava <w:highlightCs>, que não existe no esquema OOXML: o Word pode
+  // acusar "conteúdo ilegível" e editores menos tolerantes podem recusar o arquivo.
+  for (const parte of ["word/document.xml", "word/footnotes.xml", "word/styles.xml", "word/header1.xml"]) {
+    const f = zip.file(parte);
+    if (f) zip.file(parte, (await f.async("string")).replace(/<w:highlightCs\b[^>]*\/>/g, ""));
+  }
+  // Sem entradas de pasta no ZIP (alguns leitores de .docx recusam o arquivo com elas).
+  // Copia só os arquivos para um pacote novo: no JSZip, remover a pasta apagaria o conteúdo.
+  const limpo = new JSZip();
+  const arquivos = [];
+  zip.forEach((caminho, arq) => { if (!arq.dir) arquivos.push(caminho); });
+  arquivos.sort((a, b) => (a === "[Content_Types].xml" ? -1 : b === "[Content_Types].xml" ? 1 : 0));
+  for (const caminho of arquivos) {
+    limpo.file(caminho, await zip.file(caminho).async("uint8array"), { createFolders: false });
+  }
+  fs.writeFileSync(SAIDA, await limpo.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+  console.log(`Gerado: ${path.relative(process.cwd(), SAIDA)}`);
 }
-// Sem entradas de pasta no ZIP (alguns leitores de .docx recusam o arquivo com elas).
-// Copia só os arquivos para um pacote novo: no JSZip, remover a pasta apagaria o conteúdo.
-const limpo = new JSZip();
-const arquivos = [];
-zip.forEach((caminho, arq) => { if (!arq.dir) arquivos.push(caminho); });
-arquivos.sort((a, b) => (a === "[Content_Types].xml" ? -1 : b === "[Content_Types].xml" ? 1 : 0));
-for (const caminho of arquivos) {
-  limpo.file(caminho, await zip.file(caminho).async("uint8array"), { createFolders: false });
-}
-fs.writeFileSync(SAIDA, await limpo.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
-console.log(`Gerado: ${path.relative(process.cwd(), SAIDA)}`);
+
+await gerar();
 console.log("Renumeração de figuras/quadros/tabelas:", renumeracao);
