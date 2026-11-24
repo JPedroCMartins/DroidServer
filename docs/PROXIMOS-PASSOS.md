@@ -8,7 +8,8 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 
 O parecer do orientador de 24/11 foi aplicado no vault (ver o histórico). Falta o que depende do autor ou do orientador:
 
-- [ ] **Autoria (item 2 do parecer):** definir com o orientador coautoria, ORCID e contribuições (CRediT). Na versão da Tópicos isso está como lacuna amarela abaixo do nome; atualizar `META.autoria` em `docs/gerador-docx/gerar.mjs`.
+- [ ] **Autoria (item 2 do parecer):** o orientador entra como coautor, com as contribuições CRediT na nota 09 (definido em 24/11). Falta confirmar com ele e preencher a titulação e o e-mail dele (lacunas amarelas na nota de rodapé; `META.autores` em `docs/gerador-docx/gerar.mjs`). O ORCID não é exigido pela Tópicos.
+- [ ] **Tópicos:** mandar a declaração de uso de IA por e-mail após a submissão (política da revista, seção 15.2) e perguntar se a avaliação duplo-cego pede uma versão sem identificação dos autores.
 - [x] **Declaração de uso de IA:** revista em 24/11 com as duas fases do trabalho (PR #45).
 - [x] **Repositório:** público (conferido em 24/11) e com a tag `artigo-avaliacao` no *commit* 3cd3e58. Licença MIT adicionada em 24/11.
 - [x] **Tópicos:** referências conferidas em 24/11 (todas citadas; local nos anais do IEEE e [*S. l.*] nas RFCs). As mudanças da edição de 2025 vistas em fontes secundárias não atingem os tipos usados; conferir com a biblioteca se houver acesso ao texto oficial.
