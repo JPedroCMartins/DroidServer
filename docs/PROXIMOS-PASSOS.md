@@ -9,12 +9,13 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 O parecer do orientador de 24/11 foi aplicado no vault (ver o histórico). Falta o que depende do autor ou do orientador:
 
 - [ ] **Autoria (item 2 do parecer):** o orientador entra como coautor, com as contribuições CRediT na nota 09 (definido em 24/11). Nota de rodapé com cargo e e-mail preenchida (`META.autores` em `docs/gerador-docx/gerar.mjs`). Falta ele confirmar a coautoria, os papéis CRediT e se tem titulação acadêmica a acrescentar. O ORCID não é exigido pela Tópicos.
-- [ ] **Tópicos:** mandar a declaração de uso de IA por e-mail após a submissão (política da revista, seção 15.2) e perguntar se a avaliação duplo-cego pede uma versão sem identificação dos autores.
+- [ ] **Tópicos:** mandar a declaração de uso de IA por e-mail após a submissão ([política da revista](https://revistatopicos.com.br/politica/), seção 15.2; endereço provável `contato@revistatopicos.com.br`, a confirmar na página) e perguntar se a avaliação duplo-cego (seção 2 da política) pede uma versão sem identificação dos autores, já que as normas pedem nomes e minicurrículo.
+- [ ] (Opcional) Declaração de disponibilidade de dados no fim do artigo, recomendada na seção 20 da política (o repositório é público).
 - [ ] (Opcional) Conferir no original o número de Belkhir e Elmeligi (2018) — 85% a 95% da pegada anual de um smartphone vem da fabricação — e, se confirmado, voltar a citá-lo na seção 1.4. Por ora o texto só diz que a maior parte vem da fabricação.
 - [ ] Gerar o PDF **pelo Word** e conferir todas as figuras (no LibreOffice elas já saíram cortadas).
 - [ ] Mandar a versão final ao orientador antes do envio.
 - [ ] Conferir as referências com a biblioteca se houver acesso ao texto oficial da NBR 6023 de 2025 (as mudanças vistas em fontes secundárias não atingem os tipos usados).
-- [ ] Versionar o PDF final e fechar as issues #1 a #7 citando o *commit* de cada correção.
+- [ ] Versionar o PDF final e fechar a issue #23.
 - [ ] Gerar os `.docx` (base do TCC e Tópicos, sempre juntos): `cd docs/gerador-docx && npm install && npm run gerar`. Edite sempre o vault (`docs/obsidian-valt/`), nunca os `.docx`.
 
 ## 2. Defesa
