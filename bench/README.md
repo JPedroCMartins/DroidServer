@@ -1,6 +1,6 @@
 # bench/ — Experimentos da avaliação (Fase 3)
 
-Scripts que executam o protocolo da nota 09 do vault (`docs/obsidian-valt/09-avaliacao-experimental.md`).
+Scripts que executam o protocolo da seção 6 do artigo (`docs/obsidian-valt/06-avaliacao-experimental.md`).
 Cada script é autocontido (`uv run` instala as dependências declaradas no topo do arquivo), grava os
 **dados brutos em CSV** em `bench/resultados/` linha a linha (uma execução interrompida não perde o que já
 mediu) e imprime um resumo com média, desvio-padrão, IC 95%, mediana e percentis.
@@ -55,6 +55,6 @@ uv run bench/e7_disponibilidade.py --resumo bench/resultados/e7_disponibilidade_
 - **E4:** cada amostra é uma tecla e um *backspace*; o PC hospeda o Host, então o trecho navegador–Host é
   local e a medida reflete Host ↔ Node (Wi-Fi) ↔ PTY.
 - **E8:** o alvo "nativo" é o mesmo `app.py` do Worker, executado pelo Python do Termux; as versões do
-  interpretador podem diferir (registrar na nota 09).
+  interpretador podem diferir (registrar na seção 6 do artigo).
 - **Fora do escopo** (limitações): E9 (temperatura e bateria: `/sys/class/thermal` e
   `/sys/class/power_supply` retornam *Permission denied* sem root no Android 16).

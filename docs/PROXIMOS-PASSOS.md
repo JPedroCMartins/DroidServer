@@ -1,17 +1,22 @@
 # Próximos passos
 
-Único documento com o que **falta** fazer no DroidServer (atualizado em 18/11/2026). O que já foi feito está em [`HISTORICO.md`](HISTORICO.md). Ao concluir um item, apague-o daqui e, se valer o registro, acrescente uma linha no histórico.
+Único documento com o que **falta** fazer no DroidServer (atualizado em 24/11/2026). O que já foi feito está em [`HISTORICO.md`](HISTORICO.md). Ao concluir um item, apague-o daqui e, se valer o registro, acrescente uma linha no histórico.
 
 Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 
-## 1. TCC — entrega
+## 1. Artigo — submissão
 
-- [ ] Aplicar o modelo oficial da Uninorte, se houver (capa, margens, fontes).
-- [ ] Enxugar o texto (repetições entre os capítulos 8, 9 e 11).
-- [ ] Conferir no artigo original o número de Belkhir e Elmeligi (2018): 85% a 95% da pegada anual de um smartphone vem da fabricação (a fonte consultada foi uma reportagem).
-- [ ] (Opcional) Ler na íntegra Switzer et al. (2023) e Shahrad e Wentzlaff (2017), os trabalhos mais próximos, e reforçar a comparação no capítulo 6.
-- [ ] Revisão do(a) orientador(a).
-- [ ] Gerar o `.docx` final: `cd docs/gerador-docx && npm install && npm run gerar`. Edite sempre o vault (`docs/obsidian-valt/`), nunca o `.docx`.
+O parecer do orientador de 24/11 foi aplicado no vault (ver o histórico). Falta o que depende do autor ou do orientador:
+
+- [ ] **Autoria (item 2 do parecer):** definir com o orientador coautoria, ORCID e contribuições (CRediT). Na versão da Tópicos isso está como lacuna amarela abaixo do nome; atualizar `META.autoria` em `docs/gerador-docx/gerar.mjs`.
+- [ ] **Declaração de uso de IA:** conferir o texto da nota `09-declaracao-ia.md`, sobretudo a frase sobre o que foi feito pelo autor.
+- [ ] **Repositório:** o artigo cita https://github.com/JPedroCMartins/DroidServer; confirmar que ele está público antes do envio. Criar a tag da versão avaliada, por exemplo `git tag artigo-avaliacao 3cd3e58`.
+- [ ] **Tópicos:** conferir as referências na NBR 6023:2025.
+- [ ] (Opcional) Conferir no original o número de Belkhir e Elmeligi (2018) — 85% a 95% da pegada anual de um smartphone vem da fabricação — e, se confirmado, voltar a citá-lo na seção 1.4. Por ora o texto só diz que a maior parte vem da fabricação.
+- [ ] Gerar o PDF **pelo Word** e conferir todas as figuras (no LibreOffice elas já saíram cortadas).
+- [ ] Mandar a versão final ao orientador antes do envio.
+- [ ] Versionar o PDF final e fechar as issues #1 a #7 citando o *commit* de cada correção.
+- [ ] Gerar o `.docx`: `cd docs/gerador-docx && npm install && npm run gerar`. Edite sempre o vault (`docs/obsidian-valt/`), nunca o `.docx`.
 
 ## 2. Defesa
 
@@ -48,4 +53,4 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 
 ## Trabalhos futuros
 
-Escalonador automático, persistência e reconciliação de estado no Host, *proxy* reverso com TLS, assistente que gera o `run.sh`, integração com repositório Git (CI/CD) e variáveis de ambiente, imagens prontas de Worker, testes com mais Nodes, comparação com Raspberry Pi e cálculo de carbono (CCI) estão descritos na seção 10.3 do TCC ([`obsidian-valt/10-limitacoes-e-trabalhos-futuros.md`](obsidian-valt/10-limitacoes-e-trabalhos-futuros.md)). Ficam fora do escopo da entrega.
+Escalonador automático, persistência e reconciliação de estado no Host, *proxy* reverso com TLS, assistente que gera o `run.sh`, integração com repositório Git (CI/CD) e variáveis de ambiente, imagens prontas de Worker, testes com mais Nodes, comparação com Raspberry Pi e cálculo de carbono (CCI) estão resumidos na conclusão do artigo ([`obsidian-valt/08-conclusao.md`](obsidian-valt/08-conclusao.md)). Ficam fora do escopo da entrega.

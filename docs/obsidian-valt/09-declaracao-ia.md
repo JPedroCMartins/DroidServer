@@ -1,0 +1,6 @@
+# Declaração de uso de inteligência artificial
+
+> [!note] Conferir antes de enviar
+> Redigida em 24/11/2026 a partir do histórico do Git: até o artigo enxuto (*commit* a67171c, 19/11), 74 dos 97 *commits* sem *merge* têm o Claude como coautor (o orientador contou 79 de 102 com outro critério), incluindo os que mexeram no texto. A frase sobre o que foi feito pelo autor precisa ser confirmada por ele.
+
+Durante o desenvolvimento deste trabalho foi usado o assistente de inteligência artificial generativa Claude (Anthropic), por meio da ferramenta Claude Code, nas seguintes atividades: (i) **código** — escrita e revisão de partes do Host, do agente, dos testes automatizados e dos *scripts* dos experimentos e dos gráficos; (ii) **texto** — redação, condensação e revisão de partes deste artigo e geração do arquivo a partir das notas do projeto; e (iii) **revisão** — conferência de consistência entre o texto, o código e os dados, e de metadados de referências. O planejamento do trabalho, a execução dos experimentos nos aparelhos e as decisões de projeto e de análise foram do autor, que revisou todo o conteúdo gerado. Todos os números do artigo vêm dos dados brutos disponíveis no repositório. A responsabilidade pelo conteúdo, pelos resultados e pelas conclusões é integralmente do autor.

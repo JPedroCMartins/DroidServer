@@ -4,7 +4,7 @@ Transforme smartphones Android antigos — **sem root** — em nós de um pequen
 
 Um servidor **Host** (Flask + Socket.IO) controla vários **Nodes** Android. Em cada Node, um agente Python rodando no [Termux](https://termux.dev/) cria ambientes Linux com `proot-distro` (Alpine, recomendado, ou Debian), chamados **Workers**, e os mantém de pé com o **Supervisor**. Tudo é operado por um painel web com métricas em tempo real e terminal interativo no navegador.
 
-> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026): **"DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados"**. A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md); o que já foi feito está em [`docs/HISTORICO.md`](docs/HISTORICO.md) e o que falta, em [`docs/PROXIMOS-PASSOS.md`](docs/PROXIMOS-PASSOS.md).
+> Projeto de TCC em Engenharia da Computação (Uninorte, Manaus — 2026): **"DroidServer: gerenciamento de ambientes Linux do tipo VPS em smartphones Android reaproveitados sem acesso root"**. A documentação acadêmica está em [`docs/obsidian-valt/`](docs/obsidian-valt/README.md); o que já foi feito está em [`docs/HISTORICO.md`](docs/HISTORICO.md) e o que falta, em [`docs/PROXIMOS-PASSOS.md`](docs/PROXIMOS-PASSOS.md).
 
 ## Sumário
 
@@ -229,7 +229,7 @@ DroidServer/
 └── docs/
     ├── obsidian-valt/        # Texto do TCC (Obsidian) — fonte única
     ├── gerador-docx/         # Gera o .docx ABNT a partir do vault
-    ├── DroidServer_TCC_artigo.docx
+    ├── DroidServer_artigo_topicos.docx  # artigo para a Revista Tópicos
     ├── HISTORICO.md          # O que já foi feito
     └── PROXIMOS-PASSOS.md    # O que falta fazer
 ```

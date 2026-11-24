@@ -1,4 +1,6 @@
-# **DroidServer: orquestração de servidores virtuais privados em smartphones Android reaproveitados**
+# **DroidServer: gerenciamento de ambientes Linux do tipo VPS em smartphones Android reaproveitados sem acesso root**
+
+*EN: DroidServer: managing VPS-like Linux environments on repurposed Android smartphones without root access*
 
 **CENTRO UNIVERSITÁRIO DO NORTE — UNINORTE**
 **Engenharia da Computação — TCC**
@@ -14,53 +16,30 @@
 Manaus - AM, 2026
 
 > [!tip] Versão em Word
-> `docs/DroidServer_TCC_artigo.docx` é gerado a partir destas notas (`cd docs/gerador-docx && npm install && npm run gerar`), no formato ABNT de artigo. Edite aqui no vault e gere de novo; o que estiver destacado em amarelo no Word é lacuna a preencher.
-> Compatível com o **Word** e com o **WordCraft** (Linux): o arquivo passa na validação do esquema OOXML, não tem entradas de pasta no ZIP e a equação vai como imagem (o WordCraft ainda não tem editor de equações). Para equação nativa do Word: `EQUACOES=word npm run gerar`.
+> `docs/DroidServer_artigo_topicos.docx` é o artigo para a **Revista Tópicos**, gerado a partir destas notas (`cd docs/gerador-docx && npm install && npm run gerar`) no formato ABNT de artigo, sem capa nem folha de rosto: títulos e resumos em português e inglês, autoria e nota de minicurrículo.
+>
+> Edite aqui no vault e gere de novo; o que estiver destacado em amarelo no Word é lacuna a preencher (`[PENDENTE: ...]`, `[DEFINIR: ...]`). Títulos e autoria ficam em `META`, no `gerar.mjs`.
+> Compatível com o **Word** e com o **WordCraft** (Linux): o arquivo passa na validação do esquema OOXML, não tem entradas de pasta no ZIP e a equação vai como imagem. Para equação nativa do Word: `EQUACOES=word npm run gerar`.
 
 > [!note] Título
-> O mesmo título está na capa e na folha de rosto do `docs/DroidServer_TCC_artigo.docx`, gerado a partir destas notas. "Servidor virtual privado" é usado no sentido do **modelo de serviço** (um ambiente Linux próprio, acessível pela rede e administrado como um servidor), e não no de virtualização de *hardware*: ver a definição na seção 1.1 e o glossário.
+> "Servidor virtual privado" é usado no sentido do **modelo de serviço** (um ambiente Linux próprio, acessível pela rede e administrado como um servidor), e não no de virtualização de *hardware*: ver a seção 1.1 e o glossário. O sistema não tem escalonador, por isso o texto fala em **gerenciamento** de uma frota de aparelhos, e não em orquestração de *clusters*.
 
 ---
 
 ## Sumário
 
-0. [Resumo / Abstract](00-resumo.md) *(preenchido)*
-1. [Introdução](01-introducao.md)
-   - 1.1 Contextualização
-   - 1.2 Limites do Trabalho (Escopo e Delimitação)
-   - 1.3 Organização do Trabalho
-2. [Problema de Pesquisa](02-problema-de-pesquisa.md)
-   - 2.1 Hipótese
-3. [Objetivos](03-objetivos.md)
-   - 3.1 Objetivo Geral
-   - 3.2 Objetivos Específicos
-4. [Justificativa](04-justificativa.md)
-   - 4.1 Relevância ambiental
-   - 4.2 Relevância econômica e social
-   - 4.3 Relevância técnica e científica
-   - 4.4 Relevância regional
-5. [Referencial Teórico](05-referencial-teorico.md)
-   - 5.1 Sistemas Distribuídos e Orquestração de Clusters
-   - 5.2 Computação de Borda (Edge Computing) e Mobile Cloud
-   - 5.3 TI Verde (Green Computing) e Sustentabilidade
-   - 5.4 Arquitetura Android e Execução em Espaço de Usuário
-   - 5.5 Virtualização, Contêineres e PRoot
-   - 5.6 Comunicação, Detecção de Falhas e Supervisão
-6. [Trabalhos Relacionados](06-trabalhos-relacionados.md)
-7. [Metodologia](07-metodologia.md)
-   - 7.1 Caracterização da Pesquisa
-   - 7.2 Arquitetura Proposta do Sistema
-   - 7.3 Ferramentas e Tecnologias Utilizadas
-   - 7.4 Procedimentos de Implementação
-8. [Prototipação e Implementação](08-prototipacao.md)
-9. [Avaliação Experimental](09-avaliacao-experimental.md)
-10. [Limitações, Ameaças à Validade e Trabalhos Futuros](10-limitacoes-e-trabalhos-futuros.md)
-11. [Conclusão](11-conclusao.md)
-    - 11.1 Respostas às questões de pesquisa
-    - 11.2 Hipótese
-    - 11.3 Contribuições e considerações finais
-12. [Referências](12-referencias.md)
-13. [Glossário](13-glossario.md)
+0. [Resumo / Abstract](00-resumo.md)
+1. [Introdução](01-introducao.md) — contextualização; problema, questões de pesquisa e hipótese; objetivos; justificativa; escopo; organização
+2. [Referencial Teórico](02-referencial-teorico.md)
+3. [Trabalhos Relacionados](03-trabalhos-relacionados.md)
+4. [Metodologia](04-metodologia.md)
+5. [Prototipação e Implementação](05-prototipacao.md)
+6. [Avaliação Experimental](06-avaliacao-experimental.md) — ambiente e versão avaliada, protocolo, resultados
+7. [Discussão](07-discussao.md) — questões de pesquisa, hipótese, comparação, limitações e ameaças à validade
+8. [Conclusão](08-conclusao.md) — com trabalhos futuros
+- [Declaração de uso de IA](09-declaracao-ia.md)
+- [Referências](10-referencias.md)
+- [Glossário](11-glossario.md)
 
 ---
 
@@ -75,15 +54,4 @@ Manaus - AM, 2026
 
 ## Status das notas
 
-Em 19/11/2026 o texto foi enxugado para o essencial (o .docx passou de 53 para 29 páginas): saíram os detalhes de implementação do capítulo 8, três das cinco capturas do painel e o detalhamento dos experimentos do capítulo 9, que ficou com uma tabela-resumo e duas figuras. A versão longa está no histórico do Git (commit 17f9f75).
-
-| Nota | Situação |
-|---|---|
-| 00 Resumo | Preenchido com os resultados, inclusive a E7 |
-| 01–07 | Enxutas (19/11) |
-| 08 Prototipação | Enxuta: arquitetura, protocolo, ciclo de vida, monitoramento, decisões e 2 capturas |
-| 09 Avaliação | Executada em 16 e 17/11; resumida em uma tabela e 2 figuras |
-| 10 Limitações | Enxuta |
-| 11 Conclusão | Enxuta |
-| 12 Referências | Só obras citadas |
-| 13 Glossário | Nova (era a 11) |
+Em 19/11/2026 o texto foi enxugado (versão longa no *commit* 17f9f75). Em 24/11/2026 foi revisto com o parecer do orientador: os antigos capítulos 2 a 4 (problema, objetivos e justificativa) entraram na Introdução, as limitações e a resposta às questões de pesquisa foram para a nova seção de Discussão, e os arquivos foram renumerados. O que ainda depende do autor ou do orientador está em `docs/PROXIMOS-PASSOS.md` (seção 1).

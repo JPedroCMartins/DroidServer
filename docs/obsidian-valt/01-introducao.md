@@ -6,14 +6,44 @@ A demanda por mais desempenho e as práticas de obsolescência programada e perc
 
 Muitos desses aparelhos saem de uso por falhas periféricas, como tela quebrada, bateria gasta ou fim das atualizações, enquanto o processador ARM *multicore*, a memória e o armazenamento continuam funcionando. Mesmo aparelhos antigos têm capacidade compatível com microsserviços modernos (SWITZER et al., 2023), e como a energia de fabricação domina o consumo ao longo da vida útil, reaproveitá-los é vantajoso (SHAHRAD; WENTZLAFF, 2017). A Computação de Borda (*Edge Computing*), que leva o processamento para perto de onde os dados são gerados (SATYANARAYANAN, 2017; SHI et al., 2016), é um destino natural para esse recurso ocioso.
 
-Este trabalho apresenta o **DroidServer**, um protótipo que reúne smartphones Android sem acesso *root* em um pequeno *cluster* gerenciado por um servidor central. Cada aparelho roda um agente em Python no Termux, que cria ambientes Linux com `proot-distro`, mantém esses ambientes como serviços supervisionados e envia métricas ao servidor. O administrador opera tudo por um painel web, que inclui um terminal no navegador.
+Este trabalho apresenta o **DroidServer**, um protótipo que gerencia uma pequena frota de smartphones Android sem acesso *root* a partir de um servidor central. Cada aparelho roda um agente em Python no Termux, que cria ambientes Linux com o `proot-distro`, mantém esses ambientes como serviços supervisionados e envia métricas ao servidor. O administrador opera tudo por um painel web, que inclui um terminal no navegador. O sistema **não** tem escalonador: quem escolhe o aparelho de cada ambiente é o administrador, e por isso o trabalho fala em gerenciamento, e não em orquestração.
 
-Aqui, **servidor virtual privado** (VPS) designa o **modelo de serviço** que cada Worker oferece: um ambiente Linux próprio, com arquivos, pacotes e serviços independentes, acessível pela rede e administrado como um servidor. Não há virtualização de *hardware* nem isolamento pelo *kernel*. Os Workers compartilham o *kernel*, a rede, a CPU e a memória do aparelho, e o isolamento se limita ao sistema de arquivos, obtido pelo PRoot (seção 5). Os custos dessa escolha são medidos no capítulo 9.
+Aqui, **servidor virtual privado** (VPS) designa o **modelo de serviço** que cada Worker oferece: um ambiente Linux próprio, com arquivos, pacotes e serviços independentes, acessível pela rede e administrado como um servidor. Não há virtualização de *hardware* nem isolamento pelo *kernel*. Os Workers compartilham o *kernel*, a rede, a CPU e a memória do aparelho, e o isolamento se limita ao sistema de arquivos, obtido pelo PRoot (seção 2.4). Os custos dessa escolha são medidos na seção 6.
 
-## 1.2 Limites do Trabalho (Escopo e Delimitação)
+Ao longo do texto, **Host** é o computador que executa o servidor central (plano de controle); **Node** é um smartphone Android que executa o agente; e **Worker** é um ambiente Linux criado com o `proot-distro` dentro de um Node.
 
-O trabalho se limita a um protótipo no modelo Host-Node-Worker (ver [Convenção de termos](README.md)), que cria ambientes Alpine e Debian usando só o Termux e o PRoot, **sem** *root*, desbloqueio de *bootloader* ou ROM customizada, e que hospeda cargas leves (APIs, *bots*, automações) em **rede local**. Ficam de fora: solução comercial ou multilocação com isolamento de segurança entre usuários; cargas pesadas e contínuas, por causa dos limites térmicos e do *Low Memory Killer* do Android; agendamento automático e migração de Workers entre aparelhos; alta disponibilidade do Host; armazenamento distribuído; e exposição à Internet pública.
+## 1.2 Problema, questões de pesquisa e hipótese
 
-## 1.3 Organização do Trabalho
+Transformar smartphones descartados em servidores esbarra no próprio Android. Cada aplicativo roda em uma *sandbox* com usuário próprio e políticas do SELinux (ANDROID OPEN SOURCE PROJECT, 2024a). Sem *root*, não é possível usar o Docker, que depende de *namespaces* e *cgroups* do *kernel* (MERKEL, 2014; RICE, 2020). Além disso, o sistema interrompe processos em segundo plano: os modos *Doze* e *App Standby* adiam o acesso à rede e à CPU (ANDROID DEVELOPERS, 2024), o `lmkd` (*Low Memory Killer*) encerra processos para liberar memória (ANDROID OPEN SOURCE PROJECT, 2024b) e, desde o Android 12, o *phantom process killer* mata processos-filho de aplicativos (TERMUX, 2021). Para um servidor, que precisa manter portas abertas o tempo todo, isso significa quedas e perda de estado. O desafio, portanto, é de software e de rede: obter comunicação estável e algum isolamento sem alterar o *firmware*. Dele derivam três questões:
 
-Os capítulos 2 a 4 apresentam o problema, os objetivos e a justificativa. O capítulo 5 traz o referencial teórico, e o 6, os trabalhos relacionados. O capítulo 7 descreve a metodologia, o 8, o protótipo, e o 9, a avaliação e os resultados. O capítulo 10 discute as limitações, e o 11 conclui.
+- **QP1 — Isolamento:** como provisionar Alpine e Debian no Android sem *root* e qual o custo de desempenho em relação à execução nativa?
+- **QP2 — Gerenciamento e redes:** que combinação de HTTP *polling* e WebSockets mantém Host e Nodes conectados com latência aceitável, tolerando as interrupções do Android?
+- **QP3 — Recursos e estabilidade:** como os aparelhos se comportam, em disponibilidade, energia e temperatura, ao sustentar cargas contínuas no PRoot?
+
+**Hipótese (H1):** é possível operar, sem *root*, uma frota de smartphones Android que crie ambientes Linux sob demanda e os mantenha disponíveis por longos períodos para cargas leves, desde que (a) a comunicação de controle parta do próprio aparelho (modelo *pull*), (b) os processos sejam supervisionados e reiniciados automaticamente e (c) as otimizações de bateria do Android estejam desativadas para o Termux. A H1 é **confirmada** se forem atendidos os dois critérios principais da Tabela 1: disponibilidade ≥ 99% em 24 h **e** latência de eco do terminal com p95 ≤ 200 ms na rede local sem fio em que os Nodes operam.
+
+## 1.3 Objetivos
+
+O objetivo geral é desenvolver e avaliar uma arquitetura que gerencie ambientes Linux em smartphones Android reaproveitados, sem acesso *root*, como infraestrutura de borda de baixo custo alinhada aos princípios da TI Verde. Os objetivos específicos são:
+
+- **OE1** — Configurar de forma automatizada os Nodes com o Termux e o `proot-distro`, para executar Alpine e Debian sem privilégios administrativos (QP1).
+- **OE2** — Desenvolver um agente em Python que colete métricas, descubra os ambientes instalados, execute as tarefas recebidas e sincronize seu estado com o Host (QP2).
+- **OE3** — Implementar o Host com Flask e Flask-SocketIO, com um painel web para acompanhar os Nodes e gerenciar o ciclo de vida dos Workers (QP2).
+- **OE4** — Oferecer terminal dos Workers no navegador, integrando WebSockets, pseudo-terminais (PTY) e xterm.js (QP2).
+- **OE5** — Avaliar experimentalmente a arquitetura: provisionamento, latência do terminal, sobrecarga do PRoot, disponibilidade, energia e temperatura sob cargas leves (QP3 e H1).
+
+## 1.4 Justificativa
+
+O lixo eletrônico cresce cinco vezes mais rápido que a reciclagem documentada (BALDÉ et al., 2024), e a maior parte da pegada de carbono de um smartphone está na fabricação (BELKHIR; ELMELIGI, 2018). Prolongar o uso de um aparelho já fabricado é, portanto, uma das formas mais efetivas de reduzir seu impacto: pela métrica de Intensidade de Carbono Computacional (CCI), smartphones reaproveitados têm o melhor potencial entre servidores antigos, *laptops* e telefones (SWITZER et al., 2023). Para estudantes, pequenos desenvolvedores e organizações com poucos recursos, aparelhos guardados na gaveta ou doados têm custo de aquisição quase nulo e servem para ensino de sistemas distribuídos, laboratórios de redes e serviços internos. Na Amazônia, o projeto *Rainforest Connection* já usa celulares reciclados como sensores na copa das árvores (RAINFOREST CONNECTION, 2014), o que mostra que aparelhos descartados podem servir de infraestrutura onde conectividade e orçamento são limitados. A legislação brasileira trata a extensão do ciclo de vida desses produtos como responsabilidade compartilhada (BRASIL, 2010; BRASIL, 2020).
+
+Do ponto de vista técnico, a literatura sobre *clusters* de smartphones (MARINELLI, 2009; ARSLAN et al., 2012; BÜSCHING; SCHILDT; WOLF, 2012) trata de computação paralela ou de *frameworks* específicos, e as propostas recentes (SHAHRAD; WENTZLAFF, 2017; SWITZER et al., 2023) costumam pressupor sistema substituído ou acesso privilegiado. Há espaço para uma abordagem que preserve o *firmware* original e ofereça a abstração familiar de uma VPS, usando execução em espaço de usuário (PRoot).
+
+## 1.5 Escopo
+
+O trabalho se limita a um protótipo no modelo Host-Node-Worker, que cria ambientes Alpine e Debian usando só o Termux e o PRoot, **sem** *root*, desbloqueio de *bootloader* ou ROM customizada, e que hospeda cargas leves (APIs, *bots*, automações) em **rede local confiável**. Ficam de fora: multilocação com isolamento de segurança entre usuários; cargas pesadas e contínuas; agendamento automático e migração de Workers entre aparelhos; alta disponibilidade do Host; armazenamento distribuído; e exposição de serviços à Internet.
+
+O artigo avalia a versão do DroidServer usada nos experimentos de 16 e 17 de novembro de 2026 (seção 6.1). Funções acrescentadas ao repositório depois disso — o Cloudflare Tunnel, que expõe serviços de um Node à Internet, os Workers de banco de dados PostgreSQL e as abas Arquivos e Monitor do painel — não fazem parte da arquitetura descrita nem da avaliação.
+
+## 1.6 Organização do trabalho
+
+A seção 2 traz o referencial teórico, e a 3, os trabalhos relacionados. A seção 4 descreve a metodologia, a 5, o protótipo, e a 6, o protocolo experimental e os resultados. A seção 7 discute os resultados, as limitações e as ameaças à validade, e a seção 8 conclui.

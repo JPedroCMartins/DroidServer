@@ -221,11 +221,15 @@ def fig_e7():
     fig, ax = plt.subplots(figsize=(8, 3.2))
     ax.plot([h for h, m in zip(horas, ms) if m], [m for m in ms if m], color=SERIE[0], linewidth=1,
             label=t("Tempo de resposta HTTP", "Tempo de resposta do site"))
-    falhas = [h for h, l in zip(horas, linhas) if l["http_ok"] != "True"]
+    idx_falhas = [i for i, l in enumerate(linhas) if l["http_ok"] != "True"]
+    falhas = [horas[i] for i in idx_falhas]
+    # amostras ausentes consecutivas formam uma única lacuna no registro do agente
+    lacunas = sum(1 for k, i in enumerate(idx_falhas) if k == 0 or i != idx_falhas[k - 1] + 1)
     if falhas:
         topo = max(m for m in ms if m) if any(ms) else 1
         ax.scatter(falhas, [topo] * len(falhas), marker="v", s=40, color=CRITICO, zorder=4,
-                   label=t(f"Sem resposta ({len(falhas)})", f"Sem registro ({len(falhas)} de {len(linhas)})"))
+                   label=t(f"Lacunas no registro ({lacunas} lacunas, {len(falhas)} amostras)",
+                           f"Sem registro ({len(falhas)} de {len(linhas)})"))
     pids = [(h, l["servico_pid"]) for h, l in zip(horas, linhas) if l["servico_pid"]]
     reinicios = [b[0] for a, b in zip(pids, pids[1:]) if a[1] != b[1]]
     for h in reinicios:
@@ -234,9 +238,9 @@ def fig_e7():
     ax.set_yscale("log")
     ax.set_xlabel("Horas desde o início")
     ax.set_ylabel(t("ms (escala log)", "Milissegundos (escala log)"))
-    pct = f"{100 * ok / len(linhas):.2f}".replace(".", ",") if APRESENTACAO else f"{100 * ok / len(linhas):.2f}"
-    ax.set_title(t(f"E7 — Disponibilidade: {pct}% em {horas[-1]:.1f} h "
-                   f"({len(reinicios)} reinício(s) do serviço)",
+    pct = f"{100 * ok / len(linhas):.2f}".replace(".", ",")
+    ax.set_title(t(f"E7 — Disponibilidade: {pct}% em {horas[-1]:.1f} h ".replace(".", ",") +
+                   ("(sem reinícios do serviço)" if not reinicios else f"({len(reinicios)} reinício(s) do serviço)"),
                    f"Site no ar {pct}% do tempo em {round(horas[-1])} h, sem reinícios"
                    if not reinicios else f"Site no ar {pct}% do tempo em {round(horas[-1])} h"))
     ax.legend(loc="upper left", fontsize=8)
