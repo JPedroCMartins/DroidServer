@@ -9,9 +9,9 @@ Prioridade: **(1) entregar o TCC, (2) a defesa, (3) o resto.**
 O parecer do orientador de 24/11 foi aplicado no vault (ver o histórico). Falta o que depende do autor ou do orientador:
 
 - [ ] **Autoria (item 2 do parecer):** definir com o orientador coautoria, ORCID e contribuições (CRediT). Na versão da Tópicos isso está como lacuna amarela abaixo do nome; atualizar `META.autoria` em `docs/gerador-docx/gerar.mjs`.
-- [ ] **Declaração de uso de IA:** conferir o texto da nota `09-declaracao-ia.md`, sobretudo a frase sobre o que foi feito pelo autor.
-- [ ] **Repositório:** o artigo cita https://github.com/JPedroCMartins/DroidServer; confirmar que ele está público antes do envio. Criar a tag da versão avaliada, por exemplo `git tag artigo-avaliacao 3cd3e58`.
-- [ ] **Tópicos:** conferir as referências na NBR 6023:2025.
+- [x] **Declaração de uso de IA:** revista em 24/11 com as duas fases do trabalho (PR #45).
+- [x] **Repositório:** público (conferido em 24/11) e com a tag `artigo-avaliacao` no *commit* 3cd3e58. Licença MIT adicionada em 24/11.
+- [x] **Tópicos:** referências conferidas em 24/11 (todas citadas; local nos anais do IEEE e [*S. l.*] nas RFCs). As mudanças da edição de 2025 vistas em fontes secundárias não atingem os tipos usados; conferir com a biblioteca se houver acesso ao texto oficial.
 - [ ] (Opcional) Conferir no original o número de Belkhir e Elmeligi (2018) — 85% a 95% da pegada anual de um smartphone vem da fabricação — e, se confirmado, voltar a citá-lo na seção 1.4. Por ora o texto só diz que a maior parte vem da fabricação.
 - [ ] Gerar o PDF **pelo Word** e conferir todas as figuras (no LibreOffice elas já saíram cortadas).
 - [ ] Mandar a versão final ao orientador antes do envio.

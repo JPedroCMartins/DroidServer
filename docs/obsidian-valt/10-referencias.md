@@ -1,7 +1,7 @@
 # Referências
 
 > [!note] Como usar esta lista
-> Formato ABNT NBR 6023. Volume, páginas e DOI dos artigos conferidos na Crossref em 18/11/2026. Remova os itens que não forem citados no texto final — a ABNT só admite na lista obras efetivamente citadas.
+> Formato ABNT NBR 6023:2025. Volume, páginas e DOI dos artigos conferidos na Crossref em 18/11/2026. Em 24/11/2026: as 51 referências são citadas no texto; local da editora completado nos anais do IEEE e [*S. l.*] nas RFCs. Pelas fontes secundárias consultadas, a edição de 2025 não muda as regras dos tipos usados aqui (periódico, anais, livro, documento *online*, legislação, dissertação) — conferir com a biblioteca se houver acesso ao texto oficial.
 
 ABRAHAMSSON, P. et al. Affordable and energy-efficient cloud computing clusters: the Bolzano Raspberry Pi cloud cluster experiment. In: IEEE INTERNATIONAL CONFERENCE ON CLOUD COMPUTING TECHNOLOGY AND SCIENCE (CloudCom), 5., 2013, Bristol. **Proceedings** [...]. Bristol: IEEE, 2013. v. 2, p. 170-175. DOI: 10.1109/CloudCom.2013.121.
 
@@ -37,11 +37,11 @@ CYPHERPUNK ARMORY. **UserLAnd**: the easiest way to run a Linux distribution or 
 
 DINH, H. T. et al. A survey of mobile cloud computing: architecture, applications, and approaches. **Wireless Communications and Mobile Computing**, v. 13, n. 18, p. 1587-1611, 2013. DOI: 10.1002/wcm.1203.
 
-FELTER, W. et al. An updated performance comparison of virtual machines and Linux containers. In: IEEE INTERNATIONAL SYMPOSIUM ON PERFORMANCE ANALYSIS OF SYSTEMS AND SOFTWARE (ISPASS), 2015, Philadelphia. **Proceedings** [...]. IEEE, 2015. p. 171-172. DOI: 10.1109/ISPASS.2015.7095802.
+FELTER, W. et al. An updated performance comparison of virtual machines and Linux containers. In: IEEE INTERNATIONAL SYMPOSIUM ON PERFORMANCE ANALYSIS OF SYSTEMS AND SOFTWARE (ISPASS), 2015, Philadelphia. **Proceedings** [...]. Philadelphia: IEEE, 2015. p. 171-172. DOI: 10.1109/ISPASS.2015.7095802.
 
 FERNANDO, N.; LOKE, S. W.; RAHAYU, W. Mobile cloud computing: a survey. **Future Generation Computer Systems**, v. 29, n. 1, p. 84-106, 2013. DOI: 10.1016/j.future.2012.05.023.
 
-FETTE, I.; MELNIKOV, A. **RFC 6455**: The WebSocket Protocol. Internet Engineering Task Force, 2011. Disponível em: https://www.rfc-editor.org/rfc/rfc6455. Acesso em: 15 nov. 2026.
+FETTE, I.; MELNIKOV, A. **RFC 6455**: the WebSocket protocol. [*S. l.*]: Internet Engineering Task Force, 2011. Disponível em: https://www.rfc-editor.org/rfc/rfc6455. Acesso em: 15 nov. 2026.
 
 FORNWALL, F. **Termux**: terminal emulator and Linux environment app for Android. 2015. Disponível em: https://termux.dev/. Acesso em: 25 mar. 2026.
 
@@ -57,7 +57,7 @@ JOHNSTON, S. J. et al. Commodity single board computer clusters and their applic
 
 KERRISK, M. **The Linux programming interface**: a Linux and UNIX system programming handbook. San Francisco: No Starch Press, 2010.
 
-LORETO, S. et al. **RFC 6202**: Known issues and best practices for the use of long polling and streaming in bidirectional HTTP. Internet Engineering Task Force, 2011. Disponível em: https://www.rfc-editor.org/rfc/rfc6202. Acesso em: 15 nov. 2026.
+LORETO, S. et al. **RFC 6202**: Known issues and best practices for the use of long polling and streaming in bidirectional HTTP. [*S. l.*]: Internet Engineering Task Force, 2011. Disponível em: https://www.rfc-editor.org/rfc/rfc6202. Acesso em: 15 nov. 2026.
 
 MARINELLI, E. E. **Hyrax**: cloud computing on mobile devices using MapReduce. 2009. Dissertação (Mestrado em Ciência da Computação) — Carnegie Mellon University, Pittsburgh, 2009. (Relatório técnico CMU-CS-09-164).
 
@@ -95,7 +95,7 @@ TERMUX. **Process completed (signal 9) - press Enter**. Issue #2366. GitHub, 202
 
 TERMUX. **proot-distro**: a utility for managing installations of the Linux distributions in Termux. GitHub, [20--]. Disponível em: https://github.com/termux/proot-distro. Acesso em: 24 nov. 2026.
 
-TSO, F. P. et al. The Glasgow Raspberry Pi cloud: a scale model for cloud computing infrastructures. In: INTERNATIONAL CONFERENCE ON DISTRIBUTED COMPUTING SYSTEMS WORKSHOPS (ICDCSW), 33., 2013, Philadelphia. **Proceedings** [...]. IEEE, 2013. p. 108-112. DOI: 10.1109/ICDCSW.2013.25.
+TSO, F. P. et al. The Glasgow Raspberry Pi cloud: a scale model for cloud computing infrastructures. In: INTERNATIONAL CONFERENCE ON DISTRIBUTED COMPUTING SYSTEMS WORKSHOPS (ICDCSW), 33., 2013, Philadelphia. **Proceedings** [...]. Philadelphia: IEEE, 2013. p. 108-112. DOI: 10.1109/ICDCSW.2013.25.
 
 VERMA, A. et al. Large-scale cluster management at Google with Borg. In: EUROPEAN CONFERENCE ON COMPUTER SYSTEMS (EuroSys), 10., 2015, Bordeaux. **Proceedings** [...]. New York: ACM, 2015. art. 18. DOI: 10.1145/2741948.2741964.
 
