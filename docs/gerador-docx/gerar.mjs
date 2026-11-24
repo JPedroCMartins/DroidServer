@@ -61,8 +61,8 @@ const META = {
       nota: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte, Manaus, AM. " +
         "E-mail: jpedro7682@gmail.com. Endereço postal: Avenida Monsenhor Amancio de Miranda, casa 453, Manaus – AM, CEP 69017-015." },
     { nome: "Euler de Azevedo Costa",
-      nota: "[PENDENTE: titulação do orientador]. Professor do Centro Universitário do Norte — Uninorte, Manaus, AM. " +
-        "Orientador do trabalho. E-mail: [PENDENTE: e-mail do orientador]." },
+      nota: "Engenheiro SRE (engenharia de confiabilidade de sites) e DevSecOps. Professor do Centro Universitário do Norte — Uninorte, Manaus, AM. " +
+        "Orientador do trabalho. E-mail: euller.azevedo@gmail.com." },
   ],
 };
 
