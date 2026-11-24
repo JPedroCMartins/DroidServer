@@ -17,7 +17,7 @@ O parecer do orientador de 24/11 foi aplicado no vault (ver o histórico). Falta
 - [ ] Gerar o PDF **pelo Word** e conferir todas as figuras (no LibreOffice elas já saíram cortadas).
 - [ ] Mandar a versão final ao orientador antes do envio.
 - [ ] Versionar o PDF final e fechar as issues #1 a #7 citando o *commit* de cada correção.
-- [ ] Gerar o `.docx`: `cd docs/gerador-docx && npm install && npm run gerar`. Edite sempre o vault (`docs/obsidian-valt/`), nunca o `.docx`.
+- [ ] Gerar os `.docx` (base do TCC e Tópicos, sempre juntos): `cd docs/gerador-docx && npm install && npm run gerar`. Edite sempre o vault (`docs/obsidian-valt/`), nunca os `.docx`.
 
 ## 2. Defesa
 

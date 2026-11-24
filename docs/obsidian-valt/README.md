@@ -16,7 +16,7 @@
 Manaus - AM, 2026
 
 > [!tip] Versão em Word
-> `docs/DroidServer_artigo_topicos.docx` é o artigo para a **Revista Tópicos**, gerado a partir destas notas (`cd docs/gerador-docx && npm install && npm run gerar`) no formato ABNT de artigo, sem capa nem folha de rosto: títulos e resumos em português e inglês, autoria e nota de minicurrículo.
+> Estas notas geram duas versões do mesmo artigo (`cd docs/gerador-docx && npm install && npm run gerar`), sempre juntas, para não se desalinharem: `docs/DroidServer_TCC_artigo.docx`, o artigo base do TCC, com capa e folha de rosto (NBR 14724), e `docs/DroidServer_artigo_topicos.docx`, para a **Revista Tópicos**, sem capa nem folha de rosto (NBR 6022). As duas têm títulos e resumos em português e inglês, autoria e nota de minicurrículo. Edite sempre o vault, nunca os `.docx`.
 >
 > Edite aqui no vault e gere de novo; o que estiver destacado em amarelo no Word é lacuna a preencher (`[PENDENTE: ...]`, `[DEFINIR: ...]`). Títulos e autoria ficam em `META`, no `gerar.mjs`.
 > Compatível com o **Word** e com o **WordCraft** (Linux): o arquivo passa na validação do esquema OOXML, não tem entradas de pasta no ZIP e a equação vai como imagem. Para equação nativa do Word: `EQUACOES=word npm run gerar`.
