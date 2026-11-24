@@ -2,7 +2,7 @@
 
 ## 4.1 Caracterização da Pesquisa
 
-Trata-se de **pesquisa aplicada**, com abordagem **quantitativa**, conduzida pela **Pesquisa em Ciência do Design** (*Design Science Research*), em que um artefato é construído para resolver um problema relevante e depois avaliado com rigor (HEVNER et al., 2004; WAZLAWICK, 2014). O problema e os objetivos estão na seção 1, o artefato na seção 5 e a avaliação, **experimental** e em ambiente controlado (JAIN, 1991), na seção 6.
+Trata-se de **pesquisa aplicada**, com abordagem **quantitativa**, conduzida pela **Pesquisa em Ciência do Design** (*Design Science Research*), em que um artefato é construído para resolver um problema relevante e depois avaliado com rigor (Hevner *et al.*, 2004; Wazlawick, 2014). O problema e os objetivos estão na seção 1, o artefato na seção 5 e a avaliação, **experimental** e em ambiente controlado (Jain, 1991), na seção 6.
 
 ## 4.2 Arquitetura Proposta do Sistema
 
@@ -14,7 +14,7 @@ O sistema segue o padrão controlador–trabalhador em três níveis:
 
 ## 4.3 Ferramentas e Tecnologias Utilizadas
 
-Só foi usado software de código aberto. Nos Nodes, o Termux (F-Droid, 0.118), o `proot-distro` 5.10 e o Supervisor 4.3. No Host, Python, Flask 3.1 e Flask-SocketIO 5.6 (GRINBERG, 2018). No agente, `requests` e python-socketio. No painel, xterm.js. Os testes usam pytest, e os experimentos, *scripts* em Python, SSH para o Termux e o gerador de carga HTTP `hey`. O agente sincroniza por *polling* HTTP a cada 10 s, porque conexões que partem do aparelho resistem melhor às restrições de energia e de rede, e usa WebSocket só para o terminal. O terminal é um processo `proot-distro login <alias>` ligado a um PTY pelo módulo `pty` do Python.
+Só foi usado software de código aberto. Nos Nodes, o Termux (F-Droid, 0.118), o `proot-distro` 5.10 e o Supervisor 4.3. No Host, Python, Flask 3.1 e Flask-SocketIO 5.6 (Grinberg, 2018). No agente, `requests` e python-socketio. No painel, xterm.js. Os testes usam pytest, e os experimentos, *scripts* em Python, SSH para o Termux e o gerador de carga HTTP `hey`. O agente sincroniza por *polling* HTTP a cada 10 s, porque conexões que partem do aparelho resistem melhor às restrições de energia e de rede, e usa WebSocket só para o terminal. O terminal é um processo `proot-distro login <alias>` ligado a um PTY pelo módulo `pty` do Python.
 
 ## 4.4 Procedimentos de Implementação
 

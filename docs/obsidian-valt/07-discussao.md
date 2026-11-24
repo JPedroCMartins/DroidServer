@@ -16,7 +16,7 @@ Sobre a condição (c), como a comparação com o Android em configuração padr
 
 ## 7.3 Comparação com os trabalhos relacionados
 
-Diferentemente do Junkyard Computing (SWITZER et al., 2023) e do DroidCluster (BÜSCHING; SCHILDT; WOLF, 2012), o DroidServer não troca nem modifica o sistema do aparelho, e paga isso em desempenho: sem *namespaces* e *cgroups*, a tradução de chamadas de sistema do PRoot custa até 13× em operações de arquivo, enquanto contêineres têm sobrecarga próxima de zero (FELTER et al., 2015). Em troca, qualquer aparelho com Termux pode ser usado, sem desbloqueio de *bootloader*. Diferentemente do UserLAnd, do Andronix e do `proot-distro` usado sozinho, o DroidServer gerencia vários aparelhos a partir de um Host e mantém os ambientes como serviços supervisionados, o que a E7 mostrou ser estável por 24 h.
+Diferentemente do Junkyard Computing (Switzer *et al.*, 2023) e do DroidCluster (Büsching; Schildt; Wolf, 2012), o DroidServer não troca nem modifica o sistema do aparelho, e paga isso em desempenho: sem *namespaces* e *cgroups*, a tradução de chamadas de sistema do PRoot custa até 13× em operações de arquivo, enquanto contêineres têm sobrecarga próxima de zero (Felter *et al.*, 2015). Em troca, qualquer aparelho com Termux pode ser usado, sem desbloqueio de *bootloader*. Diferentemente do UserLAnd, do Andronix e do `proot-distro` usado sozinho, o DroidServer gerencia vários aparelhos a partir de um Host e mantém os ambientes como serviços supervisionados, o que a E7 mostrou ser estável por 24 h.
 
 ## 7.4 Limitações
 
