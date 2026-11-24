@@ -38,10 +38,16 @@ const EQUACAO_NATIVA = process.env.EQUACOES === "word";
 const META = {
   titulo: "DroidServer: gerenciamento de ambientes Linux do tipo VPS em smartphones Android reaproveitados sem acesso root",
   tituloEn: "DroidServer: managing VPS-like Linux environments on repurposed Android smartphones without root access",
-  autorNome: "João Pedro Correia Martins",
-  autoria: "[DEFINIR com o orientador: coautoria, ORCID e contribuições (CRediT)]",
-  notaAutor: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte, Manaus, AM. " +
-    "E-mail: jpedro7682@gmail.com. Endereço postal: Avenida Monsenhor Amancio de Miranda, casa 453, Manaus – AM, CEP 69017-015.",
+  // Um autor por linha, cada um com a sua nota de rodapé (minicurrículo, NBR 6022).
+  // Contribuições (CRediT) ficam na nota 09 do vault.
+  autores: [
+    { nome: "João Pedro Correia Martins",
+      nota: "Graduando em Engenharia da Computação pelo Centro Universitário do Norte — Uninorte, Manaus, AM. " +
+        "E-mail: jpedro7682@gmail.com. Endereço postal: Avenida Monsenhor Amancio de Miranda, casa 453, Manaus – AM, CEP 69017-015." },
+    { nome: "Euler de Azevedo Costa",
+      nota: "[PENDENTE: titulação do orientador]. Professor do Centro Universitário do Norte — Uninorte, Manaus, AM. " +
+        "Orientador do trabalho. E-mail: [PENDENTE: e-mail do orientador]." },
+  ],
 };
 
 // Ordem do artigo (NBR 6022): resumo/abstract, texto, referências, glossário
@@ -253,7 +259,7 @@ const legendaAbaixo = (l) => [
 // Blocos
 // ---------------------------------------------------------------------------
 let instanciaLista = 0;
-const NAO_NUMERADAS = ["resumo", "abstract", "declaração de uso de inteligência artificial", "referências", "glossário"];
+const NAO_NUMERADAS = ["resumo", "abstract", "contribuição dos autores", "declaração de uso de inteligência artificial", "referências", "glossário"];
 
 function titulo(t, ctx) {
   const bruto = textoPuro(t.tokens).trim();
@@ -493,8 +499,8 @@ function converterArquivo(nome, ctx) {
 const aberturaArtigo = [
   new Paragraph({ style: "TituloArtigo", children: trechos(META.titulo, {}) }),
   new Paragraph({ style: "TituloOutraLingua", children: trechos(META.tituloEn, {}) }),
-  new Paragraph({ style: "Autoria", children: [new TextRun({ text: META.autorNome }), new FootnoteReferenceRun(1)] }),
-  new Paragraph({ style: "Autoria", children: trechos(META.autoria, {}) }),
+  ...META.autores.map((a, i) =>
+    new Paragraph({ style: "Autoria", children: [new TextRun({ text: a.nome }), new FootnoteReferenceRun(i + 1)] })),
 ];
 
 // ---------------------------------------------------------------------------
@@ -587,14 +593,14 @@ async function gerar() {
   const corpo = ARQUIVOS.flatMap((nome) => converterArquivo(nome, ctx));
   const doc = new Document({
     compatabilityModeVersion: 15,   // Word 2013+: abre sem "Modo de Compatibilidade"
-    creator: META.autorNome,
-    lastModifiedBy: META.autorNome,
+    creator: META.autores[0].nome,
+    lastModifiedBy: META.autores[0].nome,
     title: META.titulo,
     description: "",
     styles: estilos,
     numbering: numeracao,
-    footnotes: { 1: { children: [new Paragraph({ style: "Fonte", alignment: AlignmentType.LEFT,
-      children: trechos(META.notaAutor, {}) })] } },
+    footnotes: Object.fromEntries(META.autores.map((a, i) => [i + 1, { children: [new Paragraph({
+      style: "Fonte", alignment: AlignmentType.LEFT, children: trechos(a.nota, {}) })] }])),
     sections: [{
       properties: { page: { margin: margens, pageNumbers: { start: 1 } } },
       headers: { default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,

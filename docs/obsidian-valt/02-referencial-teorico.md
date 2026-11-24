@@ -34,7 +34,7 @@ A virtualização clássica cria máquinas virtuais sob um *hypervisor* (POPEK; 
 | Sobrecarga | Média a alta | Baixa | Alta com muitas chamadas de sistema |
 | Funciona no Android sem *root* | Não | Não | **Sim** |
 
-*Quadro 1 — Comparação entre técnicas de isolamento. Fonte: elaborado pelo autor (2026), com base em Felter et al. (2015), Gomes et al. (2018) e Vincent (2014).*
+*Quadro 1 — Comparação entre técnicas de isolamento. Fonte: elaborado pelos autores (2026), com base em Felter et al. (2015), Gomes et al. (2018) e Vincent (2014).*
 
 A sobrecarga do PRoot vem das trocas de contexto extras a cada chamada de sistema. Por isso, operações de arquivo pesam mais que cálculo puro, o que o experimento E3 mede.
 
