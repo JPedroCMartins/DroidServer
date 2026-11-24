@@ -300,7 +300,7 @@ function separarLegenda(raw) {
   }
   return {
     rotulo: renumeracao[`${m[1]} ${m[2]}`] || `${m[1]} ${m[2]}`,
-    titulo, nota, lembrete, fonte: fonte || "Elaborado pelo autor (2026).",
+    titulo, nota, lembrete, fonte: fonte || "Elaborado pelos autores (2026).",
   };
 }
 
