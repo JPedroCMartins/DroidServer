@@ -369,7 +369,7 @@ def spa(ip=None, alias=None):
 
 @app.route('/apresentar_tcc')
 def apresentar_tcc():
-    """Slides da defesa do TCC. Não mostram nada do cluster; por isso dispensam login."""
+    """Slides da defesa do TCC. Não mostram nada dos nodes; por isso dispensam login."""
     return render_template('apresentacao.html')
 
 
