@@ -468,3 +468,7 @@ O DroidServer é um protótipo acadêmico para uso **em rede local confiável**:
 - o painel não depende de internet: Tailwind, xterm.js, Socket.IO e a fonte são servidos pelo Host (`desktop/app/static/vendor/`);
 - o PRoot isola apenas o sistema de arquivos: Workers compartilham rede, processos, CPU e memória com o aparelho (sem `cgroups`), e o `ptrace` adiciona sobrecarga em operações de E/S;
 - o cadastro de Nodes é persistido no Host; o estado de operação (workers, métricas) é refeito pelos syncs em até 10 s após reiniciar o Host, e o histórico do gráfico é recarregado do registro de cada celular.
+
+## Licença
+
+Código sob a licença MIT (ver [LICENSE](LICENSE)).
