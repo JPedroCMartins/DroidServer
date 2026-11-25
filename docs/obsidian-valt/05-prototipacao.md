@@ -41,8 +41,8 @@ flowchart LR
         end
     end
 
-    Ag1 -- "POST /api/node_sync (10 s)<br/>+ WebSocket" --> Host
-    Ag2 -- "POST /api/node_sync (10 s)<br/>+ WebSocket" --> Host
+    Ag1 -- "POST /api/node_sync<br/>(10 s) + WebSocket" --> Host
+    Ag2 -- "POST /api/node_sync<br/>(10 s) + WebSocket" --> Host
 ```
 
 *Figura 1 — Arquitetura do DroidServer em operação. As setas partem de quem inicia a conexão: o sync e o terminal são iniciados pelo Node; o Host só contata o Node (porta 5051) para a varredura e o pareamento.*

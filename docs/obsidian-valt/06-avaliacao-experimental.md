@@ -7,7 +7,7 @@
 
 O Host foi um PC Debian 13 (Xeon E5-2620 v3, 39 GB de RAM), ligado ao roteador doméstico por cabo. Foram usados dois Nodes, ambos na tomada, com a otimização de bateria desativada para o Termux e `termux-wake-lock` ativo: o **Node 1**, um Xiaomi POCO X6 Pro (Dimensity 8300, 7,3 GB, Android 16), e o **Node 2**, um Motorola moto e40 (Unisoc T700, 3,4 GB, Android 11). Os Nodes ficaram no Wi-Fi de 2,4 GHz; só a E4 foi repetida em 5 GHz, para comparação. Na rede de 2,4 GHz, um `ping` do Host ao Node 1 teve média de 43 ms e pacotes duplicados. Os Workers usaram Alpine 3.24 e Debian 13, com proot-distro 5.10.3 e Supervisor 4.3.0.
 
-Os experimentos E1 a E5 e E8 rodaram com o código do *commit* `a579186` (16/11/2026), e a E7 e a E10, com o do *commit* `3cd3e58` (16/11/2026), que acrescentou o registro local de métricas no Node. Código, *scripts*, dados brutos e notas de método estão em https://github.com/JPedroCMartins/DroidServer.
+Os experimentos E1 a E5 e E8 rodaram com o código correspondente ao *commit* `a579186` (16/11/2026), e a E7 e a E10, com o do *commit* `3cd3e58` (16/11/2026), que acrescentou o registro local de métricas no Node. Código, *scripts*, dados brutos e notas de método estão em https://github.com/JPedroCMartins/DroidServer.
 
 ## 6.2 Protocolo
 

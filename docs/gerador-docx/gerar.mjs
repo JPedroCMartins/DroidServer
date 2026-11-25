@@ -27,7 +27,7 @@ import JSZip from "jszip";
 import { marked } from "marked";
 import {
   AlignmentType, BorderStyle, Document, Footer, FootnoteReferenceRun, Header, HeadingLevel, ImageRun,
-  LevelFormat, Math as Equacao, MathFraction, MathRun, MathSubScript, MathSum, Packer, PageBreak, PageNumber, Paragraph, ShadingType, Table, TableCell, TableRow,
+  LevelFormat, LineRuleType, Math as Equacao, MathFraction, MathRun, MathSubScript, MathSum, Packer, PageBreak, PageNumber, Paragraph, ShadingType, Table, TableCell, TableRow,
   TextRun, WidthType,
 } from "docx";
 
@@ -67,7 +67,7 @@ const META = {
         "E-mail: jpedro7682@gmail.com. Endereço postal: Avenida Monsenhor Amancio de Miranda, casa 453, Manaus – AM, CEP 69017-015." },
     { nome: "Euler de Azevedo Costa",
       nota: "Engenheiro SRE (engenharia de confiabilidade de sites) e DevSecOps. Professor do Centro Universitário do Norte — Uninorte, Manaus, AM. " +
-        "Orientador do trabalho. E-mail: euller.azevedo@gmail.com." },
+        "Orientador do trabalho. E-mail: euller.azevedo@gmail.com. Endereço postal: UNINORTE, Av. Djalma Batista, 122, Chapada, Manaus – AM, CEP 69050-010." },
   ],
 };
 
@@ -83,7 +83,9 @@ const ARQUIVOS = [
 // ---------------------------------------------------------------------------
 const CM = 567;
 const LARGURA_TEXTO = 9070;            // A4 (21 cm) - 3 cm - 2 cm = 16 cm
-const LARGURA_IMG_PX = 605;            // 16 cm
+// Um pouco abaixo da largura do texto (16 cm = 604,7 px): imagem mais larga que a
+// mancha é recortada por alguns editores (LibreOffice, WordCraft).
+const LARGURA_IMG_PX = 600;            // ~15,9 cm
 const ALTURA_IMG_PX = 720;             // ~19 cm
 const FONTE = "Times New Roman";
 const MONO = "Courier New";
@@ -242,22 +244,31 @@ function paragrafoImagem(caminho) {
   const { w, h } = tamanhoPng(dados);
   const escala = Math.min(1, LARGURA_IMG_PX / w, ALTURA_IMG_PX / h);
   return new Paragraph({
-    alignment: AlignmentType.CENTER, keepNext: true, spacing: { line: 240, before: 0, after: 0 },
+    alignment: AlignmentType.CENTER, keepNext: true, spacing: simples,
     children: [new ImageRun({ type: "png", data: dados,
       transformation: { width: Math.round(w * escala), height: Math.round(h * escala) } })],
   });
 }
 
+// Rótulos das setas do fluxograma em caixinha cinza com borda (como os nós), para não
+// parecerem texto solto sobre a linha; o contorno (outline) não muda o tamanho do
+// rótulo, que é medido antes do CSS. Quebras longas vão com <br/> no próprio vault.
+const CONFIG_MERMAID = {
+  theme: "neutral", fontFamily: "Arial",
+  themeCSS: ".labelBkg { background-color: #eee !important; outline: 1px solid #999; outline-offset: -1px; padding: 0 2px; }" +
+    " .edgeLabel, .edgeLabel p { background-color: #eee !important; }",
+};
+
 function renderizarMermaid(codigo) {
   fs.mkdirSync(DIAGRAMAS, { recursive: true });
-  const hash = createHash("sha256").update(codigo).digest("hex").slice(0, 12);
+  const hash = createHash("sha256").update(codigo + JSON.stringify(CONFIG_MERMAID)).digest("hex").slice(0, 12);
   const png = path.join(DIAGRAMAS, `mermaid-${hash}.png`);
   if (!fs.existsSync(png)) {
     const tmp = fs.mkdtempSync(path.join(AQUI, ".mmd-"));
     try {
       fs.writeFileSync(path.join(tmp, "d.mmd"), codigo);
       fs.writeFileSync(path.join(tmp, "p.json"), JSON.stringify({ executablePath: CHROME, args: ["--no-sandbox"] }));
-      fs.writeFileSync(path.join(tmp, "c.json"), JSON.stringify({ theme: "neutral", fontFamily: "Arial" }));
+      fs.writeFileSync(path.join(tmp, "c.json"), JSON.stringify(CONFIG_MERMAID));
       execFileSync(path.join(AQUI, "node_modules/.bin/mmdc"),
         ["-i", path.join(tmp, "d.mmd"), "-o", png, "-p", path.join(tmp, "p.json"), "-c", path.join(tmp, "c.json"),
           "-b", "white", "-s", "3", "-w", "1100"], { stdio: "pipe" });
@@ -619,7 +630,9 @@ const aberturaArtigo = (perfil) => [
 // ---------------------------------------------------------------------------
 // Estilos (ABNT): Times 12, entrelinha 1,5, recuo de 1,25 cm, títulos numerados
 // ---------------------------------------------------------------------------
-const simples = { line: 240, before: 0, after: 0 };
+// lineRule explícito: sem ele, um editor que herde "exato" do estilo corta a linha
+// da imagem na altura de uma linha de texto.
+const simples = { line: 240, lineRule: LineRuleType.AUTO, before: 0, after: 0 };
 const estilosTcc = {
   default: {
     document: { run: { font: FONTE, size: PT(12) }, paragraph: { spacing: { line: 360 } } },
